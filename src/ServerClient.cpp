@@ -1,5 +1,6 @@
 #include "ServerClient.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
@@ -98,7 +99,7 @@ void ServerClient::pair(const QString &serverUrl, const QString &pin)
 
     const QJsonObject payload{
         {QStringLiteral("pin"), cleanPin},
-        {QStringLiteral("name"), QStringLiteral("Tater Tube")},
+        {QStringLiteral("name"), QStringLiteral("Tater Tube Player")},
     };
     QNetworkReply *reply = m_network.post(
         request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
@@ -123,6 +124,23 @@ void ServerClient::refresh()
             [this, reply] { handleServerInfoReply(reply); });
 }
 
+void ServerClient::refreshHome()
+{
+    if (!paired() || m_homeLoading)
+        return;
+
+    m_homeErrorMessage.clear();
+    setHomeLoading(true);
+    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/v1/player/home"))};
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply] { handleHomeReply(reply); });
+}
+
 void ServerClient::forgetServer()
 {
     m_serverUrl.clear();
@@ -132,10 +150,12 @@ void ServerClient::forgetServer()
     m_playerName.clear();
     m_online = false;
     m_errorMessage.clear();
+    resetHome();
     QSettings settings;
     settings.remove("connection");
     emit connectionChanged();
     emit errorMessageChanged();
+    emit homeChanged();
 }
 
 void ServerClient::loadSettings()
@@ -178,6 +198,27 @@ void ServerClient::setOnline(bool online)
     emit connectionChanged();
 }
 
+void ServerClient::setHomeLoading(bool loading)
+{
+    if (m_homeLoading == loading)
+        return;
+    m_homeLoading = loading;
+    emit homeChanged();
+}
+
+void ServerClient::resetHome()
+{
+    m_homeLoading = false;
+    m_homeReady = false;
+    m_homeErrorMessage.clear();
+    m_continueWatching.clear();
+    m_recentlyAdded.clear();
+    m_liveChannels.clear();
+    m_libraries.clear();
+    m_capabilities.clear();
+    m_homeWarnings.clear();
+}
+
 void ServerClient::handlePairReply(QNetworkReply *reply, const QString &baseUrl)
 {
     const QByteArray body = reply->readAll();
@@ -205,7 +246,7 @@ void ServerClient::handlePairReply(QNetworkReply *reply, const QString &baseUrl)
     m_token = token;
     m_playerName = data.value("player_name").toString().trimmed();
     if (m_playerName.isEmpty())
-        m_playerName = QStringLiteral("Tater Tube");
+        m_playerName = QStringLiteral("Tater Tube Player");
     saveSettings();
     setOnline(true);
     emit connectionChanged();
@@ -234,6 +275,66 @@ void ServerClient::handleServerInfoReply(QNetworkReply *reply)
     m_serverVersion = data.value("version").toString();
     setOnline(true);
     emit connectionChanged();
+    refreshHome();
+}
+
+void ServerClient::handleHomeReply(QNetworkReply *reply)
+{
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool succeeded = reply->error() == QNetworkReply::NoError
+        && status >= 200 && status < 300;
+    reply->deleteLater();
+    setHomeLoading(false);
+
+    if (!succeeded) {
+        if (status == 401 || status == 403) {
+            forgetServer();
+            setErrorMessage("This player is no longer authorized. Pair it with the server again.");
+            return;
+        }
+        m_homeReady = false;
+        if (status == 404) {
+            m_homeErrorMessage = QStringLiteral(
+                "Update Tater Tube Server to a version with the Player Home API.");
+        } else {
+            m_homeErrorMessage = responseError(body, "The home screen could not be loaded.");
+        }
+        emit homeChanged();
+        return;
+    }
+
+    const QJsonObject envelope = QJsonDocument::fromJson(body).object();
+    const QJsonObject data = envelope.value("data").toObject();
+    if (data.isEmpty()) {
+        m_homeReady = false;
+        m_homeErrorMessage = QStringLiteral("The server returned an empty home response.");
+        emit homeChanged();
+        return;
+    }
+
+    m_continueWatching = data.value("continueWatching").toArray().toVariantList();
+    m_recentlyAdded = data.value("recentlyAdded").toArray().toVariantList();
+    m_liveChannels = data.value("liveChannels").toArray().toVariantList();
+    m_libraries = data.value("libraries").toArray().toVariantList();
+    m_capabilities = data.value("capabilities").toObject().toVariantMap();
+    m_homeWarnings.clear();
+    for (const QJsonValue &warning : data.value("warnings").toArray()) {
+        const QString message = warning.toString().trimmed();
+        if (!message.isEmpty())
+            m_homeWarnings.append(message);
+    }
+    const QString homeServerName = data.value("serverName").toString().trimmed();
+    const QString homeServerVersion = data.value("serverVersion").toString().trimmed();
+    if (!homeServerName.isEmpty())
+        m_serverName = homeServerName;
+    if (!homeServerVersion.isEmpty())
+        m_serverVersion = homeServerVersion;
+    m_homeErrorMessage.clear();
+    m_homeReady = true;
+    setOnline(true);
+    emit connectionChanged();
+    emit homeChanged();
 }
 
 QString ServerClient::responseError(const QByteArray &body, const QString &fallback)

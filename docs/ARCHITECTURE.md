@@ -2,7 +2,7 @@
 
 ## Boundary
 
-Tater Tube is a thin player for Tater Tube Server. The server is the source of
+Tater Tube Player is a thin player for Tater Tube Server. The server is the source of
 truth for catalogs, metadata, artwork, playback state, streams, Tube TV
 schedules, commercial breaks, bumpers, and Tater awareness.
 
@@ -21,7 +21,8 @@ reimplemented against documented HTTP contracts and fixtures.
 
 ## Client responsibilities
 
-- Pair a player and securely retain its token.
+- Pair a player and retain its token; move it into platform-secure storage
+  before release.
 - Render home, library, details, search, guide, and player surfaces.
 - Report playback state and Tater viewing events.
 - Advertise device playback capabilities.
@@ -38,16 +39,28 @@ reimplemented against documented HTTP contracts and fixtures.
 - Maintain resume state, next episodes, and Continue Watching.
 - Broker recommendations and narration between players and Tater Core.
 
-## API work required
+## Versioned player API
 
-The existing `/api/tater/*` routes are the compatibility surface. Before the
-store client is feature-complete, add a versioned player contract with stable
-capability discovery and consistent identifiers. Proposed surface:
+The existing `/api/tater/*` routes remain the compatibility surface for the
+original players. The modern player adds new `/api/v1/player/*` routes without
+renaming or changing those routes.
+
+Implemented:
+
+```text
+GET  /api/v1/player/home
+GET  /api/v1/player/artwork/local
+```
+
+The home response aggregates capabilities, Continue Watching, Recently Added,
+library roots, and lightweight Tube TV now/next data. Local artwork accepts
+media-adjacent `poster`, `folder`, `cover`, and title-matched images.
+
+Planned surface:
 
 ```text
 GET  /api/v1/player/server
 POST /api/v1/player/pair
-GET  /api/v1/player/home
 GET  /api/v1/player/libraries
 GET  /api/v1/player/items/{id}
 GET  /api/v1/player/search

@@ -18,11 +18,11 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("Tater"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("taterassistant.com"));
-    QCoreApplication::setApplicationName(QStringLiteral("Tater Tube"));
+    QCoreApplication::setApplicationName(QStringLiteral("Tater Tube Player"));
     QCoreApplication::setApplicationVersion(QStringLiteral(TATER_TUBE_PLAYER_VERSION));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("Modern Tater Tube Server player"));
+    parser.setApplicationDescription(QStringLiteral("Modern Tater Tube Player"));
     parser.addHelpOption();
     parser.addVersionOption();
     parser.addOption({QStringLiteral("demo"),

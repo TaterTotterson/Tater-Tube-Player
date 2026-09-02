@@ -22,13 +22,13 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS
 
 qt_standard_project_setup(REQUIRES 6.8)
 
-qt_add_executable(tater-tube
+qt_add_executable(tater-tube-player
     src/main.cpp
     src/ServerClient.cpp
     src/ServerClient.h
 )
 
-qt_add_qml_module(tater-tube
+qt_add_qml_module(tater-tube-player
     URI TaterTube.Player
     VERSION 1.0
     QML_FILES
@@ -43,7 +43,7 @@ qt_add_qml_module(tater-tube
         assets/mascot/tater-wave.png
 )
 
-target_link_libraries(tater-tube PRIVATE
+target_link_libraries(tater-tube-player PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Network
@@ -52,14 +52,14 @@ target_link_libraries(tater-tube PRIVATE
     Qt6::QuickControls2
 )
 
-target_compile_definitions(tater-tube PRIVATE
+target_compile_definitions(tater-tube-player PRIVATE
     TATER_TUBE_PLAYER_VERSION="${PROJECT_VERSION}"
 )
 
-set_target_properties(tater-tube PROPERTIES
+set_target_properties(tater-tube-player PROPERTIES
     MACOSX_BUNDLE TRUE
-    MACOSX_BUNDLE_BUNDLE_NAME "Tater Tube"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.taterassistant.tatertube"
+    MACOSX_BUNDLE_BUNDLE_NAME "Tater Tube Player"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.taterassistant.tatertubeplayer"
     WIN32_EXECUTABLE TRUE
 )
 

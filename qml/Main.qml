@@ -11,7 +11,7 @@ ApplicationWindow {
     minimumWidth: 1180
     minimumHeight: 720
     visible: true
-    title: "Tater Tube"
+    title: "Tater Tube Player"
     color: "#101215"
 
     readonly property color orange: "#ff781f"
@@ -20,6 +20,74 @@ ApplicationWindow {
     readonly property color panelSoft: "#282c31"
     readonly property color textPrimary: "#f6f6f3"
     readonly property color textSecondary: "#aaafb4"
+
+    function itemTitle(item, fallback) {
+        return item && item.title ? item.title : fallback
+    }
+
+    function mediaLabel(item) {
+        if (!item)
+            return "MEDIA"
+        var value = item.mediaType || item.type || "media"
+        return String(value).toUpperCase()
+    }
+
+    function continueSubtitle(item) {
+        if (!item)
+            return ""
+        if (item.sizeText)
+            return item.sizeText
+        if (item.durationDisplay)
+            return "Resume • " + item.durationDisplay
+        return "Resume playback"
+    }
+
+    function itemMeta(item) {
+        if (!item)
+            return ""
+        var parts = []
+        if (item.date)
+            parts.push(item.date)
+        if (item.category)
+            parts.push(item.category)
+        else if (item.sizeText)
+            parts.push(item.sizeText)
+        return parts.join("  •  ")
+    }
+
+    function progressValue(value) {
+        var number = Number(value || 0) / 100.0
+        return Math.max(0, Math.min(1, number))
+    }
+
+    function cardAccent(index) {
+        var colors = ["#ef7423", "#547d8b", "#bd633d", "#6b5b7d", "#75864b", "#805a3d"]
+        return colors[index % colors.length]
+    }
+
+    function channelNow(channel) {
+        return channel && channel.now ? channel.now : null
+    }
+
+    function channelTitle(channel) {
+        var now = channelNow(channel)
+        return now && now.title ? now.title : itemTitle(channel, "Live channel")
+    }
+
+    function channelSubtitle(channel) {
+        if (channel && channel.next && channel.next.title)
+            return "Up next: " + channel.next.title
+        return itemTitle(channel, "Tater Tube")
+    }
+
+    function taterLiveMessage() {
+        if (serverClient.liveChannels.length === 0)
+            return "Your channels are ready whenever you are."
+        var channel = serverClient.liveChannels[0]
+        if (channel.next && channel.next.title)
+            return channel.next.title + " is coming up on channel " + channel.number + "."
+        return channelTitle(channel) + " is live now on channel " + channel.number + "."
+    }
 
     Component.onCompleted: homeNav.forceActiveFocus()
 
@@ -79,7 +147,7 @@ ApplicationWindow {
                 spacing: -2
 
                 Text {
-                    text: "TATER TUBE"
+                    text: "TATER TUBE PLAYER"
                     color: root.textPrimary
                     font.pixelSize: 21
                     font.weight: Font.Black
@@ -279,6 +347,27 @@ ApplicationWindow {
                 }
             }
 
+            Rectangle {
+                visible: !demoMode && serverClient.homeReady
+                         && serverClient.homeWarnings.length > 0
+                width: contentColumn.width
+                height: 48
+                radius: 14
+                color: "#28231f"
+                border.width: 1
+                border.color: "#65462f"
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Tater Tube Server: " + serverClient.homeWarnings[0]
+                    color: "#e4c4ab"
+                    font.pixelSize: 13
+                    font.weight: Font.DemiBold
+                }
+            }
+
             Column {
                 width: contentColumn.width
                 spacing: 12
@@ -325,6 +414,41 @@ ApplicationWindow {
                         subtitle: "Static in the Valley"
                         accent: "#6b5b7d"
                         progress: 0.46
+                    }
+                }
+            }
+
+            Column {
+                width: contentColumn.width
+                spacing: 12
+                visible: !demoMode && serverClient.homeReady
+                         && serverClient.continueWatching.length > 0
+
+                SectionTitle {
+                    width: parent.width
+                    title: "Continue watching"
+                    actionText: "SEE ALL  ›"
+                }
+
+                Row {
+                    width: parent.width
+                    spacing: 15
+
+                    Repeater {
+                        model: Math.min(4, serverClient.continueWatching.length)
+
+                        MediaCard {
+                            required property int index
+                            property var media: serverClient.continueWatching[index]
+
+                            width: (parent.width - 45) / 4
+                            eyebrow: root.mediaLabel(media)
+                            title: root.itemTitle(media, "Untitled")
+                            subtitle: root.continueSubtitle(media)
+                            artSource: media && media.poster ? media.poster : ""
+                            accent: root.cardAccent(index)
+                            progress: root.progressValue(media ? media.progressPercent : 0)
+                        }
                     }
                 }
             }
@@ -432,6 +556,103 @@ ApplicationWindow {
                 }
             }
 
+            Row {
+                width: contentColumn.width
+                spacing: 22
+                visible: !demoMode && serverClient.homeReady
+                         && serverClient.liveChannels.length > 0
+
+                Column {
+                    id: serverLiveColumn
+                    width: parent.width * 0.72
+                    spacing: 12
+
+                    SectionTitle {
+                        width: parent.width
+                        title: "Live on Tater Tube"
+                        actionText: "OPEN GUIDE  ›"
+                    }
+
+                    Row {
+                        width: parent.width
+                        spacing: 15
+
+                        Repeater {
+                            model: Math.min(3, serverClient.liveChannels.length)
+
+                            MediaCard {
+                                required property int index
+                                property var channel: serverClient.liveChannels[index]
+                                property var currentProgram: root.channelNow(channel)
+
+                                width: (parent.width - 30) / 3
+                                eyebrow: "CH " + channel.number + "  •  LIVE"
+                                title: root.channelTitle(channel)
+                                subtitle: root.channelSubtitle(channel)
+                                badge: channel.number || "TV"
+                                artSource: currentProgram && currentProgram.poster
+                                           ? currentProgram.poster : ""
+                                accent: root.cardAccent(index)
+                                progress: root.progressValue(currentProgram
+                                                             ? currentProgram.progressPercent : 0)
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width - serverLiveColumn.width - parent.spacing
+                    height: 232
+                    anchors.bottom: parent.bottom
+                    radius: 22
+                    color: "#24282d"
+                    border.width: 1
+                    border.color: "#41464c"
+                    clip: true
+
+                    Image {
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.rightMargin: -12
+                        anchors.bottomMargin: -4
+                        width: 145
+                        height: 145
+                        source: "../assets/mascot/tater-wave.png"
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.margins: 22
+                        width: parent.width - 130
+                        spacing: 9
+
+                        Text {
+                            text: "TATER SAYS"
+                            color: root.orange
+                            font.pixelSize: 11
+                            font.weight: Font.Bold
+                            font.letterSpacing: 1.4
+                        }
+                        Text {
+                            width: parent.width
+                            text: root.taterLiveMessage()
+                            color: root.textPrimary
+                            wrapMode: Text.WordWrap
+                            font.pixelSize: 18
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            text: "VIEW CHANNEL  ›"
+                            color: root.orangeBright
+                            font.pixelSize: 11
+                            font.weight: Font.Bold
+                        }
+                    }
+                }
+            }
+
             Column {
                 width: contentColumn.width
                 spacing: 12
@@ -454,8 +675,46 @@ ApplicationWindow {
                 }
             }
 
+            Column {
+                width: contentColumn.width
+                spacing: 12
+                visible: !demoMode && serverClient.homeReady
+                         && serverClient.recentlyAdded.length > 0
+
+                SectionTitle {
+                    width: parent.width
+                    title: "Recently added"
+                    actionText: "BROWSE LIBRARY  ›"
+                }
+
+                Row {
+                    spacing: 15
+
+                    Repeater {
+                        model: Math.min(6, serverClient.recentlyAdded.length)
+
+                        PosterCard {
+                            required property int index
+                            property var media: serverClient.recentlyAdded[index]
+
+                            title: root.itemTitle(media, "Untitled")
+                            meta: root.itemMeta(media)
+                            number: index < 9 ? "0" + (index + 1) : String(index + 1)
+                            artSource: media && media.poster ? media.poster : ""
+                            accent: root.cardAccent(index)
+                        }
+                    }
+                }
+            }
+
             Rectangle {
+                readonly property bool hasHomeContent:
+                    serverClient.continueWatching.length > 0
+                    || serverClient.recentlyAdded.length > 0
+                    || serverClient.liveChannels.length > 0
+
                 visible: !demoMode && serverClient.paired
+                         && (!serverClient.homeReady || !hasHomeContent)
                 width: contentColumn.width
                 height: 244
                 radius: 24
@@ -481,16 +740,22 @@ ApplicationWindow {
                         spacing: 10
 
                         Text {
-                            text: serverClient.online ? "Connected and ready" : "Server paired"
+                            text: serverClient.homeErrorMessage.length > 0
+                                  ? "Couldn’t load your home screen"
+                                  : (serverClient.homeLoading || !serverClient.homeReady
+                                     ? "Loading your Tater Tube"
+                                     : "Connected and ready")
                             color: root.textPrimary
                             font.pixelSize: 28
                             font.weight: Font.Bold
                         }
                         Text {
                             width: parent.width
-                            text: serverClient.online
-                                  ? "This milestone has established the player pairing boundary. Library and playback integration comes next."
-                                  : "Tater Tube remembers this server and will reconnect when it is available."
+                            text: serverClient.homeErrorMessage.length > 0
+                                  ? serverClient.homeErrorMessage
+                                  : (serverClient.homeLoading || !serverClient.homeReady
+                                     ? "Fetching Continue Watching, Tube TV, artwork, and your newest media."
+                                     : "The server is paired, but there isn’t any home-screen media to show yet.")
                             color: root.textSecondary
                             wrapMode: Text.WordWrap
                             font.pixelSize: 16
@@ -502,6 +767,14 @@ ApplicationWindow {
                             color: root.orangeBright
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
+                        }
+
+                        FocusButton {
+                            visible: serverClient.homeErrorMessage.length > 0
+                            width: 180
+                            text: "Try again"
+                            primary: true
+                            onClicked: serverClient.refreshHome()
                         }
                     }
                 }
@@ -546,7 +819,7 @@ ApplicationWindow {
 
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Welcome to Tater Tube"
+                    text: "Welcome to Tater Tube Player"
                     color: root.textPrimary
                     font.pixelSize: 29
                     font.weight: Font.Bold
