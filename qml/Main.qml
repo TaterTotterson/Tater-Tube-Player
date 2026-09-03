@@ -41,6 +41,8 @@ ApplicationWindow {
     property bool playbackEnded: false
     readonly property bool compatiblePlayback: compatiblePlaybackMode === true
     property int libraryVisibleLimit: 60
+    property bool sideMenuOpen: false
+    property var sideMenuReturnFocus: null
 
     function itemTitle(item, fallback) {
         return item && item.title ? item.title : fallback
@@ -229,6 +231,8 @@ ApplicationWindow {
     }
 
     function showPage(name) {
+        sideMenuOpen = false
+        sideMenuReturnFocus = null
         detailsOpen = false
         currentPage = name
         page.contentY = 0
@@ -240,13 +244,46 @@ ApplicationWindow {
         Qt.callLater(function() {
             if (name === "home")
                 homeNav.forceActiveFocus()
-            else if (name === "library")
-                libraryNav.forceActiveFocus()
-            else if (name === "live")
-                liveNav.forceActiveFocus()
             else
-                searchNav.forceActiveFocus()
+                sectionBack.forceActiveFocus()
         })
+    }
+
+    function openSideMenu() {
+        if (sideMenuOpen || playbackOpen || detailsOpen || pairingOverlay.visible)
+            return false
+        sideMenuReturnFocus = root.activeFocusItem
+        sideMenuOpen = true
+        Qt.callLater(function() {
+            if (currentPage === "library")
+                sideLibraryNav.forceActiveFocus()
+            else if (currentPage === "live")
+                sideLiveNav.forceActiveFocus()
+            else if (currentPage === "search")
+                sideSearchNav.forceActiveFocus()
+            else
+                sideHomeNav.forceActiveFocus()
+        })
+        return true
+    }
+
+    function closeSideMenu(restoreFocus) {
+        if (!sideMenuOpen)
+            return false
+        var target = sideMenuReturnFocus
+        sideMenuOpen = false
+        sideMenuReturnFocus = null
+        if (restoreFocus) {
+            Qt.callLater(function() {
+                if (target && target.visible && target.enabled)
+                    target.forceActiveFocus()
+                else if (currentPage === "home")
+                    homeNav.forceActiveFocus()
+                else
+                    sectionBack.forceActiveFocus()
+            })
+        }
+        return true
     }
 
     function playbackTitle() {
@@ -443,7 +480,9 @@ ApplicationWindow {
     }
 
     function goBack() {
-        if (playbackOpen) {
+        if (sideMenuOpen) {
+            closeSideMenu(true)
+        } else if (playbackOpen) {
             closePlayback()
         } else if (detailsOpen) {
             closeDetails()
@@ -473,8 +512,9 @@ ApplicationWindow {
             appendFocusable(pairingOverlay, result)
         } else if (detailsOpen) {
             appendFocusable(detailsPanel, result)
+        } else if (sideMenuOpen) {
+            appendFocusable(sideMenu, result)
         } else {
-            appendFocusable(topBar, result)
             appendFocusable(currentPage === "home" ? page.contentItem
                                                     : sectionScroller.contentItem, result)
         }
@@ -519,13 +559,13 @@ ApplicationWindow {
     function moveFocus(horizontal, vertical) {
         var candidates = focusableItems()
         if (candidates.length === 0)
-            return
+            return false
         var current = root.activeFocusItem
         var currentIndex = candidates.indexOf(current)
         if (currentIndex < 0) {
             candidates[0].forceActiveFocus()
             revealFocusedItem(candidates[0])
-            return
+            return true
         }
 
         var origin = current.mapToItem(root.contentItem, current.width / 2, current.height / 2)
@@ -553,7 +593,24 @@ ApplicationWindow {
         if (winner) {
             winner.forceActiveFocus()
             revealFocusedItem(winner)
+            return true
         }
+        return false
+    }
+
+    function navigateLeft() {
+        if (sideMenuOpen)
+            return
+        if (!moveFocus(-1, 0))
+            openSideMenu()
+    }
+
+    function navigateRight() {
+        if (sideMenuOpen) {
+            closeSideMenu(true)
+            return
+        }
+        moveFocus(1, 0)
     }
 
     function activateFocusedItem() {
@@ -583,11 +640,11 @@ ApplicationWindow {
         target: gamepadInput
         function onNavigateLeft() {
             if (root.playbackOpen) root.seekPlaybackBy(-10000)
-            else root.moveFocus(-1, 0)
+            else root.navigateLeft()
         }
         function onNavigateRight() {
             if (root.playbackOpen) root.seekPlaybackBy(10000)
-            else root.moveFocus(1, 0)
+            else root.navigateRight()
         }
         function onNavigateUp() {
             if (root.playbackOpen) root.changePlaybackVolume(0.05)
@@ -612,8 +669,8 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Left"; onActivated: root.playbackOpen ? root.seekPlaybackBy(-10000) : root.moveFocus(-1, 0) }
-    Shortcut { sequence: "Right"; onActivated: root.playbackOpen ? root.seekPlaybackBy(10000) : root.moveFocus(1, 0) }
+    Shortcut { sequence: "Left"; onActivated: root.playbackOpen ? root.seekPlaybackBy(-10000) : root.navigateLeft() }
+    Shortcut { sequence: "Right"; onActivated: root.playbackOpen ? root.seekPlaybackBy(10000) : root.navigateRight() }
     Shortcut { sequence: "Up"; onActivated: root.playbackOpen ? root.changePlaybackVolume(0.05) : root.moveFocus(0, -1) }
     Shortcut { sequence: "Down"; onActivated: root.playbackOpen ? root.changePlaybackVolume(-0.05) : root.moveFocus(0, 1) }
     Shortcut { sequence: "Esc"; onActivated: root.goBack() }
@@ -641,6 +698,7 @@ ApplicationWindow {
         anchors.right: parent.right
         anchors.top: parent.top
         height: 86
+        visible: root.currentPage === "home"
         color: "#e917191d"
         border.width: 0
 
@@ -694,40 +752,6 @@ ApplicationWindow {
                     font.weight: Font.Bold
                     font.letterSpacing: 1.15
                 }
-            }
-        }
-
-        Row {
-            anchors.centerIn: parent
-            spacing: 8
-
-            FocusButton {
-                id: homeNav
-                text: "Home"
-                compact: true
-                selected: root.currentPage === "home"
-                onClicked: root.showPage("home")
-            }
-            FocusButton {
-                id: libraryNav
-                text: "Library"
-                compact: true
-                selected: root.currentPage === "library"
-                onClicked: root.showPage("library")
-            }
-            FocusButton {
-                id: liveNav
-                text: "Live TV"
-                compact: true
-                selected: root.currentPage === "live"
-                onClicked: root.showPage("live")
-            }
-            FocusButton {
-                id: searchNav
-                text: "Search"
-                compact: true
-                selected: root.currentPage === "search"
-                onClicked: root.showPage("search")
             }
         }
 
@@ -903,6 +927,89 @@ ApplicationWindow {
                             text: "Browse library"
                             onClicked: root.showPage("library")
                         }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: homeMenu
+                width: contentColumn.width
+                height: 86
+                radius: 22
+                color: "#1d2024"
+                border.width: 1
+                border.color: "#3b4046"
+
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 20
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 13
+
+                    Image {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 56
+                        height: 56
+                        source: "../assets/mascot/tater-front.png"
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
+
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+
+                        Text {
+                            text: "Where to, spud?"
+                            color: root.textPrimary
+                            font.pixelSize: 17
+                            font.weight: Font.Bold
+                        }
+
+                        Text {
+                            text: "Your Tater Tube menu"
+                            color: root.textSecondary
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 0.6
+                        }
+                    }
+                }
+
+                Row {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 10
+
+                    FocusButton {
+                        id: homeNav
+                        width: 132
+                        text: "Home"
+                        compact: true
+                        selected: true
+                        onClicked: root.showPage("home")
+                    }
+
+                    FocusButton {
+                        width: 132
+                        text: "Library"
+                        compact: true
+                        onClicked: root.showPage("library")
+                    }
+
+                    FocusButton {
+                        width: 132
+                        text: "Live TV"
+                        compact: true
+                        onClicked: root.showPage("live")
+                    }
+
+                    FocusButton {
+                        width: 132
+                        text: "Search"
+                        compact: true
+                        onClicked: root.showPage("search")
                     }
                 }
             }
@@ -1360,7 +1467,7 @@ ApplicationWindow {
         id: sectionPage
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: topBar.bottom
+        anchors.top: parent.top
         anchors.bottom: parent.bottom
         visible: root.currentPage !== "home"
         color: root.color
@@ -1387,6 +1494,14 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.topMargin: 34
                 spacing: 28
+
+                FocusButton {
+                    id: sectionBack
+                    width: 126
+                    text: "‹  Back"
+                    compact: true
+                    onClicked: root.goBack()
+                }
 
                 Column {
                     width: parent.width
@@ -1424,17 +1539,6 @@ ApplicationWindow {
                             id: libraryActions
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 10
-
-                            FocusButton {
-                                visible: !demoMode && serverClient.libraryDepth > 0
-                                width: 180
-                                text: "‹  Back"
-                                onClicked: {
-                                    root.libraryVisibleLimit = 60
-                                    serverClient.browseLibraryBack()
-                                    sectionScroller.contentY = 0
-                                }
-                            }
 
                             FocusButton {
                                 visible: !demoMode
@@ -1875,6 +1979,149 @@ ApplicationWindow {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    Rectangle {
+        id: sideMenuScrim
+        anchors.fill: parent
+        visible: root.sideMenuOpen
+        color: "#8206080a"
+        z: 170
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.closeSideMenu(true)
+        }
+    }
+
+    Rectangle {
+        id: sideMenu
+        x: root.sideMenuOpen ? 0 : -width - 18
+        y: 0
+        width: 304
+        height: root.height
+        enabled: root.sideMenuOpen
+        z: 180
+        color: "#f51a1d21"
+        border.width: 1
+        border.color: "#4a4f55"
+
+        Behavior on x {
+            NumberAnimation { duration: 190; easing.type: Easing.OutCubic }
+        }
+
+        Rectangle {
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            width: 18
+            color: "#18000000"
+        }
+
+        Column {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 26
+            spacing: 17
+
+            Row {
+                spacing: 13
+
+                Rectangle {
+                    width: 58
+                    height: 58
+                    radius: 18
+                    color: "#2b211b"
+                    border.width: 1
+                    border.color: "#7b4828"
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        source: "../assets/mascot/tater-wave.png"
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
+                }
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 1
+
+                    Text {
+                        text: "Tater Tube"
+                        color: root.textPrimary
+                        font.pixelSize: 21
+                        font.weight: Font.Black
+                    }
+
+                    Text {
+                        text: "PLAYER MENU"
+                        color: root.orange
+                        font.pixelSize: 10
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.2
+                    }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: "#3b4046"
+            }
+
+            Text {
+                text: "BROWSE"
+                color: root.textSecondary
+                font.pixelSize: 10
+                font.weight: Font.Bold
+                font.letterSpacing: 1.6
+            }
+
+            FocusButton {
+                id: sideHomeNav
+                width: parent.width
+                text: "Home"
+                selected: root.currentPage === "home"
+                onClicked: root.showPage("home")
+            }
+
+            FocusButton {
+                id: sideLibraryNav
+                width: parent.width
+                text: "Library"
+                selected: root.currentPage === "library"
+                onClicked: root.showPage("library")
+            }
+
+            FocusButton {
+                id: sideLiveNav
+                width: parent.width
+                text: "Live TV"
+                selected: root.currentPage === "live"
+                onClicked: root.showPage("live")
+            }
+
+            FocusButton {
+                id: sideSearchNav
+                width: parent.width
+                text: "Search"
+                selected: root.currentPage === "search"
+                onClicked: root.showPage("search")
+            }
+
+            Text {
+                topPadding: 10
+                width: parent.width
+                text: "Press Right to close"
+                color: "#858b91"
+                horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
             }
         }
     }
@@ -2448,8 +2695,11 @@ ApplicationWindow {
         color: "#e608090b"
         z: 100
         onVisibleChanged: {
-            if (visible)
+            if (visible) {
+                root.sideMenuOpen = false
+                root.sideMenuReturnFocus = null
                 Qt.callLater(function() { serverField.forceActiveFocus() })
+            }
         }
 
         Rectangle {

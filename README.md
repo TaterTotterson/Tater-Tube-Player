@@ -25,6 +25,7 @@ The current milestone is a Steam Deck-ready browsing and playback prototype
 with:
 
 - a couch-friendly modern home screen;
+- a Home-only navigation strip plus an edge-triggered slide-out menu for TV remotes;
 - keyboard, controller, and remote-visible focus states;
 - Tater Tube Server URL and six-digit PIN pairing;
 - prototype persistence for the server address and player token;
@@ -59,8 +60,8 @@ Requirements:
 - Qt 6.8+ with Quick, Quick Controls, QML, Multimedia, Network, and Test
 - A C++20 compiler
 - Tater Tube Server with the `/api/v1/player/home` endpoint
-- Tater Tube Server 1.4.14+ recommended for non-blocking Home and Live TV guide
-  loading
+- Tater Tube Server 1.4.15+ for fast library loading and audio-only compatibility
+  transcoding
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
