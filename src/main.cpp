@@ -1,4 +1,5 @@
 #include "ServerClient.h"
+#include "GamepadInput.h"
 
 #include <QCommandLineOption>
 #include <QCommandLineParser>
@@ -30,16 +31,37 @@ int main(int argc, char *argv[])
     parser.addOption({QStringLiteral("screenshot"),
                       QStringLiteral("Save the initial window to a PNG and exit."),
                       QStringLiteral("path")});
+    parser.addOption({QStringLiteral("page"),
+                      QStringLiteral("Open a page for design and hardware testing."),
+                      QStringLiteral("home|library|live|search"),
+                      QStringLiteral("home")});
+    parser.addOption({QStringLiteral("play-url"),
+                      QStringLiteral("Open a URL directly in the playback screen for testing."),
+                      QStringLiteral("url")});
+    parser.addOption({QStringLiteral("compatible-playback"),
+                      QStringLiteral("Use server-provided H.264/AAC playback for on-demand video.")});
     parser.process(app);
 
     ServerClient serverClient;
+    GamepadInput gamepadInput;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("serverClient"), &serverClient);
+    engine.rootContext()->setContextProperty(QStringLiteral("gamepadInput"), &gamepadInput);
     engine.rootContext()->setContextProperty(QStringLiteral("demoMode"),
                                              parser.isSet(QStringLiteral("demo")));
+    engine.rootContext()->setContextProperty(QStringLiteral("playbackPreviewUrl"),
+                                             parser.value(QStringLiteral("play-url")));
+    engine.rootContext()->setContextProperty(QStringLiteral("compatiblePlaybackMode"),
+                                             parser.isSet(QStringLiteral("compatible-playback")));
     engine.loadFromModule(QStringLiteral("TaterTube.Player"), QStringLiteral("Main"));
     if (engine.rootObjects().isEmpty())
         return 1;
+
+    const QString initialPage = parser.value(QStringLiteral("page")).trimmed().toLower();
+    if (initialPage == QStringLiteral("home") || initialPage == QStringLiteral("library")
+        || initialPage == QStringLiteral("live") || initialPage == QStringLiteral("search")) {
+        engine.rootObjects().constFirst()->setProperty("currentPage", initialPage);
+    }
 
     const QString screenshotPath = parser.value(QStringLiteral("screenshot"));
     if (!screenshotPath.isEmpty()) {

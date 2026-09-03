@@ -21,8 +21,21 @@ than the existing GPL Tater Tube client.
 ## Qt decision gate
 
 The prototype uses Qt Quick because it provides a productive Steam desktop UI.
+Playback uses Qt Multimedia with its FFmpeg backend. Qt, Qt Multimedia, FFmpeg,
+and every codec library included in a store package must be recorded in the
+SBOM and third-party notices, with their applicable source-offer and relinking
+requirements satisfied.
+
 Before release, choose and document either a commercial Qt license or a fully
 compliant dynamic-linking and redistribution plan for the applicable Qt modules.
+
+## Controller input
+
+The Steam Deck development build uses the SDL2-compatible API supplied by
+`sdl2-compat` 2.32.70 for controller discovery and input. SDL and sdl2-compat
+use the permissive Zlib license. Keep SDL dynamically linked, pin the final
+redistributed version, and include its license in store-build third-party
+notices.
 
 ## Mascot assets
 

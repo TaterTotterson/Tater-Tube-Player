@@ -21,7 +21,8 @@ here. Existing Tater Tube applications keep their current names and behavior.
 
 ## Current milestone
 
-The current milestone is a clean desktop shell with:
+The current milestone is a Steam Deck-ready browsing and playback prototype
+with:
 
 - a couch-friendly modern home screen;
 - keyboard, controller, and remote-visible focus states;
@@ -29,6 +30,17 @@ The current milestone is a clean desktop shell with:
 - prototype persistence for the server address and player token;
 - live Continue Watching, Recently Added, and Tube TV home rows from
   `/api/v1/player/home`;
+- full-screen direct playback for local movies and episodes;
+- server-backed Library browsing across local collections, discovery filters,
+  folders, shows, and seasons, with incremental title rendering;
+- a refreshable Live TV lineup with channel now/next information and one-click
+  tuning;
+- automatic H.264 1080p server transcoding when direct playback fails;
+- Tube TV HLS playback that preserves server-scheduled commercials, spots,
+  bumpers, and station IDs;
+- play/pause, 10-second seeking, volume, back, and auto-hiding playback controls
+  for Steam Input, keyboard, and touch;
+- resume-position loading and periodic playback progress updates;
 - local poster discovery for media-adjacent `poster`, `folder`, `cover`, and
   title-matched JPG, PNG, or WebP files;
 - a deterministic demo mode for visual development and screenshots.
@@ -44,9 +56,11 @@ The pairing surface is captured in
 Requirements:
 
 - CMake 3.24+
-- Qt 6.8+ with Quick, Quick Controls, QML, Network, and Test
+- Qt 6.8+ with Quick, Quick Controls, QML, Multimedia, Network, and Test
 - A C++20 compiler
 - Tater Tube Server with the `/api/v1/player/home` endpoint
+- Tater Tube Server 1.4.14+ recommended for non-blocking Home and Live TV guide
+  loading
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
@@ -63,6 +77,31 @@ QT_QPA_PLATFORM=offscreen \
   ./build/tater-tube-player.app/Contents/MacOS/tater-tube-player \
   --demo --screenshot=build/home.png
 ```
+
+### Steam Deck development build
+
+For early hardware testing, the player can run from an isolated Arch Distrobox
+without unlocking SteamOS. Create a container named `tater-player-build` with
+CMake, Ninja, Qt 6 (including Qt Multimedia), FFmpeg, PulseAudio client
+libraries, SDL2, and a C++ compiler, then configure the Deck build at
+`~/Tater-Tube-Player/build-deck`.
+
+The development launcher is:
+
+```bash
+./scripts/run-steam-deck-dev.sh
+```
+
+`packaging/linux/com.taterassistant.TaterTubePlayer.desktop` can be added to
+Steam as a non-Steam game for Gaming Mode and Steam Input testing. This
+Distrobox launcher is only for development; the Steam release will ship a
+self-contained runtime and will not require Distrobox.
+
+The Deck launcher forwards SteamOS's PipeWire/Pulse audio socket into the
+development container. For on-demand video, it keeps the original video stream
+untouched and asks the server to convert only the audio to stereo AAC. If that
+video cannot be copied into the compatibility stream, the player falls back to
+a full H.264/AAC transcode.
 
 ## Licensing status
 

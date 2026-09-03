@@ -50,11 +50,26 @@ Implemented:
 ```text
 GET  /api/v1/player/home
 GET  /api/v1/player/artwork/local
+GET  /api/tater/local/stream
+GET  /api/tater/usenet/catalog
+GET  /api/tater/usenet/items
+GET  /api/tater/tv/lineup
+POST /api/tater/playstate
 ```
 
 The home response aggregates capabilities, Continue Watching, Recently Added,
 library roots, and lightweight Tube TV now/next data. Local artwork accepts
-media-adjacent `poster`, `folder`, `cover`, and title-matched images.
+media-adjacent `poster`, `folder`, `cover`, and title-matched images. The Steam
+Deck compatibility path copies the original video without re-encoding it and
+transcodes only the first audio track to stereo AAC. If the original video cannot
+be copied safely into the compatibility stream, the player falls back to a full
+H.264/AAC `hdmi_1080p` transcode. Tube TV channel URLs are server-produced HLS
+and keep server-scheduled commercials, bumpers, spots, and station IDs intact.
+
+The first Library and Live TV milestones also use the existing authenticated
+catalog, item-browse, and lineup compatibility routes. They do not alter those
+routes, so original Tater Tube clients remain unaffected. These calls will move
+behind equivalent versioned player routes as that API is completed.
 
 Planned surface:
 
@@ -72,6 +87,8 @@ GET  /api/v1/player/images/{id}/{kind}
 
 `playback/sessions` should accept codec, container, HDR, audio, subtitle, and
 resolution capabilities and return either a direct stream or an HLS stream.
+That server-selected playback plan will replace the client's first-generation
+error-triggered fallback and enable adaptive bandwidth profiles.
 
 ## Platform plan
 

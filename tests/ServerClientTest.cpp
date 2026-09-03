@@ -14,6 +14,9 @@ private slots:
     void buildsEndpointUrls();
     void rejectsUnsupportedAddresses();
     void loadsVersionedHome();
+    void addsPlaybackTranscodeParameters();
+    void addsAudioOnlyTranscodeParameters();
+    void postsPlaybackProgress();
 };
 
 void ServerClientTest::normalizesServerAddresses()
@@ -58,6 +61,12 @@ void ServerClientTest::loadsVersionedHome()
                     body = R"({"success":true,"data":{"name":"Test Tater Server","version":"9.9.9"}})";
                 } else if (request.startsWith("GET /api/v1/player/home ")) {
                     body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"tubeTV":true,"commercials":true},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Movie","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
+                } else if (request.startsWith("GET /api/tater/usenet/catalog ")) {
+                    body = R"({"success":true,"data":{"categories":[{"type":"tubeTv","title":"Tube TV"},{"type":"localRoot","title":"Local","children":[{"type":"continue","title":"Continue Watching"},{"id":"local:movies","type":"local","title":"Movies"}]}]}})";
+                } else if (request.startsWith("GET /api/tater/usenet/items?")) {
+                    body = R"({"success":true,"data":{"title":"Movies","items":[{"title":"A Folder","type":"localFolder","mediaType":"folder","categoryId":"local:movies","sourceIndex":0,"path":"Folder"},{"title":"Playable Movie","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Movie.mkv","streamUrl":"http://tube.test/movie"}]}})";
+                } else if (request.startsWith("GET /api/tater/tv/lineup ")) {
+                    body = R"({"success":true,"data":{"startedAt":"2026-09-02T12:00:00Z","serverNow":"2026-09-02T12:00:30Z","channels":[{"number":"12","title":"Cartoons","streamUrl":"http://tube.test/live/12","schedule":[{"title":"Playing Now","kind":"movie","start":0,"end":60},{"title":"Up Next","kind":"movie","start":60,"end":120}]}]}})";
                 } else {
                     body = R"({"success":false,"error":{"message":"Not found"}})";
                 }
@@ -94,6 +103,122 @@ void ServerClientTest::loadsVersionedHome()
     QVERIFY(client.capabilities().value("commercials").toBool());
     QCOMPARE(client.homeWarnings(), QStringList{QStringLiteral("Sample warning")});
     QVERIFY(requests.contains("Authorization: Bearer test-token"));
+
+    client.refreshLibraries();
+    QTRY_VERIFY_WITH_TIMEOUT(requests.contains("GET /api/tater/usenet/catalog "), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(client.libraries().size(), 2, 3000);
+    client.browseLibrary(client.libraries().last().toMap());
+    QTRY_COMPARE_WITH_TIMEOUT(client.libraryDepth(), 1, 3000);
+    QCOMPARE(client.libraryTitle(), QStringLiteral("Movies"));
+    QCOMPARE(client.libraryItems().size(), 2);
+    QCOMPARE(client.libraryItems().last().toMap().value("title").toString(),
+             QStringLiteral("Playable Movie"));
+    client.browseLibraryBack();
+    QCOMPARE(client.libraryDepth(), 0);
+
+    const qsizetype itemRequestCount = requests.count("GET /api/tater/usenet/items?");
+    client.browseLibrary(client.libraries().last().toMap());
+    QCOMPARE(client.libraryDepth(), 1);
+    QCOMPARE(client.libraryItems().size(), 2);
+    QCOMPARE(requests.count("GET /api/tater/usenet/items?"), itemRequestCount);
+    client.refreshLibrary();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        requests.count("GET /api/tater/usenet/items?") > itemRequestCount, 3000);
+
+    client.refreshLiveGuide();
+    QTRY_VERIFY_WITH_TIMEOUT(client.liveGuideReady(), 3000);
+    QCOMPARE(client.liveGuideChannels().size(), 1);
+    const QVariantMap channel = client.liveGuideChannels().first().toMap();
+    QCOMPARE(channel.value("now").toMap().value("title").toString(),
+             QStringLiteral("Playing Now"));
+    QCOMPARE(channel.value("next").toMap().value("title").toString(),
+             QStringLiteral("Up Next"));
+    QCOMPARE(channel.value("now").toMap().value("progressPercent").toDouble(), 50.0);
+
+    settings.clear();
+}
+
+void ServerClientTest::addsPlaybackTranscodeParameters()
+{
+    ServerClient client;
+    const QString fallback = client.playbackTranscodeUrl(
+        QStringLiteral("http://tube.local/api/tater/local/stream?player_token=a%20b&direct=1"),
+        QStringLiteral("hdmi_720p"), 12345);
+    const QUrl url(fallback);
+    const QUrlQuery query(url);
+
+    QCOMPARE(query.queryItemValue(QStringLiteral("player_token")), QStringLiteral("a b"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("transcode")), QStringLiteral("1"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("profile")), QStringLiteral("hdmi_720p"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("codec")), QStringLiteral("h264"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("start")), QStringLiteral("12.345"));
+    QVERIFY(!query.hasQueryItem(QStringLiteral("direct")));
+}
+
+void ServerClientTest::addsAudioOnlyTranscodeParameters()
+{
+    ServerClient client;
+    const QString fallback = client.playbackAudioTranscodeUrl(
+        QStringLiteral("http://tube.local/api/tater/local/stream?player_token=a%20b&direct=1&codec=hevc"),
+        QStringLiteral("hdmi_1080p"), 12345);
+    const QUrl url(fallback);
+    const QUrlQuery query(url);
+
+    QCOMPARE(query.queryItemValue(QStringLiteral("player_token")), QStringLiteral("a b"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("transcode")), QStringLiteral("audio"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("profile")), QStringLiteral("hdmi_1080p"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("start")), QStringLiteral("12.345"));
+    QVERIFY(!query.hasQueryItem(QStringLiteral("direct")));
+    QVERIFY(!query.hasQueryItem(QStringLiteral("codec")));
+}
+
+void ServerClientTest::postsPlaybackProgress()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    QByteArray requests;
+
+    connect(&server, &QTcpServer::newConnection, &server, [&] {
+        while (QTcpSocket *socket = server.nextPendingConnection()) {
+            connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
+                const QByteArray request = socket->readAll();
+                if (!request.contains("\r\n\r\n"))
+                    return;
+                requests.append(request);
+                const QByteArray body = R"({"success":true,"data":{"saved":true}})";
+                socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n")
+                              + "Content-Type: application/json\r\nContent-Length: "
+                              + QByteArray::number(body.size())
+                              + "\r\nConnection: close\r\n\r\n" + body);
+                socket->disconnectFromHost();
+            });
+        }
+    });
+
+    QCoreApplication::setOrganizationName(QStringLiteral("TaterPlayerTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("ServerClientTest"));
+    QSettings settings;
+    settings.clear();
+    settings.setValue(QStringLiteral("connection/serverUrl"),
+                      QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+    settings.setValue(QStringLiteral("connection/playerToken"), QStringLiteral("progress-token"));
+
+    ServerClient client;
+    client.savePlaybackProgress({
+        {QStringLiteral("playStateId"), QStringLiteral("local:state")},
+        {QStringLiteral("title"), QStringLiteral("Test Movie")},
+        {QStringLiteral("mediaType"), QStringLiteral("movie")},
+        {QStringLiteral("categoryId"), QStringLiteral("local:movies")},
+        {QStringLiteral("sourceIndex"), 0},
+        {QStringLiteral("path"), QStringLiteral("Test Movie.mkv")},
+    }, 12345, 60000, false);
+
+    QTRY_VERIFY_WITH_TIMEOUT(requests.contains("POST /api/tater/playstate "), 3000);
+    QVERIFY(requests.contains("Authorization: Bearer progress-token"));
+    QVERIFY(requests.contains("\"categoryId\":\"local:movies\""));
+    QVERIFY(requests.contains("\"durationMs\":60000"));
+    QVERIFY(requests.contains("\"path\":\"Test Movie.mkv\""));
+    QVERIFY(requests.contains("\"positionMs\":12345"));
 
     settings.clear();
 }

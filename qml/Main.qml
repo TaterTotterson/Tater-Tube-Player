@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QtMultimedia
 import "components"
 
 ApplicationWindow {
@@ -20,6 +21,26 @@ ApplicationWindow {
     readonly property color panelSoft: "#282c31"
     readonly property color textPrimary: "#f6f6f3"
     readonly property color textSecondary: "#aaafb4"
+    property string currentPage: "home"
+    property var selectedItem: ({})
+    property string selectedKind: "MEDIA"
+    property bool detailsOpen: false
+    property var returnFocusItem: null
+    property bool playbackOpen: false
+    property var playbackItem: ({})
+    property bool playbackIsLive: false
+    property string playbackSourceUrl: ""
+    property bool playbackUsingFallback: false
+    property bool playbackUsingAudioTranscode: false
+    property real playbackBaseOffsetMs: 0
+    property real playbackPendingResumeMs: 0
+    property string playbackError: ""
+    property string playbackStatusMessage: ""
+    property string playbackQuality: "Direct play"
+    property bool playbackControlsVisible: true
+    property bool playbackEnded: false
+    readonly property bool compatiblePlayback: compatiblePlaybackMode === true
+    property int libraryVisibleLimit: 60
 
     function itemTitle(item, fallback) {
         return item && item.title ? item.title : fallback
@@ -89,7 +110,519 @@ ApplicationWindow {
         return channelTitle(channel) + " is live now on channel " + channel.number + "."
     }
 
-    Component.onCompleted: homeNav.forceActiveFocus()
+    function libraryMediaItems() {
+        if (demoMode) {
+            return [
+                {title: "Cosmic Drift", date: "2026", mediaType: "movie"},
+                {title: "Harbor Street", date: "2024", mediaType: "series"},
+                {title: "The Long Winter", date: "2025", mediaType: "movie"},
+                {title: "Signal Lost", date: "2023", mediaType: "series"},
+                {title: "Dust & Thunder", date: "2026", mediaType: "movie"},
+                {title: "Side Streets", date: "2022", mediaType: "movie"}
+            ]
+        }
+        return serverClient.recentlyAdded.length > 0
+                ? serverClient.recentlyAdded : serverClient.continueWatching
+    }
+
+    function librarySources() {
+        if (demoMode) {
+            return [{title: "Movies", detail: "LOCAL MEDIA", id: "demo:movies"},
+                    {title: "TV Shows", detail: "LOCAL MEDIA", id: "demo:tv"}]
+        }
+        var result = []
+        for (var i = 0; i < serverClient.libraries.length; ++i) {
+            var source = serverClient.libraries[i]
+            if (source && source.type === "localDiscoverRoot" && source.children) {
+                for (var j = 0; j < source.children.length; ++j)
+                    result.push(source.children[j])
+            } else {
+                result.push(source)
+            }
+        }
+        return result
+    }
+
+    function displayedLibraryItems() {
+        if (demoMode)
+            return libraryMediaItems()
+        return serverClient.libraryDepth > 0
+                ? serverClient.libraryItems : libraryMediaItems()
+    }
+
+    function libraryItemMeta(item) {
+        if (!item)
+            return ""
+        if (demoMode)
+            return itemMeta(item)
+        if (!item.streamUrl)
+            return String(item.sizeText || item.mediaType || "BROWSE").toUpperCase()
+        return itemMeta(item)
+    }
+
+    function openLibraryEntry(item) {
+        if (!item)
+            return
+        if (item.streamUrl) {
+            openDetails(item, mediaLabel(item))
+        } else if (!demoMode) {
+            libraryVisibleLimit = 60
+            serverClient.browseLibraryItem(item)
+            sectionScroller.contentY = 0
+        } else {
+            openDetails(item, mediaLabel(item))
+        }
+    }
+
+    function demoLiveChannels() {
+        return [{number: "12", title: "Saturday Cartoons",
+                 streamUrl: "", now: {title: "Galaxy Rangers", progressPercent: 67},
+                 next: {title: "Creature Features"}},
+                {number: "24", title: "Creature Features",
+                 streamUrl: "", now: {title: "Night Visitors", progressPercent: 38},
+                 next: {title: "Midnight Matinee"}},
+                {number: "88", title: "Neon Nights",
+                 streamUrl: "", now: {title: "Electric Dreams", progressPercent: 52},
+                 next: {title: "After Hours"}}]
+    }
+
+    function displayedLiveChannels() {
+        if (demoMode)
+            return demoLiveChannels()
+        return serverClient.liveGuideChannels.length > 0
+                ? serverClient.liveGuideChannels : serverClient.liveChannels
+    }
+
+    function searchableMediaItems() {
+        var items = []
+        var source = libraryMediaItems()
+        for (var i = 0; i < source.length; ++i)
+            items.push(source[i])
+        for (var j = 0; j < serverClient.continueWatching.length; ++j) {
+            var candidate = serverClient.continueWatching[j]
+            var found = false
+            for (var k = 0; k < items.length; ++k) {
+                if (itemTitle(items[k], "") === itemTitle(candidate, "")) {
+                    found = true
+                    break
+                }
+            }
+            if (!found)
+                items.push(candidate)
+        }
+        return items
+    }
+
+    function filteredMediaItems(query) {
+        var items = searchableMediaItems()
+        var needle = String(query || "").trim().toLowerCase()
+        if (needle.length === 0)
+            return items
+        var matches = []
+        for (var i = 0; i < items.length; ++i) {
+            var haystack = [items[i].title, items[i].artist, items[i].album,
+                            items[i].genre, items[i].category].join(" ").toLowerCase()
+            if (haystack.indexOf(needle) >= 0)
+                matches.push(items[i])
+        }
+        return matches
+    }
+
+    function showPage(name) {
+        detailsOpen = false
+        currentPage = name
+        page.contentY = 0
+        sectionScroller.contentY = 0
+        if (name === "library" && !demoMode && serverClient.libraries.length === 0)
+            serverClient.refreshLibraries()
+        if (name === "live" && !demoMode)
+            serverClient.refreshLiveGuide()
+        Qt.callLater(function() {
+            if (name === "home")
+                homeNav.forceActiveFocus()
+            else if (name === "library")
+                libraryNav.forceActiveFocus()
+            else if (name === "live")
+                liveNav.forceActiveFocus()
+            else
+                searchNav.forceActiveFocus()
+        })
+    }
+
+    function playbackTitle() {
+        if (playbackIsLive)
+            return channelTitle(playbackItem)
+        return itemTitle(playbackItem, "Tater Tube")
+    }
+
+    function playbackDurationMs() {
+        var seconds = Number(playbackItem && playbackItem.durationSeconds
+                             ? playbackItem.durationSeconds : 0)
+        if (seconds <= 0 && playbackItem && playbackItem.duration)
+            seconds = Number(playbackItem.duration)
+        if (seconds > 0)
+            return seconds * 1000
+        return Math.max(0, Number(mediaPlayer.duration || 0) + playbackBaseOffsetMs)
+    }
+
+    function playbackPositionMs() {
+        return Math.max(0, Number(mediaPlayer.position || 0) + playbackBaseOffsetMs)
+    }
+
+    function formatPlaybackTime(milliseconds) {
+        var total = Math.max(0, Math.floor(Number(milliseconds || 0) / 1000))
+        var hours = Math.floor(total / 3600)
+        var minutes = Math.floor((total % 3600) / 60)
+        var seconds = total % 60
+        if (hours > 0)
+            return hours + ":" + String(minutes).padStart(2, "0")
+                    + ":" + String(seconds).padStart(2, "0")
+        return minutes + ":" + String(seconds).padStart(2, "0")
+    }
+
+    function showPlaybackControls() {
+        playbackControlsVisible = true
+        if (mediaPlayer.playbackState === MediaPlayer.PlayingState)
+            playbackControlsTimer.restart()
+    }
+
+    function startPlayback(item, kind) {
+        if (!item)
+            return
+        var source = String(item.streamUrl || "").trim()
+        if (source.length === 0)
+            return
+
+        mediaPlayer.stop()
+        playbackItem = item
+        playbackIsLive = String(kind || "").indexOf("CHANNEL") === 0
+        playbackSourceUrl = source
+        playbackUsingFallback = false
+        playbackUsingAudioTranscode = false
+        playbackBaseOffsetMs = 0
+        playbackPendingResumeMs = playbackIsLive ? 0 : Number(item.viewOffset || 0)
+        if (playbackPendingResumeMs <= 0 && item.viewOffsetSeconds)
+            playbackPendingResumeMs = Number(item.viewOffsetSeconds) * 1000
+        playbackError = ""
+        playbackStatusMessage = playbackIsLive ? "Tuning your channel…" : "Opening your media…"
+        playbackQuality = playbackIsLive ? "Live HLS" : "Direct play"
+        playbackEnded = false
+        playbackControlsVisible = true
+        detailsOpen = false
+        playbackOpen = true
+        if (!playbackIsLive && compatiblePlayback) {
+            playbackUsingAudioTranscode = true
+            playbackBaseOffsetMs = Math.max(0, playbackPendingResumeMs)
+            playbackPendingResumeMs = 0
+            playbackStatusMessage = "Preparing compatible audio…"
+            playbackQuality = "Video Direct • Audio AAC"
+            mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
+                        source, "hdmi_1080p", Math.round(playbackBaseOffsetMs))
+        } else {
+            mediaPlayer.source = source
+        }
+        mediaPlayer.play()
+        playbackControlsTimer.restart()
+    }
+
+    function savePlaybackState(completed) {
+        if (!playbackOpen || playbackIsLive || !playbackItem)
+            return
+        serverClient.savePlaybackProgress(playbackItem,
+                                          Math.round(playbackPositionMs()),
+                                          Math.round(playbackDurationMs()),
+                                          completed === true)
+    }
+
+    function closePlayback() {
+        if (!playbackOpen)
+            return
+        if (!playbackEnded)
+            savePlaybackState(false)
+        mediaPlayer.stop()
+        playbackOpen = false
+        playbackError = ""
+        playbackStatusMessage = ""
+        var target = returnFocusItem
+        returnFocusItem = null
+        if (target && target.visible)
+            Qt.callLater(function() { target.forceActiveFocus() })
+        else
+            Qt.callLater(function() { homeNav.forceActiveFocus() })
+    }
+
+    function retryWithCompatibleStream(reason) {
+        if (playbackIsLive || playbackUsingFallback || playbackSourceUrl.length === 0)
+            return false
+
+        var resumeAt = Math.max(playbackPendingResumeMs, playbackPositionMs())
+        playbackUsingFallback = true
+        playbackUsingAudioTranscode = false
+        playbackBaseOffsetMs = resumeAt
+        playbackPendingResumeMs = 0
+        playbackError = ""
+        playbackStatusMessage = "Optimizing video and audio for your Steam Deck…"
+        playbackQuality = "Video H.264 • Audio AAC"
+        mediaPlayer.stop()
+        mediaPlayer.source = serverClient.playbackTranscodeUrl(
+                    playbackSourceUrl, "hdmi_1080p", Math.round(resumeAt))
+        Qt.callLater(function() { mediaPlayer.play() })
+        return true
+    }
+
+    function togglePlayback() {
+        if (!playbackOpen || playbackError.length > 0)
+            return
+        playbackEnded = false
+        if (mediaPlayer.playbackState === MediaPlayer.PlayingState)
+            mediaPlayer.pause()
+        else
+            mediaPlayer.play()
+        showPlaybackControls()
+    }
+
+    function seekPlayback(targetMs) {
+        if (!playbackOpen || playbackIsLive)
+            return
+        var duration = playbackDurationMs()
+        var target = Math.max(0, Math.min(duration > 0 ? duration - 1000 : targetMs,
+                                          Number(targetMs)))
+        playbackEnded = false
+        if (playbackUsingFallback) {
+            playbackBaseOffsetMs = target
+            playbackStatusMessage = "Seeking…"
+            mediaPlayer.stop()
+            mediaPlayer.source = serverClient.playbackTranscodeUrl(
+                        playbackSourceUrl, "hdmi_1080p", Math.round(target))
+            Qt.callLater(function() { mediaPlayer.play() })
+        } else if (playbackUsingAudioTranscode) {
+            playbackBaseOffsetMs = target
+            playbackStatusMessage = "Seeking…"
+            mediaPlayer.stop()
+            mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
+                        playbackSourceUrl, "hdmi_1080p", Math.round(target))
+            Qt.callLater(function() { mediaPlayer.play() })
+        } else {
+            mediaPlayer.setPosition(Math.round(target))
+        }
+        showPlaybackControls()
+    }
+
+    function seekPlaybackBy(deltaMs) {
+        seekPlayback(playbackPositionMs() + deltaMs)
+    }
+
+    function changePlaybackVolume(delta) {
+        playerAudio.volume = Math.max(0, Math.min(1, playerAudio.volume + delta))
+        playerAudio.muted = false
+        showPlaybackControls()
+    }
+
+    function selectPlaybackAudioTrack() {
+        if (mediaPlayer.audioTracks.length > 0 && mediaPlayer.activeAudioTrack < 0)
+            mediaPlayer.activeAudioTrack = 0
+        playerAudio.muted = false
+    }
+
+    function openDetails(item, kind) {
+        if (!item)
+            return
+        returnFocusItem = root.activeFocusItem
+        selectedItem = item
+        selectedKind = kind || mediaLabel(item)
+        detailsOpen = true
+        Qt.callLater(function() { detailsBack.forceActiveFocus() })
+    }
+
+    function closeDetails() {
+        detailsOpen = false
+        var target = returnFocusItem
+        returnFocusItem = null
+        if (target && target.visible)
+            Qt.callLater(function() { target.forceActiveFocus() })
+    }
+
+    function goBack() {
+        if (playbackOpen) {
+            closePlayback()
+        } else if (detailsOpen) {
+            closeDetails()
+        } else if (currentPage === "library" && !demoMode
+                   && serverClient.libraryDepth > 0) {
+            libraryVisibleLimit = 60
+            serverClient.browseLibraryBack()
+            sectionScroller.contentY = 0
+        } else if (currentPage !== "home") {
+            showPage("home")
+        }
+    }
+
+    function appendFocusable(node, result) {
+        if (!node || !node.visible || !node.enabled)
+            return
+        if (node.activeFocusOnTab === true && node.width > 0 && node.height > 0)
+            result.push(node)
+        var children = node.children || []
+        for (var i = 0; i < children.length; ++i)
+            appendFocusable(children[i], result)
+    }
+
+    function focusableItems() {
+        var result = []
+        if (pairingOverlay.visible) {
+            appendFocusable(pairingOverlay, result)
+        } else if (detailsOpen) {
+            appendFocusable(detailsPanel, result)
+        } else {
+            appendFocusable(topBar, result)
+            appendFocusable(currentPage === "home" ? page.contentItem
+                                                    : sectionScroller.contentItem, result)
+        }
+        return result
+    }
+
+    function isDescendant(item, ancestor) {
+        var candidate = item
+        while (candidate) {
+            if (candidate === ancestor)
+                return true
+            candidate = candidate.parent
+        }
+        return false
+    }
+
+    function revealFocusedItem(item) {
+        var scroller = currentPage === "home" ? page : sectionScroller
+        if (!isDescendant(item, scroller.contentItem))
+            return
+        var point = item.mapToItem(scroller.contentItem, 0, 0)
+        var upper = scroller.contentY + 24
+        var lower = scroller.contentY + scroller.height - 30
+        if (point.y < upper)
+            scroller.contentY = Math.max(0, point.y - 24)
+        else if (point.y + item.height > lower)
+            scroller.contentY = Math.min(scroller.contentHeight - scroller.height,
+                                         point.y + item.height - scroller.height + 30)
+    }
+
+    function focusFirstSectionControl() {
+        var candidates = focusableItems()
+        for (var i = 0; i < candidates.length; ++i) {
+            if (isDescendant(candidates[i], sectionScroller.contentItem)) {
+                candidates[i].forceActiveFocus()
+                revealFocusedItem(candidates[i])
+                return
+            }
+        }
+    }
+
+    function moveFocus(horizontal, vertical) {
+        var candidates = focusableItems()
+        if (candidates.length === 0)
+            return
+        var current = root.activeFocusItem
+        var currentIndex = candidates.indexOf(current)
+        if (currentIndex < 0) {
+            candidates[0].forceActiveFocus()
+            revealFocusedItem(candidates[0])
+            return
+        }
+
+        var origin = current.mapToItem(root.contentItem, current.width / 2, current.height / 2)
+        var winner = null
+        var winnerScore = Number.MAX_VALUE
+        for (var i = 0; i < candidates.length; ++i) {
+            var candidate = candidates[i]
+            if (candidate === current)
+                continue
+            var point = candidate.mapToItem(root.contentItem,
+                                            candidate.width / 2, candidate.height / 2)
+            var dx = point.x - origin.x
+            var dy = point.y - origin.y
+            if ((horizontal < 0 && dx >= -4) || (horizontal > 0 && dx <= 4)
+                    || (vertical < 0 && dy >= -4) || (vertical > 0 && dy <= 4))
+                continue
+            var primary = horizontal !== 0 ? Math.abs(dx) : Math.abs(dy)
+            var cross = horizontal !== 0 ? Math.abs(dy) : Math.abs(dx)
+            var score = primary + cross * 2.4
+            if (score < winnerScore) {
+                winner = candidate
+                winnerScore = score
+            }
+        }
+        if (winner) {
+            winner.forceActiveFocus()
+            revealFocusedItem(winner)
+        }
+    }
+
+    function activateFocusedItem() {
+        var item = root.activeFocusItem
+        if (!item)
+            return
+        if (typeof item.activate === "function") {
+            item.activate()
+        } else if (item === serverField || item === pinField || item === searchField) {
+            item.forceActiveFocus()
+            Qt.inputMethod.show()
+        }
+    }
+
+    Component.onCompleted: {
+        if (String(playbackPreviewUrl || "").length > 0) {
+            returnFocusItem = homeNav
+            startPlayback({title: "Playback preview", mediaType: "video",
+                              streamUrl: playbackPreviewUrl}, "VIDEO")
+        } else if (pairingOverlay.visible)
+            serverField.forceActiveFocus()
+        else
+            homeNav.forceActiveFocus()
+    }
+
+    Connections {
+        target: gamepadInput
+        function onNavigateLeft() {
+            if (root.playbackOpen) root.seekPlaybackBy(-10000)
+            else root.moveFocus(-1, 0)
+        }
+        function onNavigateRight() {
+            if (root.playbackOpen) root.seekPlaybackBy(10000)
+            else root.moveFocus(1, 0)
+        }
+        function onNavigateUp() {
+            if (root.playbackOpen) root.changePlaybackVolume(0.05)
+            else root.moveFocus(0, -1)
+        }
+        function onNavigateDown() {
+            if (root.playbackOpen) root.changePlaybackVolume(-0.05)
+            else root.moveFocus(0, 1)
+        }
+        function onAccept() {
+            if (root.playbackOpen) root.togglePlayback()
+            else root.activateFocusedItem()
+        }
+        function onBack() { root.goBack() }
+    }
+
+    Connections {
+        target: serverClient
+        function onLibraryChanged() {
+            if (root.currentPage === "library" && !serverClient.libraryLoading)
+                Qt.callLater(function() { root.focusFirstSectionControl() })
+        }
+    }
+
+    Shortcut { sequence: "Left"; onActivated: root.playbackOpen ? root.seekPlaybackBy(-10000) : root.moveFocus(-1, 0) }
+    Shortcut { sequence: "Right"; onActivated: root.playbackOpen ? root.seekPlaybackBy(10000) : root.moveFocus(1, 0) }
+    Shortcut { sequence: "Up"; onActivated: root.playbackOpen ? root.changePlaybackVolume(0.05) : root.moveFocus(0, -1) }
+    Shortcut { sequence: "Down"; onActivated: root.playbackOpen ? root.changePlaybackVolume(-0.05) : root.moveFocus(0, 1) }
+    Shortcut { sequence: "Esc"; onActivated: root.goBack() }
+    Shortcut { sequence: "Space"; enabled: root.playbackOpen; onActivated: root.togglePlayback() }
+
+    onClosing: function(close) {
+        if (root.playbackOpen && !root.playbackEnded)
+            root.savePlaybackState(false)
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -172,11 +705,30 @@ ApplicationWindow {
                 id: homeNav
                 text: "Home"
                 compact: true
-                selected: true
+                selected: root.currentPage === "home"
+                onClicked: root.showPage("home")
             }
-            FocusButton { text: "Library"; compact: true }
-            FocusButton { text: "Live TV"; compact: true }
-            FocusButton { text: "Search"; compact: true }
+            FocusButton {
+                id: libraryNav
+                text: "Library"
+                compact: true
+                selected: root.currentPage === "library"
+                onClicked: root.showPage("library")
+            }
+            FocusButton {
+                id: liveNav
+                text: "Live TV"
+                compact: true
+                selected: root.currentPage === "live"
+                onClicked: root.showPage("live")
+            }
+            FocusButton {
+                id: searchNav
+                text: "Search"
+                compact: true
+                selected: root.currentPage === "search"
+                onClicked: root.showPage("search")
+            }
         }
 
         Rectangle {
@@ -204,8 +756,9 @@ ApplicationWindow {
                 }
 
                 Text {
-                    text: demoMode ? "DEMO LIBRARY"
-                                   : (serverClient.online ? "SERVER ONLINE" : "SERVER OFFLINE")
+                    text: (demoMode ? "DEMO LIBRARY"
+                                    : (serverClient.online ? "SERVER ONLINE" : "SERVER OFFLINE"))
+                          + (gamepadInput.connected ? "  •  CONTROLLER" : "")
                     color: "#d9dbdc"
                     font.pixelSize: 11
                     font.weight: Font.Bold
@@ -341,8 +894,15 @@ ApplicationWindow {
                         topPadding: 7
                         spacing: 12
 
-                        FocusButton { text: "▶  Watch live"; primary: true }
-                        FocusButton { text: "Browse library" }
+                        FocusButton {
+                            text: "▶  Watch live"
+                            primary: true
+                            onClicked: root.showPage("live")
+                        }
+                        FocusButton {
+                            text: "Browse library"
+                            onClicked: root.showPage("library")
+                        }
                     }
                 }
             }
@@ -390,6 +950,8 @@ ApplicationWindow {
                         subtitle: "Resume from 01:16:08"
                         accent: "#f27822"
                         progress: 0.58
+                        onActivated: root.openDetails({title: title, mediaType: "movie",
+                                                        description: subtitle}, "MOVIE")
                     }
                     MediaCard {
                         width: (parent.width - 45) / 4
@@ -398,6 +960,8 @@ ApplicationWindow {
                         subtitle: "The Long Way Home"
                         accent: "#547d8b"
                         progress: 0.31
+                        onActivated: root.openDetails({title: title, mediaType: "episode",
+                                                        description: subtitle}, "EPISODE")
                     }
                     MediaCard {
                         width: (parent.width - 45) / 4
@@ -406,6 +970,8 @@ ApplicationWindow {
                         subtitle: "Resume from 01:34:22"
                         accent: "#bd633d"
                         progress: 0.81
+                        onActivated: root.openDetails({title: title, mediaType: "movie",
+                                                        description: subtitle}, "MOVIE")
                     }
                     MediaCard {
                         width: (parent.width - 45) / 4
@@ -414,6 +980,8 @@ ApplicationWindow {
                         subtitle: "Static in the Valley"
                         accent: "#6b5b7d"
                         progress: 0.46
+                        onActivated: root.openDetails({title: title, mediaType: "episode",
+                                                        description: subtitle}, "EPISODE")
                     }
                 }
             }
@@ -448,6 +1016,7 @@ ApplicationWindow {
                             artSource: media && media.poster ? media.poster : ""
                             accent: root.cardAccent(index)
                             progress: root.progressValue(media ? media.progressPercent : 0)
+                            onActivated: root.openDetails(media, root.mediaLabel(media))
                         }
                     }
                 }
@@ -481,6 +1050,7 @@ ApplicationWindow {
                             badge: "12"
                             accent: "#ef7423"
                             progress: 0.67
+                            onActivated: root.showPage("live")
                         }
                         MediaCard {
                             width: (parent.width - 30) / 3
@@ -490,6 +1060,7 @@ ApplicationWindow {
                             badge: "24"
                             accent: "#75864b"
                             progress: 0.38
+                            onActivated: root.showPage("live")
                         }
                         MediaCard {
                             width: (parent.width - 30) / 3
@@ -499,6 +1070,7 @@ ApplicationWindow {
                             badge: "88"
                             accent: "#6a597d"
                             progress: 0.52
+                            onActivated: root.showPage("live")
                         }
                     }
                 }
@@ -595,6 +1167,7 @@ ApplicationWindow {
                                 accent: root.cardAccent(index)
                                 progress: root.progressValue(currentProgram
                                                              ? currentProgram.progressPercent : 0)
+                                onActivated: root.openDetails(channel, "CHANNEL " + channel.number)
                             }
                         }
                     }
@@ -702,6 +1275,7 @@ ApplicationWindow {
                             number: index < 9 ? "0" + (index + 1) : String(index + 1)
                             artSource: media && media.poster ? media.poster : ""
                             accent: root.cardAccent(index)
+                            onActivated: root.openDetails(media, root.mediaLabel(media))
                         }
                     }
                 }
@@ -783,11 +1357,1100 @@ ApplicationWindow {
     }
 
     Rectangle {
+        id: sectionPage
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: topBar.bottom
+        anchors.bottom: parent.bottom
+        visible: root.currentPage !== "home"
+        color: root.color
+        z: 40
+
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#171a1e" }
+            GradientStop { position: 1.0; color: "#0c0e10" }
+        }
+
+        Flickable {
+            id: sectionScroller
+            anchors.fill: parent
+            contentHeight: sectionColumn.implicitHeight + 72
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            Column {
+                id: sectionColumn
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 46
+                anchors.rightMargin: 46
+                anchors.top: parent.top
+                anchors.topMargin: 34
+                spacing: 28
+
+                Column {
+                    width: parent.width
+                    visible: root.currentPage === "library"
+                    spacing: 22
+
+                    Row {
+                        width: parent.width
+                        spacing: 16
+
+                        Column {
+                            width: parent.width - libraryActions.width - parent.spacing
+                            spacing: 7
+
+                            Text {
+                                text: !demoMode && serverClient.libraryDepth > 0
+                                      ? serverClient.libraryTitle : "Your library"
+                                color: root.textPrimary
+                                font.pixelSize: 38
+                                font.weight: Font.Black
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: !demoMode && serverClient.libraryDepth > 0
+                                      ? "Choose a folder, show, or season—or open a title to start watching."
+                                      : "Browse every local movie, show, season, and folder on your Tater Tube Server."
+                                color: root.textSecondary
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 16
+                            }
+                        }
+
+                        Row {
+                            id: libraryActions
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 10
+
+                            FocusButton {
+                                visible: !demoMode && serverClient.libraryDepth > 0
+                                width: 180
+                                text: "‹  Back"
+                                onClicked: {
+                                    root.libraryVisibleLimit = 60
+                                    serverClient.browseLibraryBack()
+                                    sectionScroller.contentY = 0
+                                }
+                            }
+
+                            FocusButton {
+                                visible: !demoMode
+                                width: 150
+                                text: "Refresh"
+                                onClicked: serverClient.libraryDepth > 0
+                                           ? serverClient.refreshLibrary()
+                                           : serverClient.refreshLibraries()
+                            }
+                        }
+                    }
+
+                    Flow {
+                        width: parent.width
+                        spacing: 12
+                        visible: demoMode || serverClient.libraryDepth === 0
+
+                        Repeater {
+                            model: root.librarySources().length
+
+                            FocusButton {
+                                required property int index
+                                property var library: root.librarySources()[index]
+                                width: Math.max(190, implicitWidth)
+                                text: root.itemTitle(library, "Library")
+                                onClicked: {
+                                    if (!demoMode) {
+                                        root.libraryVisibleLimit = 60
+                                        serverClient.browseLibrary(library)
+                                        sectionScroller.contentY = 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    SectionTitle {
+                        width: parent.width
+                        title: !demoMode && serverClient.libraryDepth > 0
+                               ? serverClient.libraryTitle : "Recently added"
+                        actionText: serverClient.libraryLoading
+                                    ? "LOADING…"
+                                    : root.displayedLibraryItems().length + " ITEMS"
+                    }
+
+                    Grid {
+                        id: libraryGrid
+                        width: parent.width
+                        visible: !serverClient.libraryLoading
+                                 && serverClient.libraryErrorMessage.length === 0
+                        columns: Math.max(1, Math.floor(width / 205))
+                        columnSpacing: 15
+                        rowSpacing: 18
+
+                        Repeater {
+                            model: Math.min(root.libraryVisibleLimit,
+                                            root.displayedLibraryItems().length)
+
+                            PosterCard {
+                                required property int index
+                                property var media: root.displayedLibraryItems()[index]
+                                width: (libraryGrid.width
+                                        - (libraryGrid.columns - 1) * libraryGrid.columnSpacing)
+                                       / libraryGrid.columns
+                                title: root.itemTitle(media, "Untitled")
+                                meta: root.libraryItemMeta(media)
+                                number: demoMode || (media && media.streamUrl)
+                                        ? (index < 9 ? "0" + (index + 1) : String(index + 1))
+                                        : "›"
+                                artSource: media && media.poster ? media.poster : ""
+                                accent: root.cardAccent(index)
+                                onActivated: root.openLibraryEntry(media)
+                            }
+                        }
+                    }
+
+                    FocusButton {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        visible: !serverClient.libraryLoading
+                                 && serverClient.libraryErrorMessage.length === 0
+                                 && root.displayedLibraryItems().length > root.libraryVisibleLimit
+                        width: 220
+                        text: "Show more titles"
+                        onClicked: root.libraryVisibleLimit += 60
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && serverClient.libraryLoading
+                        width: parent.width
+                        height: 220
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 20
+
+                            BusyIndicator {
+                                anchors.verticalCenter: parent.verticalCenter
+                                running: parent.parent.visible
+                                palette.highlight: root.orange
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Loading your library…"
+                                color: root.textPrimary
+                                font.pixelSize: 18
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && !serverClient.libraryLoading
+                                 && serverClient.libraryErrorMessage.length > 0
+                        width: parent.width
+                        height: 220
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#6b4b38"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 20
+
+                            Image {
+                                width: 120
+                                height: 120
+                                source: "../assets/mascot/tater-wave.png"
+                                fillMode: Image.PreserveAspectFit
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 520
+                                spacing: 12
+
+                                Text {
+                                    width: parent.width
+                                    text: serverClient.libraryErrorMessage
+                                    color: root.textPrimary
+                                    wrapMode: Text.WordWrap
+                                    font.pixelSize: 17
+                                }
+
+                                FocusButton {
+                                    width: 160
+                                    text: "Try again"
+                                    primary: true
+                                    onClicked: serverClient.libraryDepth > 0
+                                               ? serverClient.refreshLibrary()
+                                               : serverClient.refreshLibraries()
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !serverClient.libraryLoading
+                                 && serverClient.libraryErrorMessage.length === 0
+                                 && root.displayedLibraryItems().length === 0
+                        width: parent.width
+                        height: 220
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: serverClient.libraryDepth > 0
+                                  ? "This folder does not contain any playable media."
+                                  : "No local library titles were returned yet."
+                            color: root.textSecondary
+                            font.pixelSize: 17
+                        }
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    visible: root.currentPage === "live"
+                    spacing: 22
+
+                    Row {
+                        width: parent.width
+                        spacing: 16
+
+                        Column {
+                            width: parent.width - liveRefresh.width - parent.spacing
+                            spacing: 7
+
+                            Text {
+                                text: "Live TV"
+                                color: root.textPrimary
+                                font.pixelSize: 38
+                                font.weight: Font.Black
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: "Choose a channel to watch now. Your commercials, spots, bumpers, and station IDs stay in the server-built stream."
+                                color: root.textSecondary
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 16
+                            }
+                        }
+
+                        FocusButton {
+                            id: liveRefresh
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: !demoMode
+                            width: 170
+                            text: "Refresh guide"
+                            onClicked: serverClient.refreshLiveGuide()
+                        }
+                    }
+
+                    Grid {
+                        id: liveGrid
+                        width: parent.width
+                        visible: root.displayedLiveChannels().length > 0
+                        columns: 3
+                        columnSpacing: 15
+                        rowSpacing: 18
+
+                        Repeater {
+                            model: root.displayedLiveChannels().length
+
+                            MediaCard {
+                                required property int index
+                                property var channel: root.displayedLiveChannels()[index]
+                                property var currentProgram: root.channelNow(channel)
+                                width: (liveGrid.width - 2 * liveGrid.columnSpacing) / 3
+                                eyebrow: "CH " + channel.number + "  •  LIVE"
+                                title: root.channelTitle(channel)
+                                subtitle: root.channelSubtitle(channel)
+                                badge: channel.number || "TV"
+                                artSource: currentProgram && currentProgram.poster
+                                           ? currentProgram.poster : ""
+                                accent: root.cardAccent(index)
+                                progress: root.progressValue(currentProgram
+                                                             ? currentProgram.progressPercent : 0)
+                                onActivated: {
+                                    if (channel && channel.streamUrl)
+                                        root.startPlayback(channel, "CHANNEL " + channel.number)
+                                    else
+                                        root.openDetails(channel, "CHANNEL " + channel.number)
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && serverClient.liveGuideLoading
+                                 && root.displayedLiveChannels().length === 0
+                        width: parent.width
+                        height: 220
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 20
+
+                            BusyIndicator {
+                                anchors.verticalCenter: parent.verticalCenter
+                                running: parent.parent.visible
+                                palette.highlight: root.orange
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Tater is loading the channel guide…"
+                                color: root.textPrimary
+                                font.pixelSize: 18
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && !serverClient.liveGuideLoading
+                                 && serverClient.liveGuideErrorMessage.length > 0
+                                 && root.displayedLiveChannels().length === 0
+                        width: parent.width
+                        height: 220
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#6b4b38"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 20
+
+                            Image {
+                                width: 120
+                                height: 120
+                                source: "../assets/mascot/tater-wave.png"
+                                fillMode: Image.PreserveAspectFit
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 520
+                                spacing: 12
+
+                                Text {
+                                    width: parent.width
+                                    text: serverClient.liveGuideErrorMessage
+                                    color: root.textPrimary
+                                    wrapMode: Text.WordWrap
+                                    font.pixelSize: 17
+                                }
+
+                                FocusButton {
+                                    width: 180
+                                    text: "Try again"
+                                    primary: true
+                                    onClicked: serverClient.refreshLiveGuide()
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && !serverClient.liveGuideLoading
+                                 && serverClient.liveGuideErrorMessage.length === 0
+                                 && serverClient.liveGuideReady
+                                 && root.displayedLiveChannels().length === 0
+                        width: parent.width
+                        height: 220
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "No live channels are configured on this server."
+                            color: root.textSecondary
+                            font.pixelSize: 17
+                        }
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    visible: root.currentPage === "search"
+                    spacing: 22
+
+                    Text {
+                        text: "Search"
+                        color: root.textPrimary
+                        font.pixelSize: 38
+                        font.weight: Font.Black
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: "Search the titles already loaded from your Tater Tube home screen. Server-wide search is the next API step."
+                        color: root.textSecondary
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: 16
+                    }
+
+                    TextField {
+                        id: searchField
+                        width: Math.min(parent.width, 680)
+                        height: 58
+                        activeFocusOnTab: true
+                        placeholderText: "Search loaded titles"
+                        color: root.textPrimary
+                        placeholderTextColor: "#7f858b"
+                        font.pixelSize: 17
+                        selectByMouse: true
+                        background: Rectangle {
+                            radius: 15
+                            color: "#181b1f"
+                            border.width: searchField.activeFocus ? 3 : 1
+                            border.color: searchField.activeFocus ? root.orange : "#41464c"
+                        }
+                    }
+
+                    SectionTitle {
+                        width: parent.width
+                        title: searchField.text.length > 0 ? "Results" : "Loaded titles"
+                        actionText: root.filteredMediaItems(searchField.text).length + " FOUND"
+                    }
+
+                    Grid {
+                        id: searchGrid
+                        width: parent.width
+                        columns: Math.max(1, Math.floor(width / 205))
+                        columnSpacing: 15
+                        rowSpacing: 18
+
+                        Repeater {
+                            model: root.filteredMediaItems(searchField.text).length
+
+                            PosterCard {
+                                required property int index
+                                property var media: root.filteredMediaItems(searchField.text)[index]
+                                width: (searchGrid.width
+                                        - (searchGrid.columns - 1) * searchGrid.columnSpacing)
+                                       / searchGrid.columns
+                                title: root.itemTitle(media, "Untitled")
+                                meta: root.itemMeta(media)
+                                number: index < 9 ? "0" + (index + 1) : String(index + 1)
+                                artSource: media && media.poster ? media.poster : ""
+                                accent: root.cardAccent(index)
+                                onActivated: root.openDetails(media, root.mediaLabel(media))
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: root.filteredMediaItems(searchField.text).length === 0
+                        width: parent.width
+                        height: 180
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "No loaded titles match that search."
+                            color: root.textSecondary
+                            font.pixelSize: 17
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: detailsOverlay
+        anchors.fill: parent
+        visible: root.detailsOpen
+        color: "#dc08090b"
+        z: 200
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.closeDetails()
+        }
+
+        Rectangle {
+            id: detailsPanel
+            anchors.centerIn: parent
+            width: Math.min(980, root.width - 100)
+            height: Math.min(590, root.height - 100)
+            radius: 30
+            color: "#202328"
+            border.width: 1
+            border.color: "#51565c"
+            clip: true
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 300
+                color: "#17191d"
+
+                Image {
+                    id: detailsArtwork
+                    anchors.fill: parent
+                    source: root.selectedItem && root.selectedItem.poster
+                            ? root.selectedItem.poster
+                            : (root.selectedItem && root.selectedItem.now
+                               && root.selectedItem.now.poster
+                               ? root.selectedItem.now.poster : "")
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    visible: status === Image.Ready
+                }
+
+                Image {
+                    anchors.centerIn: parent
+                    width: 210
+                    height: 210
+                    source: "../assets/mascot/tater-front.png"
+                    fillMode: Image.PreserveAspectFit
+                    visible: !detailsArtwork.visible
+                }
+            }
+
+            Column {
+                anchors.left: parent.left
+                anchors.leftMargin: 344
+                anchors.right: parent.right
+                anchors.rightMargin: 42
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 16
+
+                Text {
+                    text: root.selectedKind
+                    color: root.orangeBright
+                    font.pixelSize: 12
+                    font.weight: Font.Bold
+                    font.letterSpacing: 1.4
+                }
+
+                Text {
+                    width: parent.width
+                    text: root.selectedKind.indexOf("CHANNEL") === 0
+                          ? root.channelTitle(root.selectedItem)
+                          : root.itemTitle(root.selectedItem, "Tater Tube")
+                    color: root.textPrimary
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                    font.pixelSize: 34
+                    font.weight: Font.Black
+                }
+
+                Text {
+                    width: parent.width
+                    text: root.selectedItem && root.selectedItem.description
+                          ? root.selectedItem.description
+                          : (root.selectedItem && root.selectedItem.next
+                             ? "Up next: " + root.selectedItem.next.title
+                             : "Selected from your private Tater Tube Server library.")
+                    color: root.textSecondary
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 5
+                    elide: Text.ElideRight
+                    font.pixelSize: 16
+                    lineHeight: 1.2
+                }
+
+                Text {
+                    visible: root.itemMeta(root.selectedItem).length > 0
+                    text: root.itemMeta(root.selectedItem)
+                    color: "#d0d2d3"
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 64
+                    radius: 15
+                    color: "#28231f"
+                    border.width: 1
+                    border.color: "#65462f"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.selectedKind.indexOf("CHANNEL") === 0
+                              ? "Live playback includes your server-built channels, commercials, and spots."
+                              : "Tater Tube will direct play first and optimize automatically when needed."
+                        color: "#e4c4ab"
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+                }
+
+                Row {
+                    spacing: 12
+
+                    FocusButton {
+                        id: detailsBack
+                        width: 160
+                        text: "Back"
+                        primary: true
+                        onClicked: root.closeDetails()
+                    }
+
+                    FocusButton {
+                        width: 210
+                        text: root.selectedKind.indexOf("CHANNEL") === 0
+                              ? "▶  Watch live" : "▶  Play"
+                        primary: true
+                        enabled: !!(root.selectedItem && root.selectedItem.streamUrl)
+                        onClicked: root.startPlayback(root.selectedItem, root.selectedKind)
+                    }
+                }
+            }
+        }
+    }
+
+    MediaDevices {
+        id: mediaDevices
+    }
+
+    AudioOutput {
+        id: playerAudio
+        device: mediaDevices.defaultAudioOutput
+        volume: 0.85
+        muted: false
+    }
+
+    MediaPlayer {
+        id: mediaPlayer
+        audioOutput: playerAudio
+        videoOutput: playerVideo
+
+        onPlaybackStateChanged: {
+            if (playbackState === MediaPlayer.PlayingState) {
+                root.selectPlaybackAudioTrack()
+                root.playbackStatusMessage = ""
+                playbackControlsTimer.restart()
+            } else {
+                root.playbackControlsVisible = true
+                playbackControlsTimer.stop()
+            }
+        }
+
+        onMediaStatusChanged: {
+            if (mediaStatus === MediaPlayer.LoadedMedia
+                    || mediaStatus === MediaPlayer.BufferedMedia) {
+                root.selectPlaybackAudioTrack()
+                root.playbackStatusMessage = ""
+                if (!root.playbackUsingFallback && root.playbackPendingResumeMs > 0) {
+                    var resumeAt = root.playbackPendingResumeMs
+                    root.playbackPendingResumeMs = 0
+                    mediaPlayer.setPosition(Math.round(resumeAt))
+                }
+            } else if (mediaStatus === MediaPlayer.EndOfMedia) {
+                root.savePlaybackState(true)
+                root.playbackEnded = true
+                root.playbackControlsVisible = true
+                root.playbackStatusMessage = "Finished"
+            }
+        }
+
+        onTracksChanged: root.selectPlaybackAudioTrack()
+
+        onErrorOccurred: function(error, errorString) {
+            if (!root.playbackOpen)
+                return
+            if (root.retryWithCompatibleStream(errorString))
+                return
+            root.playbackStatusMessage = ""
+            root.playbackError = errorString && errorString.length > 0
+                    ? errorString : "This video could not be played."
+            root.playbackControlsVisible = true
+        }
+    }
+
+    Timer {
+        id: playbackProgressTimer
+        interval: 15000
+        repeat: true
+        running: root.playbackOpen && !root.playbackIsLive
+                 && mediaPlayer.playbackState === MediaPlayer.PlayingState
+        onTriggered: root.savePlaybackState(false)
+    }
+
+    Timer {
+        id: playbackControlsTimer
+        interval: 4500
+        repeat: false
+        onTriggered: {
+            if (root.playbackOpen && root.playbackError.length === 0
+                    && mediaPlayer.playbackState === MediaPlayer.PlayingState)
+                root.playbackControlsVisible = false
+        }
+    }
+
+    Rectangle {
+        id: playbackOverlay
+        anchors.fill: parent
+        visible: root.playbackOpen
+        color: "#050607"
+        z: 300
+
+        VideoOutput {
+            id: playerVideo
+            anchors.fill: parent
+            fillMode: VideoOutput.PreserveAspectFit
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            z: 1
+            onClicked: {
+                if (root.playbackControlsVisible
+                        && mediaPlayer.playbackState === MediaPlayer.PlayingState) {
+                    root.playbackControlsVisible = false
+                    playbackControlsTimer.stop()
+                } else {
+                    root.showPlaybackControls()
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 142
+            visible: root.playbackControlsVisible || root.playbackError.length > 0
+            z: 4
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#e6050607" }
+                GradientStop { position: 1.0; color: "#00050607" }
+            }
+
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: 30
+                anchors.right: parent.right
+                anchors.rightMargin: 30
+                anchors.top: parent.top
+                anchors.topMargin: 24
+                spacing: 18
+
+                FocusButton {
+                    width: 116
+                    text: "‹  Back"
+                    compact: true
+                    onClicked: root.closePlayback()
+                }
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - 310
+                    spacing: 4
+
+                    Text {
+                        width: parent.width
+                        text: root.playbackTitle()
+                        color: root.textPrimary
+                        elide: Text.ElideRight
+                        font.pixelSize: 24
+                        font.weight: Font.Bold
+                    }
+
+                    Text {
+                        text: root.playbackIsLive
+                              ? "CHANNEL " + (root.playbackItem.number || "")
+                              : root.mediaLabel(root.playbackItem)
+                        color: root.orangeBright
+                        font.pixelSize: 11
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.3
+                    }
+                }
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: qualityLabel.implicitWidth + 24
+                    height: 34
+                    radius: 11
+                    color: "#272b30"
+                    border.width: 1
+                    border.color: "#4a5057"
+
+                    Text {
+                        id: qualityLabel
+                        anchors.centerIn: parent
+                        text: root.playbackQuality
+                        color: "#d7d9da"
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                    }
+                }
+            }
+        }
+
+        Column {
+            anchors.centerIn: parent
+            visible: root.playbackError.length === 0
+                     && (mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia
+                         || mediaPlayer.mediaStatus === MediaPlayer.BufferingMedia
+                         || mediaPlayer.mediaStatus === MediaPlayer.StalledMedia)
+            z: 5
+            spacing: 14
+
+            Image {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 132
+                height: 132
+                source: "../assets/mascot/tater-front.png"
+                fillMode: Image.PreserveAspectFit
+            }
+
+            BusyIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                running: parent.visible
+                palette.highlight: root.orange
+            }
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: root.playbackStatusMessage.length > 0
+                      ? root.playbackStatusMessage : "Loading…"
+                color: root.textPrimary
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+            }
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(600, parent.width - 80)
+            height: 270
+            radius: 28
+            visible: root.playbackError.length > 0
+            color: "#ed202328"
+            border.width: 1
+            border.color: "#6b4b38"
+            z: 6
+
+            Row {
+                anchors.fill: parent
+                anchors.margins: 28
+                spacing: 22
+
+                Image {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 150
+                    height: 150
+                    source: "../assets/mascot/tater-wave.png"
+                    fillMode: Image.PreserveAspectFit
+                }
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - 172
+                    spacing: 12
+
+                    Text {
+                        text: "PLAYBACK NEEDS ATTENTION"
+                        color: root.orangeBright
+                        font.pixelSize: 12
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.2
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: root.playbackError
+                        color: root.textPrimary
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 4
+                        elide: Text.ElideRight
+                        font.pixelSize: 16
+                    }
+
+                    Row {
+                        spacing: 10
+
+                        FocusButton {
+                            text: "Try again"
+                            primary: true
+                            onClicked: root.startPlayback(root.playbackItem,
+                                                          root.playbackIsLive ? "CHANNEL" : "MEDIA")
+                        }
+
+                        FocusButton {
+                            text: "Back"
+                            onClicked: root.closePlayback()
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 190
+            visible: root.playbackControlsVisible || root.playbackError.length > 0
+            z: 4
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#00050607" }
+                GradientStop { position: 1.0; color: "#ed050607" }
+            }
+
+            Column {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: 34
+                anchors.rightMargin: 34
+                anchors.bottomMargin: 24
+                spacing: 12
+
+                Row {
+                    width: parent.width
+                    spacing: 14
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 72
+                        text: root.playbackIsLive ? "LIVE" : root.formatPlaybackTime(root.playbackPositionMs())
+                        color: root.playbackIsLive ? root.orangeBright : root.textPrimary
+                        font.pixelSize: 13
+                        font.weight: Font.Bold
+                    }
+
+                    Slider {
+                        id: playbackSlider
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 166
+                        from: 0
+                        to: Math.max(1, root.playbackDurationMs())
+                        value: root.playbackPositionMs()
+                        enabled: !root.playbackIsLive && root.playbackDurationMs() > 0
+                        onMoved: root.seekPlayback(value)
+
+                        background: Rectangle {
+                            x: playbackSlider.leftPadding
+                            y: playbackSlider.topPadding + playbackSlider.availableHeight / 2 - height / 2
+                            width: playbackSlider.availableWidth
+                            height: 5
+                            radius: 3
+                            color: "#555a60"
+
+                            Rectangle {
+                                width: playbackSlider.visualPosition * parent.width
+                                height: parent.height
+                                radius: 3
+                                color: root.orange
+                            }
+                        }
+
+                        handle: Rectangle {
+                            x: playbackSlider.leftPadding + playbackSlider.visualPosition
+                               * (playbackSlider.availableWidth - width)
+                            y: playbackSlider.topPadding + playbackSlider.availableHeight / 2 - height / 2
+                            width: 18
+                            height: 18
+                            radius: 9
+                            color: playbackSlider.pressed ? root.orangeBright : root.orange
+                        }
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 66
+                        horizontalAlignment: Text.AlignRight
+                        text: root.playbackIsLive ? "ON AIR" : root.formatPlaybackTime(root.playbackDurationMs())
+                        color: root.textSecondary
+                        font.pixelSize: 13
+                    }
+                }
+
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 12
+
+                    FocusButton {
+                        width: 128
+                        compact: true
+                        text: "−10 sec"
+                        enabled: !root.playbackIsLive
+                        onClicked: root.seekPlaybackBy(-10000)
+                    }
+
+                    FocusButton {
+                        width: 154
+                        text: mediaPlayer.playbackState === MediaPlayer.PlayingState
+                              ? "❚❚  Pause" : "▶  Play"
+                        primary: true
+                        onClicked: root.togglePlayback()
+                    }
+
+                    FocusButton {
+                        width: 128
+                        compact: true
+                        text: "+10 sec"
+                        enabled: !root.playbackIsLive
+                        onClicked: root.seekPlaybackBy(10000)
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        leftPadding: 12
+                        text: mediaDevices.audioOutputs.length === 0
+                              ? "NO AUDIO OUTPUT"
+                              : "VOLUME  " + Math.round(playerAudio.volume * 100) + "%"
+                        color: root.textSecondary
+                        font.pixelSize: 11
+                        font.weight: Font.Bold
+                        font.letterSpacing: 0.8
+                    }
+                }
+
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: root.playbackIsLive
+                          ? "A  Play/Pause    B  Back    ↑↓  Volume"
+                          : "A  Play/Pause    B  Back    ←→  Seek 10 sec    ↑↓  Volume"
+                    color: "#8f9499"
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                }
+            }
+        }
+    }
+
+    Rectangle {
         id: pairingOverlay
         visible: !demoMode && !serverClient.paired
         anchors.fill: parent
         color: "#e608090b"
         z: 100
+        onVisibleChanged: {
+            if (visible)
+                Qt.callLater(function() { serverField.forceActiveFocus() })
+        }
 
         Rectangle {
             anchors.centerIn: parent

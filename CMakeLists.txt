@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(TaterTubePlayer
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "A modern player for Tater Tube Server"
     LANGUAGES CXX
 )
@@ -14,16 +14,20 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt6 6.8 REQUIRED COMPONENTS
     Core
     Gui
+    Multimedia
     Network
     Qml
     Quick
     QuickControls2
 )
+find_package(SDL2 CONFIG QUIET)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
 qt_add_executable(tater-tube-player
     src/main.cpp
+    src/GamepadInput.cpp
+    src/GamepadInput.h
     src/ServerClient.cpp
     src/ServerClient.h
 )
@@ -46,11 +50,17 @@ qt_add_qml_module(tater-tube-player
 target_link_libraries(tater-tube-player PRIVATE
     Qt6::Core
     Qt6::Gui
+    Qt6::Multimedia
     Qt6::Network
     Qt6::Qml
     Qt6::Quick
     Qt6::QuickControls2
 )
+
+if(SDL2_FOUND)
+    target_link_libraries(tater-tube-player PRIVATE SDL2::SDL2)
+    target_compile_definitions(tater-tube-player PRIVATE TATER_PLAYER_HAS_SDL2=1)
+endif()
 
 target_compile_definitions(tater-tube-player PRIVATE
     TATER_TUBE_PLAYER_VERSION="${PROJECT_VERSION}"

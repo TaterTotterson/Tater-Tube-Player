@@ -18,8 +18,14 @@ FocusScope {
 
     Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
-    Keys.onReturnPressed: event => { activated(); event.accepted = true }
-    Keys.onEnterPressed: event => { activated(); event.accepted = true }
+    function activate() {
+        card.forceActiveFocus()
+        card.activated()
+    }
+
+    Keys.onReturnPressed: event => { activate(); event.accepted = true }
+    Keys.onEnterPressed: event => { activate(); event.accepted = true }
+    Keys.onSpacePressed: event => { activate(); event.accepted = true }
 
     Rectangle {
         anchors.fill: parent
@@ -119,9 +125,6 @@ FocusScope {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: {
-            card.forceActiveFocus()
-            card.activated()
-        }
+        onClicked: card.activate()
     }
 }
