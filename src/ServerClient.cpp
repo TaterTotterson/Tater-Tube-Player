@@ -165,11 +165,15 @@ void ServerClient::refreshLibraries()
             [this, reply] { handleLibrariesReply(reply); });
 }
 
-void ServerClient::browseLibrary(const QVariantMap &entry)
+void ServerClient::refreshLibraryRows()
 {
-    if (!paired() || m_libraryLoading)
+    if (!paired())
         return;
+    loadLibraryRows(true);
+}
 
+ServerClient::LibraryLocation ServerClient::libraryLocationFromEntry(const QVariantMap &entry)
+{
     LibraryLocation location;
     location.categoryId = entry.value(QStringLiteral("id")).toString().trimmed();
     if (location.categoryId.isEmpty())
@@ -181,6 +185,84 @@ void ServerClient::browseLibrary(const QVariantMap &entry)
         ? entry.value(QStringLiteral("sourceIndex")).toInt() : -1;
     location.continueWatching = entry.value(QStringLiteral("type")).toString()
                                     .compare(QStringLiteral("continue"), Qt::CaseInsensitive) == 0;
+    return location;
+}
+
+void ServerClient::loadLibraryRows(bool forceNetwork)
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!forceNetwork && !m_libraryRows.isEmpty()
+        && now - m_libraryRowsStoredAtMs < kLibraryCacheTtlMs) {
+        emit libraryChanged();
+        return;
+    }
+
+    ++m_libraryRowsGeneration;
+    const int generation = m_libraryRowsGeneration;
+    m_libraryRowsPending = 1;
+    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/v1/player/library"))};
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(30000);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, generation] { handleLibraryRowsReply(reply, generation); });
+    emit libraryChanged();
+}
+
+void ServerClient::handleLibraryRowsReply(QNetworkReply *reply, int generation)
+{
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool succeeded = reply->error() == QNetworkReply::NoError
+        && status >= 200 && status < 300;
+    reply->deleteLater();
+    if (generation != m_libraryRowsGeneration)
+        return;
+    m_libraryRowsPending = 0;
+    if (!succeeded && (status == 401 || status == 403)) {
+        forgetServer();
+        setErrorMessage("This player is no longer authorized. Pair it with the server again.");
+        return;
+    }
+
+    if (!succeeded) {
+        if (m_libraryRows.isEmpty())
+            m_libraryErrorMessage = responseError(
+                body, QStringLiteral("Your library shelves could not be loaded."));
+        emit libraryChanged();
+        return;
+    }
+
+    const QJsonObject data = QJsonDocument::fromJson(body).object()
+                                 .value("data").toObject();
+    m_libraryRows = data.value("rows").toArray().toVariantList();
+    m_libraryRowsStoredAtMs = QDateTime::currentMSecsSinceEpoch();
+    m_libraryErrorMessage.clear();
+    for (const QVariant &value : m_libraryRows) {
+        const QVariantMap row = value.toMap();
+        const QVariantMap entry = row.value(QStringLiteral("entry")).toMap();
+        const LibraryLocation location = libraryLocationFromEntry(entry);
+        if (!location.continueWatching && location.categoryId.isEmpty())
+            continue;
+        m_libraryCache.insert(libraryCacheKey(location), LibraryCacheEntry{
+            row.value(QStringLiteral("items")).toList(),
+            row.value(QStringLiteral("title"), location.title).toString(),
+            m_libraryRowsStoredAtMs,
+        });
+    }
+    setOnline(true);
+    emit libraryChanged();
+}
+
+void ServerClient::browseLibrary(const QVariantMap &entry)
+{
+    if (!paired() || m_libraryLoading)
+        return;
+
+    const LibraryLocation location = libraryLocationFromEntry(entry);
     if (!location.continueWatching && location.categoryId.isEmpty()) {
         m_libraryErrorMessage = QStringLiteral("This library does not have a browsable server ID.");
         emit libraryChanged();
@@ -319,10 +401,14 @@ void ServerClient::forgetServer()
     m_errorMessage.clear();
     resetHome();
     m_libraryItems.clear();
+    m_libraryRows.clear();
     m_libraryTitle.clear();
     m_libraryErrorMessage.clear();
     m_libraryHistory.clear();
     m_libraryCache.clear();
+    ++m_libraryRowsGeneration;
+    m_libraryRowsPending = 0;
+    m_libraryRowsStoredAtMs = 0;
     m_liveGuideChannels.clear();
     m_liveGuideErrorMessage.clear();
     m_liveGuideLoading = false;
@@ -602,6 +688,7 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     setOnline(true);
     emit connectionChanged();
     emit homeChanged();
+    loadLibraryRows(false);
 }
 
 void ServerClient::handleLibraryReply(QNetworkReply *reply,
@@ -677,6 +764,7 @@ void ServerClient::handleLibrariesReply(QNetworkReply *reply)
     setOnline(true);
     emit homeChanged();
     emit libraryChanged();
+    loadLibraryRows(true);
 }
 
 QVariantMap ServerClient::guideProgram(const QVariantList &schedule,
@@ -742,6 +830,10 @@ void ServerClient::handleLiveGuideReply(QNetworkReply *reply)
             channel.insert(QStringLiteral("now"), now);
         if (!next.isEmpty())
             channel.insert(QStringLiteral("next"), next);
+        channel.insert(QStringLiteral("guideElapsedSeconds"), elapsedSeconds);
+        if (startedAt.isValid())
+            channel.insert(QStringLiteral("guideStartedAtMs"), startedAt.toMSecsSinceEpoch());
+        channel.insert(QStringLiteral("guideServerNowMs"), serverNow.toMSecsSinceEpoch());
         m_liveGuideChannels.append(channel);
     }
     m_liveGuideErrorMessage.clear();

@@ -32,8 +32,10 @@ class ServerClient final : public QObject
     Q_PROPERTY(QVariantMap capabilities READ capabilities NOTIFY homeChanged)
     Q_PROPERTY(QStringList homeWarnings READ homeWarnings NOTIFY homeChanged)
     Q_PROPERTY(QVariantList libraryItems READ libraryItems NOTIFY libraryChanged)
+    Q_PROPERTY(QVariantList libraryRows READ libraryRows NOTIFY libraryChanged)
     Q_PROPERTY(QString libraryTitle READ libraryTitle NOTIFY libraryChanged)
     Q_PROPERTY(bool libraryLoading READ libraryLoading NOTIFY libraryChanged)
+    Q_PROPERTY(bool libraryRowsLoading READ libraryRowsLoading NOTIFY libraryChanged)
     Q_PROPERTY(QString libraryErrorMessage READ libraryErrorMessage NOTIFY libraryChanged)
     Q_PROPERTY(int libraryDepth READ libraryDepth NOTIFY libraryChanged)
     Q_PROPERTY(QVariantList liveGuideChannels READ liveGuideChannels NOTIFY liveGuideChanged)
@@ -62,8 +64,10 @@ public:
     QVariantMap capabilities() const { return m_capabilities; }
     QStringList homeWarnings() const { return m_homeWarnings; }
     QVariantList libraryItems() const { return m_libraryItems; }
+    QVariantList libraryRows() const { return m_libraryRows; }
     QString libraryTitle() const { return m_libraryTitle; }
     bool libraryLoading() const { return m_libraryLoading; }
+    bool libraryRowsLoading() const { return m_libraryRowsPending > 0; }
     QString libraryErrorMessage() const { return m_libraryErrorMessage; }
     int libraryDepth() const { return m_libraryHistory.size(); }
     QVariantList liveGuideChannels() const { return m_liveGuideChannels; }
@@ -75,6 +79,7 @@ public:
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void refreshHome();
     Q_INVOKABLE void refreshLibraries();
+    Q_INVOKABLE void refreshLibraryRows();
     Q_INVOKABLE void browseLibrary(const QVariantMap &entry);
     Q_INVOKABLE void browseLibraryItem(const QVariantMap &item);
     Q_INVOKABLE void browseLibraryBack();
@@ -124,6 +129,9 @@ private:
     void setOnline(bool online);
     void setHomeLoading(bool loading);
     void resetHome();
+    static LibraryLocation libraryLocationFromEntry(const QVariantMap &entry);
+    void loadLibraryRows(bool forceNetwork);
+    void handleLibraryRowsReply(QNetworkReply *reply, int generation);
     void loadLibraryLocation(const LibraryLocation &location, bool pushHistory,
                              bool forceNetwork = false);
     void handleLibraryReply(QNetworkReply *reply, const LibraryLocation &location,
@@ -153,10 +161,14 @@ private:
     QVariantMap m_capabilities;
     QStringList m_homeWarnings;
     QVariantList m_libraryItems;
+    QVariantList m_libraryRows;
     QString m_libraryTitle;
     QString m_libraryErrorMessage;
     QVector<LibraryLocation> m_libraryHistory;
     QHash<QString, LibraryCacheEntry> m_libraryCache;
+    int m_libraryRowsGeneration = 0;
+    int m_libraryRowsPending = 0;
+    qint64 m_libraryRowsStoredAtMs = 0;
     QVariantList m_liveGuideChannels;
     QString m_liveGuideErrorMessage;
     bool m_online = false;

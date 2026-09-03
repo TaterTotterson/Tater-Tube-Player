@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(TaterTubePlayer
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "A modern player for Tater Tube Server"
     LANGUAGES CXX
 )
@@ -38,6 +38,7 @@ qt_add_qml_module(tater-tube-player
     QML_FILES
         qml/Main.qml
         qml/components/FocusButton.qml
+        qml/components/GuideProgramCard.qml
         qml/components/MediaCard.qml
         qml/components/PosterCard.qml
         qml/components/SectionTitle.qml

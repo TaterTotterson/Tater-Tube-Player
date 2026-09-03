@@ -60,7 +60,7 @@ Requirements:
 - Qt 6.8+ with Quick, Quick Controls, QML, Multimedia, Network, and Test
 - A C++20 compiler
 - Tater Tube Server with the `/api/v1/player/home` endpoint
-- Tater Tube Server 1.4.15+ for fast library loading and audio-only compatibility
+- Tater Tube Server 1.4.16+ for fast library loading and audio-only compatibility
   transcoding
 
 ```bash

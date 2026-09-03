@@ -152,6 +152,44 @@ ApplicationWindow {
                 ? serverClient.libraryItems : libraryMediaItems()
     }
 
+    function libraryPageRows() {
+        if (demoMode) {
+            var demoItems = libraryMediaItems()
+            return [
+                {title: "Movies", entry: {id: "demo:movies", title: "Movies"},
+                 items: demoItems.filter(function(item) { return item.mediaType === "movie" })},
+                {title: "TV Shows", entry: {id: "demo:tv", title: "TV Shows"},
+                 items: demoItems.filter(function(item) { return item.mediaType === "series" })}
+            ]
+        }
+        if (serverClient.libraryRows.length > 0)
+            return serverClient.libraryRows
+        var recent = libraryMediaItems()
+        return recent.length > 0
+                ? [{title: "Recently added", entry: ({}), items: recent, loading: false}]
+                : []
+    }
+
+    function libraryRowItems(row) {
+        return row && row.items ? row.items : []
+    }
+
+    function openLibraryRow(row) {
+        if (!row)
+            return
+        if (demoMode) {
+            if (root.libraryRowItems(row).length > 0)
+                root.openDetails(root.libraryRowItems(row)[0], root.mediaLabel(root.libraryRowItems(row)[0]))
+            return
+        }
+        if (row.entry && (row.entry.id || row.entry.categoryId
+                          || String(row.entry.type || "").toLowerCase() === "continue")) {
+            libraryVisibleLimit = 60
+            serverClient.browseLibrary(row.entry)
+            sectionScroller.contentY = 0
+        }
+    }
+
     function libraryItemMeta(item) {
         if (!item)
             return ""
@@ -179,13 +217,13 @@ ApplicationWindow {
     function demoLiveChannels() {
         return [{number: "12", title: "Saturday Cartoons",
                  streamUrl: "", now: {title: "Galaxy Rangers", progressPercent: 67},
-                 next: {title: "Creature Features"}},
+                 next: {title: "Creature Features"}, later: {title: "Robot Roundup"}},
                 {number: "24", title: "Creature Features",
                  streamUrl: "", now: {title: "Night Visitors", progressPercent: 38},
-                 next: {title: "Midnight Matinee"}},
+                 next: {title: "Midnight Matinee"}, later: {title: "Shock Theater"}},
                 {number: "88", title: "Neon Nights",
                  streamUrl: "", now: {title: "Electric Dreams", progressPercent: 52},
-                 next: {title: "After Hours"}}]
+                 next: {title: "After Hours"}, later: {title: "Night Drive"}}]
     }
 
     function displayedLiveChannels() {
@@ -193,6 +231,78 @@ ApplicationWindow {
             return demoLiveChannels()
         return serverClient.liveGuideChannels.length > 0
                 ? serverClient.liveGuideChannels : serverClient.liveChannels
+    }
+
+    function guidePrograms(channel) {
+        var programs = []
+        if (!channel)
+            return programs
+        var schedule = channel.schedule || []
+        var elapsed = Number(channel.guideElapsedSeconds || 0)
+        for (var i = 0; i < schedule.length && programs.length < 3; ++i) {
+            var program = schedule[i]
+            if (Number(program.end || 0) > elapsed)
+                programs.push(program)
+        }
+        if (programs.length === 0 && channel.now)
+            programs.push(channel.now)
+        if (programs.length < 3 && channel.next)
+            programs.push(channel.next)
+        if (programs.length < 3 && channel.later)
+            programs.push(channel.later)
+        return programs
+    }
+
+    function guideProgramIsCurrent(channel, program, index) {
+        if (!program)
+            return false
+        if (program.start !== undefined && program.end !== undefined) {
+            var elapsed = Number(channel.guideElapsedSeconds || 0)
+            return Number(program.start) <= elapsed && elapsed < Number(program.end)
+        }
+        return index === 0
+    }
+
+    function guideProgramTime(channel, program, index) {
+        if (root.guideProgramIsCurrent(channel, program, index))
+            return "NOW"
+        if (channel && channel.guideStartedAtMs && program
+                && program.start !== undefined) {
+            var startsAt = new Date(Number(channel.guideStartedAtMs)
+                                    + Number(program.start) * 1000)
+            return Qt.formatTime(startsAt, "h:mm AP")
+        }
+        if (program && program.startsAt)
+            return Qt.formatTime(new Date(program.startsAt), "h:mm AP")
+        return index === 1 ? "UP NEXT" : "LATER"
+    }
+
+    function guideProgramMeta(program) {
+        if (!program)
+            return "TATER TUBE"
+        var kind = String(program.mediaType || program.kind || "PROGRAM").toUpperCase()
+        if (program.start !== undefined && program.end !== undefined) {
+            var minutes = Math.max(1, Math.round((Number(program.end) - Number(program.start)) / 60))
+            return kind + "  •  " + minutes + " MIN"
+        }
+        return kind
+    }
+
+    function activateGuideProgram(channel, program, index) {
+        if (root.guideProgramIsCurrent(channel, program, index)
+                && channel && channel.streamUrl) {
+            root.startPlayback(channel, "CHANNEL " + channel.number)
+            return
+        }
+        var details = ({})
+        if (program) {
+            for (var key in program)
+                details[key] = program[key]
+        }
+        details.title = root.itemTitle(program, root.itemTitle(channel, "Tater Tube"))
+        details.description = "Airs " + root.guideProgramTime(channel, program, index)
+                + " on channel " + channel.number + "."
+        root.openDetails(details, "GUIDE")
     }
 
     function searchableMediaItems() {
@@ -493,6 +603,8 @@ ApplicationWindow {
             sectionScroller.contentY = 0
         } else if (currentPage !== "home") {
             showPage("home")
+        } else {
+            openSideMenu()
         }
     }
 
@@ -529,6 +641,18 @@ ApplicationWindow {
             candidate = candidate.parent
         }
         return false
+    }
+
+    function isItemShown(item) {
+        var candidate = item
+        while (candidate) {
+            if (candidate.visible === false || candidate.enabled === false)
+                return false
+            if (candidate === root)
+                break
+            candidate = candidate.parent
+        }
+        return true
     }
 
     function revealFocusedItem(item) {
@@ -569,6 +693,8 @@ ApplicationWindow {
         }
 
         var origin = current.mapToItem(root.contentItem, current.width / 2, current.height / 2)
+        var currentTop = origin.y - current.height / 2
+        var currentBottom = origin.y + current.height / 2
         var winner = null
         var winnerScore = Number.MAX_VALUE
         for (var i = 0; i < candidates.length; ++i) {
@@ -582,6 +708,14 @@ ApplicationWindow {
             if ((horizontal < 0 && dx >= -4) || (horizontal > 0 && dx <= 4)
                     || (vertical < 0 && dy >= -4) || (vertical > 0 && dy <= 4))
                 continue
+            if (horizontal !== 0) {
+                var candidateTop = point.y - candidate.height / 2
+                var candidateBottom = point.y + candidate.height / 2
+                var verticalGap = Math.max(0, Math.max(currentTop, candidateTop)
+                                              - Math.min(currentBottom, candidateBottom))
+                if (verticalGap > 18)
+                    continue
+            }
             var primary = horizontal !== 0 ? Math.abs(dx) : Math.abs(dy)
             var cross = horizontal !== 0 ? Math.abs(dy) : Math.abs(dx)
             var score = primary + cross * 2.4
@@ -664,8 +798,12 @@ ApplicationWindow {
     Connections {
         target: serverClient
         function onLibraryChanged() {
-            if (root.currentPage === "library" && !serverClient.libraryLoading)
+            var current = root.activeFocusItem
+            if (root.currentPage === "library" && !serverClient.libraryLoading
+                    && (!current || !root.isItemShown(current)
+                        || !root.isDescendant(current, sectionScroller.contentItem))) {
                 Qt.callLater(function() { root.focusFirstSectionControl() })
+            }
         }
     }
 
@@ -1044,6 +1182,8 @@ ApplicationWindow {
                     width: parent.width
                     title: "Continue watching"
                     actionText: "SEE ALL  ›"
+                    actionEnabled: true
+                    onActionActivated: root.showPage("library")
                 }
 
                 Row {
@@ -1103,6 +1243,8 @@ ApplicationWindow {
                     width: parent.width
                     title: "Continue watching"
                     actionText: "SEE ALL  ›"
+                    actionEnabled: true
+                    onActionActivated: root.showPage("library")
                 }
 
                 Row {
@@ -1143,6 +1285,8 @@ ApplicationWindow {
                         width: parent.width
                         title: "Live on Tater Tube"
                         actionText: "OPEN GUIDE  ›"
+                        actionEnabled: true
+                        onActionActivated: root.showPage("live")
                     }
 
                     Row {
@@ -1250,6 +1394,8 @@ ApplicationWindow {
                         width: parent.width
                         title: "Live on Tater Tube"
                         actionText: "OPEN GUIDE  ›"
+                        actionEnabled: true
+                        onActionActivated: root.showPage("live")
                     }
 
                     Row {
@@ -1342,6 +1488,8 @@ ApplicationWindow {
                     width: parent.width
                     title: "Recently added"
                     actionText: "BROWSE LIBRARY  ›"
+                    actionEnabled: true
+                    onActionActivated: root.showPage("library")
                 }
 
                 Row {
@@ -1365,6 +1513,8 @@ ApplicationWindow {
                     width: parent.width
                     title: "Recently added"
                     actionText: "BROWSE LIBRARY  ›"
+                    actionEnabled: true
+                    onActionActivated: root.showPage("library")
                 }
 
                 Row {
@@ -1575,135 +1725,239 @@ ApplicationWindow {
                         }
                     }
 
-                    SectionTitle {
+                    Column {
                         width: parent.width
-                        title: !demoMode && serverClient.libraryDepth > 0
-                               ? serverClient.libraryTitle : "Recently added"
-                        actionText: serverClient.libraryLoading
-                                    ? "LOADING…"
-                                    : root.displayedLibraryItems().length + " ITEMS"
-                    }
-
-                    Grid {
-                        id: libraryGrid
-                        width: parent.width
-                        visible: !serverClient.libraryLoading
-                                 && serverClient.libraryErrorMessage.length === 0
-                        columns: Math.max(1, Math.floor(width / 205))
-                        columnSpacing: 15
-                        rowSpacing: 18
+                        visible: demoMode || serverClient.libraryDepth === 0
+                        spacing: 30
 
                         Repeater {
-                            model: Math.min(root.libraryVisibleLimit,
-                                            root.displayedLibraryItems().length)
-
-                            PosterCard {
-                                required property int index
-                                property var media: root.displayedLibraryItems()[index]
-                                width: (libraryGrid.width
-                                        - (libraryGrid.columns - 1) * libraryGrid.columnSpacing)
-                                       / libraryGrid.columns
-                                title: root.itemTitle(media, "Untitled")
-                                meta: root.libraryItemMeta(media)
-                                number: demoMode || (media && media.streamUrl)
-                                        ? (index < 9 ? "0" + (index + 1) : String(index + 1))
-                                        : "›"
-                                artSource: media && media.poster ? media.poster : ""
-                                accent: root.cardAccent(index)
-                                onActivated: root.openLibraryEntry(media)
-                            }
-                        }
-                    }
-
-                    FocusButton {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        visible: !serverClient.libraryLoading
-                                 && serverClient.libraryErrorMessage.length === 0
-                                 && root.displayedLibraryItems().length > root.libraryVisibleLimit
-                        width: 220
-                        text: "Show more titles"
-                        onClicked: root.libraryVisibleLimit += 60
-                    }
-
-                    Rectangle {
-                        visible: !demoMode && serverClient.libraryLoading
-                        width: parent.width
-                        height: 220
-                        radius: 24
-                        color: root.panel
-                        border.width: 1
-                        border.color: "#3b4046"
-
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 20
-
-                            BusyIndicator {
-                                anchors.verticalCenter: parent.verticalCenter
-                                running: parent.parent.visible
-                                palette.highlight: root.orange
-                            }
-
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "Loading your library…"
-                                color: root.textPrimary
-                                font.pixelSize: 18
-                                font.weight: Font.DemiBold
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        visible: !demoMode && !serverClient.libraryLoading
-                                 && serverClient.libraryErrorMessage.length > 0
-                        width: parent.width
-                        height: 220
-                        radius: 24
-                        color: root.panel
-                        border.width: 1
-                        border.color: "#6b4b38"
-
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 20
-
-                            Image {
-                                width: 120
-                                height: 120
-                                source: "../assets/mascot/tater-wave.png"
-                                fillMode: Image.PreserveAspectFit
-                            }
+                            model: root.libraryPageRows().length
 
                             Column {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 520
+                                id: shelfColumn
+                                required property int index
+                                property var shelf: root.libraryPageRows()[index]
+                                property var shelfItems: root.libraryRowItems(shelf)
+                                width: parent.width
+                                visible: shelfItems.length > 0 || !!shelf.loading
                                 spacing: 12
 
-                                Text {
+                                SectionTitle {
                                     width: parent.width
-                                    text: serverClient.libraryErrorMessage
-                                    color: root.textPrimary
-                                    wrapMode: Text.WordWrap
-                                    font.pixelSize: 17
+                                    title: root.itemTitle(shelf, "Library")
+                                    actionText: shelf.loading ? "LOADING…" : "SEE ALL  ›"
+                                    actionEnabled: !shelf.loading && shelfItems.length > 0
+                                    onActionActivated: root.openLibraryRow(shelf)
                                 }
 
-                                FocusButton {
-                                    width: 160
-                                    text: "Try again"
-                                    primary: true
-                                    onClicked: serverClient.libraryDepth > 0
-                                               ? serverClient.refreshLibrary()
-                                               : serverClient.refreshLibraries()
+                                Row {
+                                    width: parent.width
+                                    visible: shelfItems.length > 0
+                                    spacing: 15
+
+                                    Repeater {
+                                        model: Math.min(6, shelfColumn.shelfItems.length)
+
+                                        PosterCard {
+                                            required property int index
+                                            property var media: shelfColumn.shelfItems[index]
+                                            width: (shelfColumn.width - 5 * 15) / 6
+                                            title: root.itemTitle(media, "Untitled")
+                                            meta: root.libraryItemMeta(media)
+                                            number: demoMode || (media && media.streamUrl)
+                                                    ? (index < 9 ? "0" + (index + 1)
+                                                                 : String(index + 1))
+                                                    : "›"
+                                            artSource: media && media.poster ? media.poster : ""
+                                            accent: root.cardAccent(index + shelfColumn.index)
+                                            onActivated: root.openLibraryEntry(media)
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: !!shelf.loading && shelfItems.length === 0
+                                    width: parent.width
+                                    height: 132
+                                    radius: 18
+                                    color: root.panel
+                                    border.width: 1
+                                    border.color: "#3b4046"
+
+                                    Row {
+                                        anchors.centerIn: parent
+                                        spacing: 14
+
+                                        BusyIndicator {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            running: parent.parent.visible
+                                            palette.highlight: root.orange
+                                        }
+
+                                        Text {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: "Tater is filling this shelf…"
+                                            color: root.textSecondary
+                                            font.pixelSize: 16
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
+                    Column {
+                        width: parent.width
+                        visible: !demoMode && serverClient.libraryDepth > 0
+                        spacing: 22
+
+                        SectionTitle {
+                            width: parent.width
+                            title: serverClient.libraryTitle
+                            actionText: serverClient.libraryLoading
+                                        ? "LOADING…"
+                                        : root.displayedLibraryItems().length + " ITEMS"
+                        }
+
+                        Grid {
+                            id: libraryGrid
+                            width: parent.width
+                            visible: !serverClient.libraryLoading
+                                     && serverClient.libraryErrorMessage.length === 0
+                            columns: Math.max(1, Math.floor(width / 205))
+                            columnSpacing: 15
+                            rowSpacing: 18
+
+                            Repeater {
+                                model: Math.min(root.libraryVisibleLimit,
+                                                root.displayedLibraryItems().length)
+
+                                PosterCard {
+                                    required property int index
+                                    property var media: root.displayedLibraryItems()[index]
+                                    width: (libraryGrid.width
+                                            - (libraryGrid.columns - 1) * libraryGrid.columnSpacing)
+                                           / libraryGrid.columns
+                                    title: root.itemTitle(media, "Untitled")
+                                    meta: root.libraryItemMeta(media)
+                                    number: media && media.streamUrl
+                                            ? (index < 9 ? "0" + (index + 1) : String(index + 1))
+                                            : "›"
+                                    artSource: media && media.poster ? media.poster : ""
+                                    accent: root.cardAccent(index)
+                                    onActivated: root.openLibraryEntry(media)
+                                }
+                            }
+                        }
+
+                        FocusButton {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: !serverClient.libraryLoading
+                                     && serverClient.libraryErrorMessage.length === 0
+                                     && root.displayedLibraryItems().length > root.libraryVisibleLimit
+                            width: 220
+                            text: "Show more titles"
+                            onClicked: root.libraryVisibleLimit += 60
+                        }
+
+                        Rectangle {
+                            visible: serverClient.libraryLoading
+                            width: parent.width
+                            height: 220
+                            radius: 24
+                            color: root.panel
+                            border.width: 1
+                            border.color: "#3b4046"
+
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 20
+
+                                BusyIndicator {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    running: parent.parent.visible
+                                    palette.highlight: root.orange
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Loading your library…"
+                                    color: root.textPrimary
+                                    font.pixelSize: 18
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            visible: !serverClient.libraryLoading
+                                     && serverClient.libraryErrorMessage.length > 0
+                            width: parent.width
+                            height: 220
+                            radius: 24
+                            color: root.panel
+                            border.width: 1
+                            border.color: "#6b4b38"
+
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 20
+
+                                Image {
+                                    width: 120
+                                    height: 120
+                                    source: "../assets/mascot/tater-wave.png"
+                                    fillMode: Image.PreserveAspectFit
+                                }
+
+                                Column {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 520
+                                    spacing: 12
+
+                                    Text {
+                                        width: parent.width
+                                        text: serverClient.libraryErrorMessage
+                                        color: root.textPrimary
+                                        wrapMode: Text.WordWrap
+                                        font.pixelSize: 17
+                                    }
+
+                                    FocusButton {
+                                        width: 160
+                                        text: "Try again"
+                                        primary: true
+                                        onClicked: serverClient.refreshLibrary()
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            visible: !serverClient.libraryLoading
+                                     && serverClient.libraryErrorMessage.length === 0
+                                     && root.displayedLibraryItems().length === 0
+                            width: parent.width
+                            height: 220
+                            radius: 24
+                            color: root.panel
+                            border.width: 1
+                            border.color: "#3b4046"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "This folder does not contain any playable media."
+                                color: root.textSecondary
+                                font.pixelSize: 17
+                            }
+                        }
+                    }
+
                     Rectangle {
-                        visible: !serverClient.libraryLoading
-                                 && serverClient.libraryErrorMessage.length === 0
-                                 && root.displayedLibraryItems().length === 0
+                        visible: !demoMode && serverClient.libraryDepth === 0
+                                 && !serverClient.libraryRowsLoading
+                                 && !serverClient.libraryLoading
+                                 && root.libraryPageRows().length === 0
                         width: parent.width
                         height: 220
                         radius: 24
@@ -1713,9 +1967,7 @@ ApplicationWindow {
 
                         Text {
                             anchors.centerIn: parent
-                            text: serverClient.libraryDepth > 0
-                                  ? "This folder does not contain any playable media."
-                                  : "No local library titles were returned yet."
+                            text: "No local library titles were returned yet."
                             color: root.textSecondary
                             font.pixelSize: 17
                         }
@@ -1761,36 +2013,103 @@ ApplicationWindow {
                         }
                     }
 
-                    Grid {
-                        id: liveGrid
+                    Column {
+                        id: liveGuide
                         width: parent.width
                         visible: root.displayedLiveChannels().length > 0
-                        columns: 3
-                        columnSpacing: 15
-                        rowSpacing: 18
+                        spacing: 12
+
+                        readonly property real channelWidth: 210
+                        readonly property real programWidth:
+                            (width - channelWidth - 3 * 12) / 3
+
+                        Rectangle {
+                            width: parent.width
+                            height: 48
+                            radius: 14
+                            color: "#1e2125"
+                            border.width: 1
+                            border.color: "#383d43"
+
+                            Row {
+                                anchors.fill: parent
+                                anchors.leftMargin: 18
+                                anchors.rightMargin: 18
+                                spacing: 12
+
+                                Text {
+                                    width: liveGuide.channelWidth - 18
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "CHANNEL"
+                                    color: root.textSecondary
+                                    font.pixelSize: 11
+                                    font.weight: Font.Bold
+                                    font.letterSpacing: 1.2
+                                }
+
+                                Repeater {
+                                    model: ["ON NOW", "UP NEXT", "LATER"]
+
+                                    Text {
+                                        required property string modelData
+                                        width: liveGuide.programWidth
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: modelData
+                                        color: modelData === "ON NOW" ? root.orange
+                                                                      : root.textSecondary
+                                        font.pixelSize: 11
+                                        font.weight: Font.Bold
+                                        font.letterSpacing: 1.2
+                                    }
+                                }
+                            }
+                        }
 
                         Repeater {
                             model: root.displayedLiveChannels().length
 
-                            MediaCard {
+                            Row {
+                                id: guideRow
                                 required property int index
                                 property var channel: root.displayedLiveChannels()[index]
-                                property var currentProgram: root.channelNow(channel)
-                                width: (liveGrid.width - 2 * liveGrid.columnSpacing) / 3
-                                eyebrow: "CH " + channel.number + "  •  LIVE"
-                                title: root.channelTitle(channel)
-                                subtitle: root.channelSubtitle(channel)
-                                badge: channel.number || "TV"
-                                artSource: currentProgram && currentProgram.poster
-                                           ? currentProgram.poster : ""
-                                accent: root.cardAccent(index)
-                                progress: root.progressValue(currentProgram
-                                                             ? currentProgram.progressPercent : 0)
-                                onActivated: {
-                                    if (channel && channel.streamUrl)
-                                        root.startPlayback(channel, "CHANNEL " + channel.number)
-                                    else
-                                        root.openDetails(channel, "CHANNEL " + channel.number)
+                                property var programs: root.guidePrograms(channel)
+                                width: liveGuide.width
+                                spacing: 12
+
+                                GuideProgramCard {
+                                    width: liveGuide.channelWidth
+                                    timeLabel: "CH " + guideRow.channel.number + "  •  LIVE"
+                                    title: root.itemTitle(guideRow.channel, "Tater Tube")
+                                    meta: "WATCH CHANNEL"
+                                    isCurrent: true
+                                    onActivated: {
+                                        if (guideRow.channel && guideRow.channel.streamUrl)
+                                            root.startPlayback(guideRow.channel,
+                                                               "CHANNEL " + guideRow.channel.number)
+                                        else
+                                            root.openDetails(guideRow.channel,
+                                                             "CHANNEL " + guideRow.channel.number)
+                                    }
+                                }
+
+                                Repeater {
+                                    model: Math.min(3, guideRow.programs.length)
+
+                                    GuideProgramCard {
+                                        required property int index
+                                        property var program: guideRow.programs[index]
+                                        width: liveGuide.programWidth
+                                        timeLabel: root.guideProgramTime(guideRow.channel,
+                                                                         program, index)
+                                        title: root.itemTitle(program, "Tater Tube")
+                                        meta: root.guideProgramMeta(program)
+                                        isCurrent: root.guideProgramIsCurrent(guideRow.channel,
+                                                                              program, index)
+                                        progress: root.progressValue(program
+                                                                     ? program.progressPercent : 0)
+                                        onActivated: root.activateGuideProgram(guideRow.channel,
+                                                                               program, index)
+                                    }
                                 }
                             }
                         }
@@ -2274,13 +2593,8 @@ ApplicationWindow {
         }
     }
 
-    MediaDevices {
-        id: mediaDevices
-    }
-
     AudioOutput {
         id: playerAudio
-        device: mediaDevices.defaultAudioOutput
         volume: 0.85
         muted: false
     }
@@ -2665,9 +2979,7 @@ ApplicationWindow {
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         leftPadding: 12
-                        text: mediaDevices.audioOutputs.length === 0
-                              ? "NO AUDIO OUTPUT"
-                              : "VOLUME  " + Math.round(playerAudio.volume * 100) + "%"
+                        text: "VOLUME  " + Math.round(playerAudio.volume * 100) + "%"
                         color: root.textSecondary
                         font.pixelSize: 11
                         font.weight: Font.Bold

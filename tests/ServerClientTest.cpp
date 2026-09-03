@@ -61,6 +61,8 @@ void ServerClientTest::loadsVersionedHome()
                     body = R"({"success":true,"data":{"name":"Test Tater Server","version":"9.9.9"}})";
                 } else if (request.startsWith("GET /api/v1/player/home ")) {
                     body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"tubeTV":true,"commercials":true},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Movie","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
+                } else if (request.startsWith("GET /api/v1/player/library ")) {
+                    body = R"({"success":true,"data":{"rows":[{"title":"Movies","entry":{"id":"local:movies","type":"local","title":"Movies"},"items":[{"title":"A Folder","type":"localFolder","mediaType":"folder","categoryId":"local:movies","sourceIndex":0,"path":"Folder"},{"title":"Playable Movie","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Movie.mkv","streamUrl":"http://tube.test/movie"}]}]}})";
                 } else if (request.startsWith("GET /api/tater/usenet/catalog ")) {
                     body = R"({"success":true,"data":{"categories":[{"type":"tubeTv","title":"Tube TV"},{"type":"localRoot","title":"Local","children":[{"type":"continue","title":"Continue Watching"},{"id":"local:movies","type":"local","title":"Movies"}]}]}})";
                 } else if (request.startsWith("GET /api/tater/usenet/items?")) {
@@ -103,6 +105,11 @@ void ServerClientTest::loadsVersionedHome()
     QVERIFY(client.capabilities().value("commercials").toBool());
     QCOMPARE(client.homeWarnings(), QStringList{QStringLiteral("Sample warning")});
     QVERIFY(requests.contains("Authorization: Bearer test-token"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.libraryRows().size(), 1, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(!client.libraryRowsLoading(), 3000);
+    const QVariantMap movieShelf = client.libraryRows().first().toMap();
+    QCOMPARE(movieShelf.value("title").toString(), QStringLiteral("Movies"));
+    QCOMPARE(movieShelf.value("items").toList().size(), 2);
 
     client.refreshLibraries();
     QTRY_VERIFY_WITH_TIMEOUT(requests.contains("GET /api/tater/usenet/catalog "), 3000);
@@ -134,6 +141,8 @@ void ServerClientTest::loadsVersionedHome()
     QCOMPARE(channel.value("next").toMap().value("title").toString(),
              QStringLiteral("Up Next"));
     QCOMPARE(channel.value("now").toMap().value("progressPercent").toDouble(), 50.0);
+    QCOMPARE(channel.value("guideElapsedSeconds").toDouble(), 30.0);
+    QVERIFY(channel.value("guideStartedAtMs").toLongLong() > 0);
 
     settings.clear();
 }
