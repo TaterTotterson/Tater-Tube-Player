@@ -830,111 +830,11 @@ ApplicationWindow {
         }
     }
 
-    Rectangle {
-        id: topBar
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        height: 86
-        visible: root.currentPage === "home"
-        color: "#e917191d"
-        border.width: 0
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: 1
-            color: "#31353a"
-        }
-
-        Row {
-            anchors.left: parent.left
-            anchors.leftMargin: 34
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 13
-
-            Rectangle {
-                width: 48
-                height: 48
-                radius: 16
-                color: "#241b16"
-                border.width: 1
-                border.color: "#70401f"
-
-                Image {
-                    anchors.fill: parent
-                    anchors.margins: 2
-                    source: "../assets/mascot/tater-wave.png"
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                }
-            }
-
-            Column {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: -2
-
-                Text {
-                    text: "TATER TUBE PLAYER"
-                    color: root.textPrimary
-                    font.pixelSize: 21
-                    font.weight: Font.Black
-                    font.letterSpacing: 1.3
-                }
-
-                Text {
-                    text: "YOUR MEDIA, YOUR CHANNELS"
-                    color: root.orange
-                    font.pixelSize: 9
-                    font.weight: Font.Bold
-                    font.letterSpacing: 1.15
-                }
-            }
-        }
-
-        Rectangle {
-            anchors.right: parent.right
-            anchors.rightMargin: 34
-            anchors.verticalCenter: parent.verticalCenter
-            width: statusRow.implicitWidth + 26
-            height: 38
-            radius: 13
-            color: "#202429"
-            border.width: 1
-            border.color: "#3c4147"
-
-            Row {
-                id: statusRow
-                anchors.centerIn: parent
-                spacing: 9
-
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 9
-                    height: 9
-                    radius: 5
-                    color: demoMode || serverClient.online ? "#73d68a" : "#71767c"
-                }
-
-                Text {
-                    text: (demoMode ? "DEMO LIBRARY"
-                                    : (serverClient.online ? "SERVER ONLINE" : "SERVER OFFLINE"))
-                          + (gamepadInput.connected ? "  •  CONTROLLER" : "")
-                    color: "#d9dbdc"
-                    font.pixelSize: 11
-                    font.weight: Font.Bold
-                    font.letterSpacing: 0.8
-                }
-            }
-        }
-    }
-
     Flickable {
         id: page
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: topBar.bottom
+        anchors.top: parent.top
         anchors.bottom: parent.bottom
         contentHeight: contentColumn.implicitHeight + 64
         clip: true
@@ -2441,6 +2341,40 @@ ApplicationWindow {
                 horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: 11
                 font.weight: Font.DemiBold
+            }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 26
+            height: 46
+            radius: 14
+            color: "#202429"
+            border.width: 1
+            border.color: "#3c4147"
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 9
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 9
+                    height: 9
+                    radius: 5
+                    color: demoMode || serverClient.online ? "#73d68a" : "#71767c"
+                }
+
+                Text {
+                    text: demoMode ? "DEMO LIBRARY"
+                                   : (serverClient.online ? "SERVER ONLINE" : "SERVER OFFLINE")
+                    color: "#d9dbdc"
+                    font.pixelSize: 11
+                    font.weight: Font.Bold
+                    font.letterSpacing: 0.8
+                }
             }
         }
     }
