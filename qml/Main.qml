@@ -2715,10 +2715,13 @@ ApplicationWindow {
         }
 
         Rectangle {
+            id: sideServerStatus
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.margins: 26
+            anchors.bottom: sideExitNav.top
+            anchors.leftMargin: 26
+            anchors.rightMargin: 26
+            anchors.bottomMargin: 12
             height: 46
             radius: 14
             color: "#202429"
@@ -2746,6 +2749,18 @@ ApplicationWindow {
                     font.letterSpacing: 0.8
                 }
             }
+        }
+
+        FocusButton {
+            id: sideExitNav
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 26
+            anchors.rightMargin: 26
+            anchors.bottomMargin: 26
+            text: "Exit to Steam"
+            onClicked: Qt.quit()
         }
     }
 
