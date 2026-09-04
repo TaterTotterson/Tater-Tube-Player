@@ -704,6 +704,14 @@ ApplicationWindow {
             return true
         }
 
+        if (vertical > 0 && current === sectionBack
+                && currentPage === "library" && serverClient.libraryDepth === 0
+                && libraryAllMovies.visible && libraryAllMovies.enabled) {
+            libraryAllMovies.forceActiveFocus()
+            revealFocusedItem(libraryAllMovies)
+            return true
+        }
+
         var origin = current.mapToItem(root.contentItem, current.width / 2, current.height / 2)
         var currentTop = origin.y - current.height / 2
         var currentBottom = origin.y + current.height / 2
@@ -1532,6 +1540,7 @@ ApplicationWindow {
                     }
 
                     Rectangle {
+                        id: libraryQuickBrowse
                         visible: demoMode || serverClient.libraryDepth === 0
                         width: parent.width
                         height: 94
@@ -1601,6 +1610,7 @@ ApplicationWindow {
                             spacing: 12
 
                             FocusButton {
+                                id: libraryAllMovies
                                 width: 220
                                 text: "All Movies  ›"
                                 primary: true
@@ -1609,6 +1619,7 @@ ApplicationWindow {
                             }
 
                             FocusButton {
+                                id: libraryAllTvShows
                                 width: 220
                                 text: "All TV Shows  ›"
                                 enabled: !!root.libraryCollectionRow("series")

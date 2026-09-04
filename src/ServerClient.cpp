@@ -241,18 +241,6 @@ void ServerClient::handleLibraryRowsReply(QNetworkReply *reply, int generation)
     m_libraryRows = data.value("rows").toArray().toVariantList();
     m_libraryRowsStoredAtMs = QDateTime::currentMSecsSinceEpoch();
     m_libraryErrorMessage.clear();
-    for (const QVariant &value : m_libraryRows) {
-        const QVariantMap row = value.toMap();
-        const QVariantMap entry = row.value(QStringLiteral("entry")).toMap();
-        const LibraryLocation location = libraryLocationFromEntry(entry);
-        if (!location.continueWatching && location.categoryId.isEmpty())
-            continue;
-        m_libraryCache.insert(libraryCacheKey(location), LibraryCacheEntry{
-            row.value(QStringLiteral("items")).toList(),
-            row.value(QStringLiteral("title"), location.title).toString(),
-            m_libraryRowsStoredAtMs,
-        });
-    }
     setOnline(true);
     emit libraryChanged();
 }
@@ -346,6 +334,8 @@ void ServerClient::loadLibraryLocation(const LibraryLocation &location, bool pus
     if (!location.continueWatching) {
         QUrlQuery query;
         query.addQueryItem(QStringLiteral("category_id"), location.categoryId);
+        if (location.categoryId.startsWith(QStringLiteral("local-discover:")))
+            query.addQueryItem(QStringLiteral("full"), QStringLiteral("1"));
         if (location.sourceIndex >= 0)
             query.addQueryItem(QStringLiteral("source"), QString::number(location.sourceIndex));
         if (!location.path.isEmpty())

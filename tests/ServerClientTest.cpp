@@ -62,11 +62,15 @@ void ServerClientTest::loadsVersionedHome()
                 } else if (request.startsWith("GET /api/v1/player/home ")) {
                     body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"tubeTV":true,"commercials":true},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Movie","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
                 } else if (request.startsWith("GET /api/v1/player/library ")) {
-                    body = R"({"success":true,"data":{"rows":[{"title":"Movies","entry":{"id":"local:movies","type":"local","title":"Movies"},"items":[{"title":"A Folder","type":"localFolder","mediaType":"folder","categoryId":"local:movies","sourceIndex":0,"path":"Folder"},{"title":"Playable Movie","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Movie.mkv","streamUrl":"http://tube.test/movie"}]}]}})";
+                    body = R"({"success":true,"data":{"rows":[{"title":"Movies","entry":{"id":"local:movies","type":"local","title":"Movies"},"items":[{"title":"Shelf Preview","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Preview.mkv","streamUrl":"http://tube.test/preview"}]},{"title":"All Movies","entry":{"id":"local-discover:movies","type":"localDiscover","title":"All Movies"},"items":[{"title":"Discovery Preview","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"DiscoveryPreview.mkv","streamUrl":"http://tube.test/discovery-preview"}]}]}})";
                 } else if (request.startsWith("GET /api/tater/usenet/catalog ")) {
                     body = R"({"success":true,"data":{"categories":[{"type":"tubeTv","title":"Tube TV"},{"type":"localRoot","title":"Local","children":[{"type":"continue","title":"Continue Watching"},{"id":"local:movies","type":"local","title":"Movies"}]}]}})";
                 } else if (request.startsWith("GET /api/tater/usenet/items?")) {
-                    body = R"({"success":true,"data":{"title":"Movies","items":[{"title":"A Folder","type":"localFolder","mediaType":"folder","categoryId":"local:movies","sourceIndex":0,"path":"Folder"},{"title":"Playable Movie","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Movie.mkv","streamUrl":"http://tube.test/movie"}]}})";
+                    if (request.contains("full=1")) {
+                        body = R"({"success":true,"data":{"title":"All Movies","items":[{"title":"Movie One","mediaType":"movie","streamUrl":"http://tube.test/one"},{"title":"Movie Two","mediaType":"movie","streamUrl":"http://tube.test/two"},{"title":"Movie Three","mediaType":"movie","streamUrl":"http://tube.test/three"}]}})";
+                    } else {
+                        body = R"({"success":true,"data":{"title":"Movies","items":[{"title":"A Folder","type":"localFolder","mediaType":"folder","categoryId":"local:movies","sourceIndex":0,"path":"Folder"},{"title":"Playable Movie","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Movie.mkv","streamUrl":"http://tube.test/movie"}]}})";
+                    }
                 } else if (request.startsWith("GET /api/tater/tv/lineup ")) {
                     body = R"({"success":true,"data":{"startedAt":"2026-09-02T12:00:00Z","serverNow":"2026-09-02T12:00:30Z","channels":[{"number":"12","title":"Cartoons","streamUrl":"http://tube.test/live/12","schedule":[{"title":"Playing Now","kind":"movie","start":0,"end":60},{"title":"Up Next","kind":"movie","start":60,"end":120}]}]}})";
                 } else {
@@ -105,11 +109,11 @@ void ServerClientTest::loadsVersionedHome()
     QVERIFY(client.capabilities().value("commercials").toBool());
     QCOMPARE(client.homeWarnings(), QStringList{QStringLiteral("Sample warning")});
     QVERIFY(requests.contains("Authorization: Bearer test-token"));
-    QTRY_COMPARE_WITH_TIMEOUT(client.libraryRows().size(), 1, 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(client.libraryRows().size(), 2, 3000);
     QTRY_VERIFY_WITH_TIMEOUT(!client.libraryRowsLoading(), 3000);
     const QVariantMap movieShelf = client.libraryRows().first().toMap();
     QCOMPARE(movieShelf.value("title").toString(), QStringLiteral("Movies"));
-    QCOMPARE(movieShelf.value("items").toList().size(), 2);
+    QCOMPARE(movieShelf.value("items").toList().size(), 1);
 
     client.refreshLibraries();
     QTRY_VERIFY_WITH_TIMEOUT(requests.contains("GET /api/tater/usenet/catalog "), 3000);
@@ -131,6 +135,15 @@ void ServerClientTest::loadsVersionedHome()
     client.refreshLibrary();
     QTRY_VERIFY_WITH_TIMEOUT(
         requests.count("GET /api/tater/usenet/items?") > itemRequestCount, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(!client.libraryLoading(), 3000);
+    client.browseLibraryBack();
+    QCOMPARE(client.libraryDepth(), 0);
+
+    const QVariantMap allMoviesShelf = client.libraryRows().last().toMap();
+    client.browseLibrary(allMoviesShelf.value("entry").toMap());
+    QTRY_COMPARE_WITH_TIMEOUT(client.libraryItems().size(), 3, 3000);
+    QCOMPARE(client.libraryTitle(), QStringLiteral("All Movies"));
+    QVERIFY(requests.contains("full=1"));
 
     client.refreshLiveGuide();
     QTRY_VERIFY_WITH_TIMEOUT(client.liveGuideReady(), 3000);
