@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
                       QStringLiteral("path")});
     parser.addOption({QStringLiteral("page"),
                       QStringLiteral("Open a page for design and hardware testing."),
-                      QStringLiteral("home|library|live|search"),
+                      QStringLiteral("home|library|discover|live|search"),
                       QStringLiteral("home")});
     parser.addOption({QStringLiteral("play-url"),
                       QStringLiteral("Open a URL directly in the playback screen for testing."),
@@ -59,7 +59,8 @@ int main(int argc, char *argv[])
 
     const QString initialPage = parser.value(QStringLiteral("page")).trimmed().toLower();
     if (initialPage == QStringLiteral("home") || initialPage == QStringLiteral("library")
-        || initialPage == QStringLiteral("live") || initialPage == QStringLiteral("search")) {
+        || initialPage == QStringLiteral("discover") || initialPage == QStringLiteral("live")
+        || initialPage == QStringLiteral("search")) {
         engine.rootObjects().constFirst()->setProperty("currentPage", initialPage);
     }
 

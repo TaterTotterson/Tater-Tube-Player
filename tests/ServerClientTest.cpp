@@ -60,17 +60,23 @@ void ServerClientTest::loadsVersionedHome()
                 if (request.startsWith("GET /api/tater/server ")) {
                     body = R"({"success":true,"data":{"name":"Test Tater Server","version":"9.9.9"}})";
                 } else if (request.startsWith("GET /api/v1/player/home ")) {
-                    body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"tubeTV":true,"commercials":true},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Movie","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
+                    body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"newznab":true,"tubeTV":true,"commercials":true},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Movie","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
                 } else if (request.startsWith("GET /api/v1/player/library ")) {
                     body = R"({"success":true,"data":{"rows":[{"title":"Movies","entry":{"id":"local:movies","type":"local","title":"Movies"},"items":[{"title":"Shelf Preview","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Preview.mkv","streamUrl":"http://tube.test/preview"}]},{"title":"All Movies","entry":{"id":"local-discover:movies","type":"localDiscover","title":"All Movies"},"items":[{"title":"Discovery Preview","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"DiscoveryPreview.mkv","streamUrl":"http://tube.test/discovery-preview"}]}]}})";
                 } else if (request.startsWith("GET /api/tater/usenet/catalog ")) {
-                    body = R"({"success":true,"data":{"categories":[{"type":"tubeTv","title":"Tube TV"},{"type":"localRoot","title":"Local","children":[{"type":"continue","title":"Continue Watching"},{"id":"local:movies","type":"local","title":"Movies"}]}]}})";
+                    body = R"({"success":true,"data":{"categories":[{"type":"tubeTv","title":"Tube TV"},{"id":"stream","type":"group","title":"Stream","children":[{"type":"discoverRoot","title":"Discover","children":[{"id":"movie:top","type":"discover","title":"Popular Movies","category":"movie"},{"id":"movie:year:2026","type":"discover","title":"New Movies","category":"movie"},{"id":"movie:imdbrating","type":"discover","title":"Featured Movies","category":"movie"},{"id":"series:top","type":"discover","title":"Popular TV","category":"series"},{"id":"series:year:2026","type":"discover","title":"New TV","category":"series"},{"id":"series:imdbrating","type":"discover","title":"Featured TV","category":"series"}]}]},{"type":"localRoot","title":"Local","children":[{"type":"continue","title":"Continue Watching"},{"id":"local:movies","type":"local","title":"Movies"}]}]}})";
                 } else if (request.startsWith("GET /api/tater/usenet/items?")) {
                     if (request.contains("full=1")) {
                         body = R"({"success":true,"data":{"title":"All Movies","items":[{"title":"Movie One","mediaType":"movie","streamUrl":"http://tube.test/one"},{"title":"Movie Two","mediaType":"movie","streamUrl":"http://tube.test/two"},{"title":"Movie Three","mediaType":"movie","streamUrl":"http://tube.test/three"}]}})";
                     } else {
                         body = R"({"success":true,"data":{"title":"Movies","items":[{"title":"A Folder","type":"localFolder","mediaType":"folder","categoryId":"local:movies","sourceIndex":0,"path":"Folder"},{"title":"Playable Movie","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Movie.mkv","streamUrl":"http://tube.test/movie"}]}})";
                     }
+                } else if (request.startsWith("GET /api/tater/usenet/discover?")) {
+                    body = R"({"success":true,"data":{"title":"Popular Movies","items":[{"title":"Discover Me","type":"discovery","mediaType":"movie","searchQuery":"Discover Me 2026","date":"2026","poster":"http://tube.test/discover.jpg"}]}})";
+                } else if (request.startsWith("GET /api/tater/usenet/search?")) {
+                    body = R"({"success":true,"data":{"title":"Search: Discover Me 2026","items":[{"title":"Discover.Me.2026.1080p","type":"nzb","mediaType":"nzb","nzbUrl":"http://indexer.test/get/one","sizeText":"8.2 GB"},{"title":"Discover.Me.2026.720p","type":"nzb","nzbUrl":"http://indexer.test/get/two","sizeText":"4.1 GB"}]}})";
+                } else if (request.startsWith("POST /api/tater/usenet/play ")) {
+                    body = R"({"streams":[{"title":"Discover Me 2026","url":"http://tube.test/api/files/stream?player_token=test-token"}],"queue_status":"streamable"})";
                 } else if (request.startsWith("GET /api/tater/tv/lineup ")) {
                     body = R"({"success":true,"data":{"startedAt":"2026-09-02T12:00:00Z","serverNow":"2026-09-02T12:00:30Z","channels":[{"number":"12","title":"Cartoons","streamUrl":"http://tube.test/live/12","schedule":[{"title":"Playing Now","kind":"movie","start":0,"end":60},{"title":"Up Next","kind":"movie","start":60,"end":120}]}]}})";
                 } else {
@@ -78,6 +84,7 @@ void ServerClientTest::loadsVersionedHome()
                 }
 
                 const QByteArray status = request.startsWith("GET /api/")
+                        || request.startsWith("POST /api/")
                     ? QByteArrayLiteral("HTTP/1.1 200 OK\r\n")
                     : QByteArrayLiteral("HTTP/1.1 404 Not Found\r\n");
                 socket->write(status
@@ -107,6 +114,7 @@ void ServerClientTest::loadsVersionedHome()
     QCOMPARE(client.liveChannels().first().toMap().value("number").toString(),
              QStringLiteral("12"));
     QVERIFY(client.capabilities().value("commercials").toBool());
+    QVERIFY(client.capabilities().value("newznab").toBool());
     QCOMPARE(client.homeWarnings(), QStringList{QStringLiteral("Sample warning")});
     QVERIFY(requests.contains("Authorization: Bearer test-token"));
     QTRY_COMPARE_WITH_TIMEOUT(client.libraryRows().size(), 2, 3000);
@@ -144,6 +152,33 @@ void ServerClientTest::loadsVersionedHome()
     QTRY_COMPARE_WITH_TIMEOUT(client.libraryItems().size(), 3, 3000);
     QCOMPARE(client.libraryTitle(), QStringLiteral("All Movies"));
     QVERIFY(requests.contains("full=1"));
+
+    client.refreshDiscover();
+    QTRY_COMPARE_WITH_TIMEOUT(client.discoverCategories().size(), 6, 3000);
+    QCOMPARE(client.discoverStage(), QStringLiteral("catalog"));
+    client.browseDiscover(client.discoverCategories().first().toMap());
+    QTRY_COMPARE_WITH_TIMEOUT(client.discoverItems().size(), 1, 3000);
+    QCOMPARE(client.discoverStage(), QStringLiteral("titles"));
+    QCOMPARE(client.discoverTitle(), QStringLiteral("Popular Movies"));
+    QVERIFY(requests.contains("GET /api/tater/usenet/discover?"));
+
+    client.activateDiscoverItem(client.discoverItems().first().toMap());
+    QTRY_COMPARE_WITH_TIMEOUT(client.discoverItems().size(), 2, 3000);
+    QCOMPARE(client.discoverStage(), QStringLiteral("results"));
+    QCOMPARE(client.discoverItems().first().toMap().value("mediaType").toString(),
+             QStringLiteral("movie"));
+    QVERIFY(requests.contains("GET /api/tater/usenet/search?"));
+
+    QSignalSpy playbackSpy(&client, &ServerClient::discoverPlaybackReady);
+    client.activateDiscoverItem(client.discoverItems().first().toMap());
+    QTRY_COMPARE_WITH_TIMEOUT(playbackSpy.count(), 1, 3000);
+    const QVariantMap preparedItem = playbackSpy.first().first().toMap();
+    QCOMPARE(preparedItem.value("streamUrl").toString(),
+             QStringLiteral("http://tube.test/api/files/stream?player_token=test-token"));
+    QVERIFY(requests.contains("POST /api/tater/usenet/play "));
+    client.browseDiscoverBack();
+    QCOMPARE(client.discoverStage(), QStringLiteral("titles"));
+    QCOMPARE(client.discoverItems().size(), 1);
 
     client.refreshLiveGuide();
     QTRY_VERIFY_WITH_TIMEOUT(client.liveGuideReady(), 3000);

@@ -38,6 +38,12 @@ class ServerClient final : public QObject
     Q_PROPERTY(bool libraryRowsLoading READ libraryRowsLoading NOTIFY libraryChanged)
     Q_PROPERTY(QString libraryErrorMessage READ libraryErrorMessage NOTIFY libraryChanged)
     Q_PROPERTY(int libraryDepth READ libraryDepth NOTIFY libraryChanged)
+    Q_PROPERTY(QVariantList discoverCategories READ discoverCategories NOTIFY discoverChanged)
+    Q_PROPERTY(QVariantList discoverItems READ discoverItems NOTIFY discoverChanged)
+    Q_PROPERTY(QString discoverTitle READ discoverTitle NOTIFY discoverChanged)
+    Q_PROPERTY(QString discoverStage READ discoverStage NOTIFY discoverChanged)
+    Q_PROPERTY(bool discoverLoading READ discoverLoading NOTIFY discoverChanged)
+    Q_PROPERTY(QString discoverErrorMessage READ discoverErrorMessage NOTIFY discoverChanged)
     Q_PROPERTY(QVariantList liveGuideChannels READ liveGuideChannels NOTIFY liveGuideChanged)
     Q_PROPERTY(bool liveGuideLoading READ liveGuideLoading NOTIFY liveGuideChanged)
     Q_PROPERTY(bool liveGuideReady READ liveGuideReady NOTIFY liveGuideChanged)
@@ -70,6 +76,12 @@ public:
     bool libraryRowsLoading() const { return m_libraryRowsPending > 0; }
     QString libraryErrorMessage() const { return m_libraryErrorMessage; }
     int libraryDepth() const { return m_libraryHistory.size(); }
+    QVariantList discoverCategories() const { return m_discoverCategories; }
+    QVariantList discoverItems() const { return m_discoverItems; }
+    QString discoverTitle() const { return m_discoverTitle; }
+    QString discoverStage() const { return m_discoverStage; }
+    bool discoverLoading() const { return m_discoverLoading; }
+    QString discoverErrorMessage() const { return m_discoverErrorMessage; }
     QVariantList liveGuideChannels() const { return m_liveGuideChannels; }
     bool liveGuideLoading() const { return m_liveGuideLoading; }
     bool liveGuideReady() const { return m_liveGuideReady; }
@@ -84,6 +96,10 @@ public:
     Q_INVOKABLE void browseLibraryItem(const QVariantMap &item);
     Q_INVOKABLE void browseLibraryBack();
     Q_INVOKABLE void refreshLibrary();
+    Q_INVOKABLE void refreshDiscover();
+    Q_INVOKABLE void browseDiscover(const QVariantMap &entry);
+    Q_INVOKABLE void activateDiscoverItem(const QVariantMap &item);
+    Q_INVOKABLE void browseDiscoverBack();
     Q_INVOKABLE void refreshLiveGuide();
     Q_INVOKABLE void forgetServer();
     Q_INVOKABLE void savePlaybackProgress(const QVariantMap &item, qint64 positionMs,
@@ -104,6 +120,8 @@ signals:
     void errorMessageChanged();
     void homeChanged();
     void libraryChanged();
+    void discoverChanged();
+    void discoverPlaybackReady(const QVariantMap &item);
     void liveGuideChanged();
     void pairingCompleted();
 
@@ -122,6 +140,14 @@ private:
         qint64 storedAtMs = 0;
     };
 
+    struct DiscoverPage {
+        QVariantList items;
+        QString title;
+        QString stage;
+        QString mediaType;
+        QVariantMap pendingItem;
+    };
+
     void loadSettings();
     void saveSettings() const;
     void setBusy(bool busy);
@@ -138,6 +164,17 @@ private:
                             bool pushHistory);
     QString libraryCacheKey(const LibraryLocation &location) const;
     void handleLibrariesReply(QNetworkReply *reply);
+    void handleDiscoverCatalogReply(QNetworkReply *reply, int generation);
+    void handleDiscoverFeedReply(QNetworkReply *reply, int generation,
+                                 const QString &fallbackTitle,
+                                 const QString &mediaType);
+    void handleDiscoverSearchReply(QNetworkReply *reply, int generation,
+                                   const QString &mediaType,
+                                   const QString &fallbackTitle);
+    void handleDiscoverPlayReply(QNetworkReply *reply, int generation,
+                                 const QVariantMap &sourceItem);
+    void restoreDiscoverPage(const DiscoverPage &page);
+    void resetDiscover();
     void handleLiveGuideReply(QNetworkReply *reply);
     static QVariantMap guideProgram(const QVariantList &schedule, double elapsedSeconds,
                                     bool current);
@@ -169,6 +206,16 @@ private:
     int m_libraryRowsGeneration = 0;
     int m_libraryRowsPending = 0;
     qint64 m_libraryRowsStoredAtMs = 0;
+    QVariantList m_discoverCategories;
+    QVariantList m_discoverItems;
+    QString m_discoverTitle;
+    QString m_discoverStage = QStringLiteral("catalog");
+    QString m_discoverMediaType;
+    QString m_discoverErrorMessage;
+    QVariantMap m_discoverPendingItem;
+    QVector<DiscoverPage> m_discoverHistory;
+    int m_discoverGeneration = 0;
+    bool m_discoverLoading = false;
     QVariantList m_liveGuideChannels;
     QString m_liveGuideErrorMessage;
     bool m_online = false;

@@ -41,6 +41,7 @@ ApplicationWindow {
     property bool playbackEnded: false
     readonly property bool compatiblePlayback: compatiblePlaybackMode === true
     property int libraryVisibleLimit: 60
+    property int discoverVisibleLimit: 60
     property bool sideMenuOpen: false
     property var sideMenuReturnFocus: null
 
@@ -222,6 +223,59 @@ ApplicationWindow {
         }
     }
 
+    function demoDiscoverCategories() {
+        return [
+            {id: "movie:top", title: "Popular Movies", detail: "MOVIE", category: "movie"},
+            {id: "movie:year", title: "New Movies", detail: "THIS YEAR", category: "movie"},
+            {id: "movie:imdbrating", title: "Featured Movies", detail: "MOVIE", category: "movie"},
+            {id: "series:top", title: "Popular TV", detail: "TV", category: "series"},
+            {id: "series:year", title: "New TV", detail: "THIS YEAR", category: "series"},
+            {id: "series:imdbrating", title: "Featured TV", detail: "TV", category: "series"}
+        ]
+    }
+
+    function displayedDiscoverCategories() {
+        return demoMode ? demoDiscoverCategories() : serverClient.discoverCategories
+    }
+
+    function displayedDiscoverItems() {
+        return demoMode ? libraryMediaItems() : serverClient.discoverItems
+    }
+
+    function openDiscoverCategory(category) {
+        discoverVisibleLimit = 60
+        if (demoMode) {
+            if (libraryMediaItems().length > 0)
+                openDetails(libraryMediaItems()[0], category.title || "DISCOVER")
+            return
+        }
+        serverClient.browseDiscover(category)
+        sectionScroller.contentY = 0
+    }
+
+    function activateDiscoverItem(item) {
+        if (!item)
+            return
+        discoverVisibleLimit = 60
+        if (demoMode) {
+            openDetails(item, mediaLabel(item))
+            return
+        }
+        returnFocusItem = root.activeFocusItem
+        serverClient.activateDiscoverItem(item)
+        sectionScroller.contentY = 0
+    }
+
+    function discoverItemMeta(item) {
+        if (!item)
+            return ""
+        if (serverClient.discoverStage === "results")
+            return item.sizeText || item.files || item.category || "NZB RESULT"
+        if (serverClient.discoverStage === "streams")
+            return "READY TO PLAY"
+        return itemMeta(item) || item.sizeText || mediaLabel(item)
+    }
+
     function demoLiveChannels() {
         return [{number: "12", title: "Saturday Cartoons",
                  streamUrl: "", now: {title: "Galaxy Rangers", progressPercent: 67},
@@ -357,6 +411,9 @@ ApplicationWindow {
         sectionScroller.contentY = 0
         if (name === "library" && !demoMode && serverClient.libraries.length === 0)
             serverClient.refreshLibraries()
+        if (name === "discover" && !demoMode
+                && serverClient.discoverCategories.length === 0)
+            serverClient.refreshDiscover()
         if (name === "live" && !demoMode)
             serverClient.refreshLiveGuide()
         Qt.callLater(function() {
@@ -375,6 +432,8 @@ ApplicationWindow {
         Qt.callLater(function() {
             if (currentPage === "library")
                 sideLibraryNav.forceActiveFocus()
+            else if (currentPage === "discover")
+                sideDiscoverNav.forceActiveFocus()
             else if (currentPage === "live")
                 sideLiveNav.forceActiveFocus()
             else if (currentPage === "search")
@@ -609,6 +668,11 @@ ApplicationWindow {
             libraryVisibleLimit = 60
             serverClient.browseLibraryBack()
             sectionScroller.contentY = 0
+        } else if (currentPage === "discover" && !demoMode
+                   && serverClient.discoverStage !== "catalog") {
+            discoverVisibleLimit = 60
+            serverClient.browseDiscoverBack()
+            sectionScroller.contentY = 0
         } else if (currentPage !== "home") {
             showPage("home")
         } else {
@@ -824,6 +888,19 @@ ApplicationWindow {
                         || !root.isDescendant(current, sectionScroller.contentItem))) {
                 Qt.callLater(function() { root.focusFirstSectionControl() })
             }
+        }
+
+        function onDiscoverChanged() {
+            var current = root.activeFocusItem
+            if (root.currentPage === "discover" && !serverClient.discoverLoading
+                    && (!current || !root.isItemShown(current)
+                        || !root.isDescendant(current, sectionScroller.contentItem))) {
+                Qt.callLater(function() { root.focusFirstSectionControl() })
+            }
+        }
+
+        function onDiscoverPlaybackReady(item) {
+            root.startPlayback(item, root.mediaLabel(item))
         }
     }
 
@@ -1879,6 +1956,287 @@ ApplicationWindow {
 
                 Column {
                     width: parent.width
+                    visible: root.currentPage === "discover"
+                    spacing: 22
+
+                    Row {
+                        width: parent.width
+                        spacing: 16
+
+                        Column {
+                            width: parent.width - discoverRefresh.width - parent.spacing
+                            spacing: 7
+
+                            Text {
+                                text: !demoMode && serverClient.discoverStage !== "catalog"
+                                      ? serverClient.discoverTitle : "Discover"
+                                color: root.textPrimary
+                                font.pixelSize: 38
+                                font.weight: Font.Black
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: !demoMode && serverClient.discoverStage === "results"
+                                      ? "Choose the NZB release you want Tater Tube Server to prepare."
+                                      : (!demoMode && serverClient.discoverStage === "streams"
+                                         ? "This release contains multiple playable files. Choose the one you want."
+                                         : (!demoMode && serverClient.discoverStage === "titles"
+                                            ? "Choose a title and Tater will search your configured NZB provider automatically."
+                                            : "Browse popular, new, and featured movies and television through your Tater Tube Server."))
+                                color: root.textSecondary
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 16
+                            }
+                        }
+
+                        FocusButton {
+                            id: discoverRefresh
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: !demoMode && serverClient.discoverStage === "catalog"
+                            width: 150
+                            text: "Refresh"
+                            onClicked: serverClient.refreshDiscover()
+                        }
+                    }
+
+                    Rectangle {
+                        visible: demoMode || serverClient.discoverStage === "catalog"
+                        width: parent.width
+                        height: 94
+                        radius: 22
+                        clip: true
+                        color: "#1d2024"
+                        border.width: 1
+                        border.color: "#41464c"
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            width: 5
+                            color: root.orange
+                        }
+
+                        Row {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 22
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 14
+
+                            Image {
+                                width: 62
+                                height: 62
+                                source: "../assets/mascot/tater-salute.png"
+                                fillMode: Image.PreserveAspectFit
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Text {
+                                    text: "TATER DISCOVER"
+                                    color: root.orangeBright
+                                    font.pixelSize: 11
+                                    font.weight: Font.Bold
+                                    font.letterSpacing: 1.35
+                                }
+
+                                Text {
+                                    text: "Find something great, then stream it through your own server."
+                                    color: root.textPrimary
+                                    font.pixelSize: 16
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+                    }
+
+                    Grid {
+                        id: discoverCategoryGrid
+                        width: parent.width
+                        visible: (demoMode || serverClient.discoverStage === "catalog")
+                                 && !serverClient.discoverLoading
+                                 && (demoMode || serverClient.discoverErrorMessage.length === 0)
+                        columns: 3
+                        columnSpacing: 16
+                        rowSpacing: 18
+
+                        Repeater {
+                            model: root.displayedDiscoverCategories().length
+
+                            PosterCard {
+                                required property int index
+                                property var category: root.displayedDiscoverCategories()[index]
+                                width: (discoverCategoryGrid.width - 2 * discoverCategoryGrid.columnSpacing) / 3
+                                height: 238
+                                title: root.itemTitle(category, "Discover")
+                                meta: String(category.detail || category.category || "DISCOVER").toUpperCase()
+                                number: index < 9 ? "0" + (index + 1) : String(index + 1)
+                                accent: index < 3 ? "#d8651c" : "#5a6067"
+                                onActivated: root.openDiscoverCategory(category)
+                            }
+                        }
+                    }
+
+                    Grid {
+                        id: discoverItemsGrid
+                        width: parent.width
+                        visible: !demoMode && serverClient.discoverStage !== "catalog"
+                                 && !serverClient.discoverLoading
+                                 && serverClient.discoverErrorMessage.length === 0
+                        columns: Math.max(1, Math.floor(width / 205))
+                        columnSpacing: 15
+                        rowSpacing: 18
+
+                        Repeater {
+                            model: Math.min(root.discoverVisibleLimit,
+                                            root.displayedDiscoverItems().length)
+
+                            PosterCard {
+                                required property int index
+                                property var media: root.displayedDiscoverItems()[index]
+                                width: (discoverItemsGrid.width
+                                        - (discoverItemsGrid.columns - 1)
+                                          * discoverItemsGrid.columnSpacing)
+                                       / discoverItemsGrid.columns
+                                title: root.itemTitle(media, "Untitled")
+                                meta: root.discoverItemMeta(media)
+                                number: serverClient.discoverStage === "titles"
+                                        ? "›" : (index < 9 ? "0" + (index + 1)
+                                                            : String(index + 1))
+                                artSource: media && media.poster ? media.poster : ""
+                                accent: root.cardAccent(index)
+                                onActivated: root.activateDiscoverItem(media)
+                            }
+                        }
+                    }
+
+                    FocusButton {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        visible: !demoMode && !serverClient.discoverLoading
+                                 && serverClient.discoverErrorMessage.length === 0
+                                 && root.displayedDiscoverItems().length
+                                    > root.discoverVisibleLimit
+                        width: 220
+                        text: "Show more titles"
+                        onClicked: root.discoverVisibleLimit += 60
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && serverClient.discoverLoading
+                        width: parent.width
+                        height: 230
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 20
+
+                            BusyIndicator {
+                                anchors.verticalCenter: parent.verticalCenter
+                                running: parent.parent.visible
+                                palette.highlight: root.orange
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 5
+
+                                Text {
+                                    text: serverClient.discoverStage === "results"
+                                          ? "Tater is preparing your stream…"
+                                          : "Tater is exploring…"
+                                    color: root.textPrimary
+                                    font.pixelSize: 18
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    text: serverClient.discoverStage === "results"
+                                          ? "The first play can take a little while while the NZB becomes streamable."
+                                          : "Loading artwork and titles from your server."
+                                    color: root.textSecondary
+                                    font.pixelSize: 13
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && !serverClient.discoverLoading
+                                 && serverClient.discoverErrorMessage.length > 0
+                        width: parent.width
+                        height: 230
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#6b4b38"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 20
+
+                            Image {
+                                width: 120
+                                height: 120
+                                source: "../assets/mascot/tater-wave.png"
+                                fillMode: Image.PreserveAspectFit
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 560
+                                spacing: 12
+
+                                Text {
+                                    width: parent.width
+                                    text: serverClient.discoverErrorMessage
+                                    color: root.textPrimary
+                                    wrapMode: Text.WordWrap
+                                    font.pixelSize: 17
+                                }
+
+                                FocusButton {
+                                    width: 180
+                                    text: serverClient.discoverStage === "catalog"
+                                          ? "Try again" : "Go back"
+                                    primary: true
+                                    onClicked: serverClient.discoverStage === "catalog"
+                                               ? serverClient.refreshDiscover()
+                                               : serverClient.browseDiscoverBack()
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && !serverClient.discoverLoading
+                                 && serverClient.discoverErrorMessage.length === 0
+                                 && serverClient.discoverStage !== "catalog"
+                                 && root.displayedDiscoverItems().length === 0
+                        width: parent.width
+                        height: 210
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "No titles were returned for this selection."
+                            color: root.textSecondary
+                            font.pixelSize: 17
+                        }
+                    }
+                }
+
+                Column {
+                    width: parent.width
                     visible: root.currentPage === "live"
                     spacing: 22
 
@@ -2318,6 +2676,15 @@ ApplicationWindow {
                 text: "Library"
                 selected: root.currentPage === "library"
                 onClicked: root.showPage("library")
+            }
+
+            FocusButton {
+                id: sideDiscoverNav
+                visible: demoMode || !!serverClient.capabilities.newznab
+                width: parent.width
+                text: "Discover"
+                selected: root.currentPage === "discover"
+                onClicked: root.showPage("discover")
             }
 
             FocusButton {

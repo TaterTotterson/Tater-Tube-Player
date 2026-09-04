@@ -16,6 +16,23 @@ constexpr auto kSettingsServerUrl = "connection/serverUrl";
 constexpr auto kSettingsToken = "connection/playerToken";
 constexpr auto kSettingsPlayerName = "connection/playerName";
 constexpr qint64 kLibraryCacheTtlMs = 5 * 60 * 1000;
+
+QVariantList discoverCategoriesFromCatalog(const QJsonArray &categories)
+{
+    for (const QJsonValue &categoryValue : categories) {
+        const QJsonObject category = categoryValue.toObject();
+        if (category.value(QStringLiteral("id")).toString() != QStringLiteral("stream"))
+            continue;
+        for (const QJsonValue &childValue : category.value(QStringLiteral("children")).toArray()) {
+            const QJsonObject child = childValue.toObject();
+            if (child.value(QStringLiteral("type")).toString()
+                    == QStringLiteral("discoverRoot")) {
+                return child.value(QStringLiteral("children")).toArray().toVariantList();
+            }
+        }
+    }
+    return {};
+}
 }
 
 ServerClient::ServerClient(QObject *parent)
@@ -304,6 +321,199 @@ void ServerClient::refreshLibrary()
         loadLibraryLocation(m_libraryHistory.constLast(), false, true);
 }
 
+void ServerClient::refreshDiscover()
+{
+    if (!paired() || m_discoverLoading)
+        return;
+    if (m_capabilities.contains(QStringLiteral("newznab"))
+        && !m_capabilities.value(QStringLiteral("newznab")).toBool()) {
+        resetDiscover();
+        m_discoverErrorMessage = QStringLiteral(
+            "Discover is available when NZB streaming is enabled on your server.");
+        emit discoverChanged();
+        return;
+    }
+
+    const int generation = ++m_discoverGeneration;
+    m_discoverLoading = true;
+    m_discoverErrorMessage.clear();
+    m_discoverItems.clear();
+    m_discoverTitle = QStringLiteral("Discover");
+    m_discoverStage = QStringLiteral("catalog");
+    m_discoverHistory.clear();
+    m_discoverPendingItem.clear();
+    emit discoverChanged();
+
+    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/tater/usenet/catalog"))};
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(30000);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, generation] { handleDiscoverCatalogReply(reply, generation); });
+}
+
+void ServerClient::browseDiscover(const QVariantMap &entry)
+{
+    if (!paired() || m_discoverLoading)
+        return;
+
+    const QString catalog = entry.value(QStringLiteral("id")).toString().trimmed();
+    if (catalog.isEmpty()) {
+        m_discoverErrorMessage = QStringLiteral("This Discover collection is unavailable.");
+        emit discoverChanged();
+        return;
+    }
+
+    const QString title = entry.value(QStringLiteral("fullTitle"),
+                                      entry.value(QStringLiteral("title")))
+                              .toString().trimmed();
+    const QString mediaType = entry.value(QStringLiteral("category")).toString().trimmed();
+    const int generation = ++m_discoverGeneration;
+    m_discoverLoading = true;
+    m_discoverErrorMessage.clear();
+    m_discoverItems.clear();
+    m_discoverTitle = title.isEmpty() ? QStringLiteral("Discover") : title;
+    m_discoverStage = QStringLiteral("titles");
+    m_discoverMediaType = mediaType;
+    m_discoverHistory.clear();
+    m_discoverPendingItem.clear();
+    emit discoverChanged();
+
+    QUrl url(endpointUrl(m_serverUrl, "/api/tater/usenet/discover"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("catalog"), catalog);
+    url.setQuery(query);
+    QNetworkRequest request{url};
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(30000);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, generation, title, mediaType] {
+                handleDiscoverFeedReply(reply, generation, title, mediaType);
+            });
+}
+
+void ServerClient::activateDiscoverItem(const QVariantMap &item)
+{
+    if (!paired() || m_discoverLoading || item.isEmpty())
+        return;
+
+    if (m_discoverStage == QStringLiteral("titles")) {
+        const QString searchQuery = item.value(QStringLiteral("searchQuery"),
+                                               item.value(QStringLiteral("title")))
+                                        .toString().trimmed();
+        if (searchQuery.size() < 3) {
+            m_discoverErrorMessage = QStringLiteral("This title could not be searched.");
+            emit discoverChanged();
+            return;
+        }
+
+        m_discoverHistory.append(DiscoverPage{m_discoverItems, m_discoverTitle,
+                                                m_discoverStage, m_discoverMediaType,
+                                                m_discoverPendingItem});
+        const QString mediaType = item.value(QStringLiteral("mediaType"),
+                                             m_discoverMediaType)
+                                      .toString().trimmed();
+        const QString fallbackTitle = QStringLiteral("Results for %1")
+                                          .arg(item.value(QStringLiteral("title"))
+                                                   .toString().trimmed());
+        const int generation = ++m_discoverGeneration;
+        m_discoverLoading = true;
+        m_discoverErrorMessage.clear();
+        m_discoverItems.clear();
+        m_discoverTitle = fallbackTitle;
+        m_discoverStage = QStringLiteral("results");
+        m_discoverMediaType = mediaType;
+        emit discoverChanged();
+
+        QUrl url(endpointUrl(m_serverUrl, "/api/tater/usenet/search"));
+        QUrlQuery query;
+        query.addQueryItem(QStringLiteral("q"), searchQuery);
+        url.setQuery(query);
+        QNetworkRequest request{url};
+        request.setRawHeader("Accept", "application/json");
+        request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                             QNetworkRequest::NoLessSafeRedirectPolicy);
+        request.setTransferTimeout(30000);
+        QNetworkReply *reply = m_network.get(request);
+        connect(reply, &QNetworkReply::finished, this,
+                [this, reply, generation, mediaType, fallbackTitle] {
+                    handleDiscoverSearchReply(reply, generation, mediaType, fallbackTitle);
+                });
+        return;
+    }
+
+    if (m_discoverStage == QStringLiteral("streams")) {
+        if (!item.value(QStringLiteral("streamUrl")).toString().trimmed().isEmpty())
+            emit discoverPlaybackReady(item);
+        return;
+    }
+
+    if (m_discoverStage != QStringLiteral("results"))
+        return;
+
+    const QString nzbUrl = item.value(QStringLiteral("nzbUrl")).toString().trimmed();
+    if (nzbUrl.isEmpty()) {
+        m_discoverErrorMessage = QStringLiteral("This result does not include an NZB link.");
+        emit discoverChanged();
+        return;
+    }
+
+    const int generation = ++m_discoverGeneration;
+    m_discoverLoading = true;
+    m_discoverErrorMessage.clear();
+    m_discoverPendingItem = item;
+    emit discoverChanged();
+
+    const QJsonObject payload{
+        {QStringLiteral("nzb_url"), nzbUrl},
+        {QStringLiteral("title"), item.value(QStringLiteral("title")).toString()},
+        {QStringLiteral("category"), item.value(QStringLiteral("category")).toString()},
+        {QStringLiteral("timeout"), 300},
+    };
+    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/tater/usenet/play"))};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(315000);
+    QNetworkReply *reply = m_network.post(
+        request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, generation, item] {
+                handleDiscoverPlayReply(reply, generation, item);
+            });
+}
+
+void ServerClient::browseDiscoverBack()
+{
+    if (m_discoverStage == QStringLiteral("catalog"))
+        return;
+
+    ++m_discoverGeneration;
+    m_discoverLoading = false;
+    m_discoverErrorMessage.clear();
+    if (!m_discoverHistory.isEmpty()) {
+        const DiscoverPage page = m_discoverHistory.takeLast();
+        restoreDiscoverPage(page);
+    } else {
+        m_discoverItems.clear();
+        m_discoverTitle = QStringLiteral("Discover");
+        m_discoverStage = QStringLiteral("catalog");
+        m_discoverMediaType.clear();
+        m_discoverPendingItem.clear();
+    }
+    emit discoverChanged();
+}
+
 QString ServerClient::libraryCacheKey(const LibraryLocation &location) const
 {
     return QStringLiteral("%1\n%2\n%3\n%4\n%5")
@@ -399,6 +609,7 @@ void ServerClient::forgetServer()
     ++m_libraryRowsGeneration;
     m_libraryRowsPending = 0;
     m_libraryRowsStoredAtMs = 0;
+    resetDiscover();
     m_liveGuideChannels.clear();
     m_liveGuideErrorMessage.clear();
     m_liveGuideLoading = false;
@@ -409,6 +620,7 @@ void ServerClient::forgetServer()
     emit errorMessageChanged();
     emit homeChanged();
     emit libraryChanged();
+    emit discoverChanged();
     emit liveGuideChanged();
 }
 
@@ -586,6 +798,7 @@ void ServerClient::handlePairReply(QNetworkReply *reply, const QString &baseUrl)
     m_token = token;
     m_libraryCache.clear();
     m_libraryHistory.clear();
+    resetDiscover();
     m_playerName = data.value("player_name").toString().trimmed();
     if (m_playerName.isEmpty())
         m_playerName = QStringLiteral("Tater Tube Player");
@@ -661,6 +874,11 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     m_liveChannels = data.value("liveChannels").toArray().toVariantList();
     m_libraries = data.value("libraries").toArray().toVariantList();
     m_capabilities = data.value("capabilities").toObject().toVariantMap();
+    if (m_capabilities.contains(QStringLiteral("newznab"))
+        && !m_capabilities.value(QStringLiteral("newznab")).toBool()) {
+        resetDiscover();
+        emit discoverChanged();
+    }
     m_homeWarnings.clear();
     for (const QJsonValue &warning : data.value("warnings").toArray()) {
         const QString message = warning.toString().trimmed();
@@ -755,6 +973,221 @@ void ServerClient::handleLibrariesReply(QNetworkReply *reply)
     emit homeChanged();
     emit libraryChanged();
     loadLibraryRows(true);
+}
+
+void ServerClient::handleDiscoverCatalogReply(QNetworkReply *reply, int generation)
+{
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool succeeded = reply->error() == QNetworkReply::NoError
+        && status >= 200 && status < 300;
+    reply->deleteLater();
+    if (generation != m_discoverGeneration)
+        return;
+    m_discoverLoading = false;
+
+    if (!succeeded) {
+        if (status == 401 || status == 403) {
+            forgetServer();
+            setErrorMessage("This player is no longer authorized. Pair it with the server again.");
+            return;
+        }
+        m_discoverErrorMessage = responseError(
+            body, QStringLiteral("Discover could not be loaded."));
+        emit discoverChanged();
+        return;
+    }
+
+    const QJsonArray categories = QJsonDocument::fromJson(body).object()
+                                      .value(QStringLiteral("data")).toObject()
+                                      .value(QStringLiteral("categories")).toArray();
+    m_discoverCategories = discoverCategoriesFromCatalog(categories);
+    if (m_discoverCategories.isEmpty()) {
+        m_discoverErrorMessage = QStringLiteral(
+            "Discover is available when NZB streaming is enabled and configured.");
+    } else {
+        m_discoverErrorMessage.clear();
+    }
+    setOnline(true);
+    emit discoverChanged();
+}
+
+void ServerClient::handleDiscoverFeedReply(QNetworkReply *reply, int generation,
+                                           const QString &fallbackTitle,
+                                           const QString &mediaType)
+{
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool succeeded = reply->error() == QNetworkReply::NoError
+        && status >= 200 && status < 300;
+    reply->deleteLater();
+    if (generation != m_discoverGeneration)
+        return;
+    m_discoverLoading = false;
+
+    if (!succeeded) {
+        if (status == 401 || status == 403) {
+            forgetServer();
+            setErrorMessage("This player is no longer authorized. Pair it with the server again.");
+            return;
+        }
+        m_discoverErrorMessage = responseError(
+            body, QStringLiteral("This Discover collection could not be loaded."));
+        emit discoverChanged();
+        return;
+    }
+
+    const QJsonObject data = QJsonDocument::fromJson(body).object()
+                                 .value(QStringLiteral("data")).toObject();
+    m_discoverItems = data.value(QStringLiteral("items")).toArray().toVariantList();
+    m_discoverTitle = data.value(QStringLiteral("title")).toString().trimmed();
+    if (m_discoverTitle.isEmpty())
+        m_discoverTitle = fallbackTitle.isEmpty() ? QStringLiteral("Discover") : fallbackTitle;
+    m_discoverMediaType = mediaType;
+    m_discoverErrorMessage.clear();
+    setOnline(true);
+    emit discoverChanged();
+}
+
+void ServerClient::handleDiscoverSearchReply(QNetworkReply *reply, int generation,
+                                             const QString &mediaType,
+                                             const QString &fallbackTitle)
+{
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool succeeded = reply->error() == QNetworkReply::NoError
+        && status >= 200 && status < 300;
+    reply->deleteLater();
+    if (generation != m_discoverGeneration)
+        return;
+    m_discoverLoading = false;
+
+    if (!succeeded) {
+        if (status == 401 || status == 403) {
+            forgetServer();
+            setErrorMessage("This player is no longer authorized. Pair it with the server again.");
+            return;
+        }
+        m_discoverErrorMessage = responseError(
+            body, QStringLiteral("No NZB results could be loaded for this title."));
+        emit discoverChanged();
+        return;
+    }
+
+    const QJsonObject data = QJsonDocument::fromJson(body).object()
+                                 .value(QStringLiteral("data")).toObject();
+    QVariantList items = data.value(QStringLiteral("items")).toArray().toVariantList();
+    for (QVariant &value : items) {
+        QVariantMap item = value.toMap();
+        const QString itemMediaType = item.value(QStringLiteral("mediaType"))
+                                          .toString().trimmed().toLower();
+        if (itemMediaType.isEmpty() || itemMediaType == QStringLiteral("nzb"))
+            item.insert(QStringLiteral("mediaType"), mediaType);
+        value = item;
+    }
+    m_discoverItems = items;
+    m_discoverTitle = data.value(QStringLiteral("title")).toString().trimmed();
+    if (m_discoverTitle.isEmpty())
+        m_discoverTitle = fallbackTitle;
+    m_discoverMediaType = mediaType;
+    m_discoverErrorMessage.clear();
+    setOnline(true);
+    emit discoverChanged();
+}
+
+void ServerClient::handleDiscoverPlayReply(QNetworkReply *reply, int generation,
+                                           const QVariantMap &sourceItem)
+{
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool succeeded = reply->error() == QNetworkReply::NoError
+        && status >= 200 && status < 300;
+    reply->deleteLater();
+    if (generation != m_discoverGeneration)
+        return;
+    m_discoverLoading = false;
+
+    if (!succeeded) {
+        if (status == 401 || status == 403) {
+            forgetServer();
+            setErrorMessage("This player is no longer authorized. Pair it with the server again.");
+            return;
+        }
+        m_discoverErrorMessage = responseError(
+            body, status == 408
+                ? QStringLiteral("The server is still preparing this stream. Try it again shortly.")
+                : QStringLiteral("The NZB stream could not be prepared."));
+        emit discoverChanged();
+        return;
+    }
+
+    QJsonObject response = QJsonDocument::fromJson(body).object();
+    if (response.value(QStringLiteral("data")).isObject())
+        response = response.value(QStringLiteral("data")).toObject();
+    const QVariantList streams = response.value(QStringLiteral("streams"))
+                                     .toArray().toVariantList();
+    QVariantList playableStreams;
+    for (const QVariant &value : streams) {
+        const QVariantMap stream = value.toMap();
+        const QString streamUrl = stream.value(QStringLiteral("streamUrl"),
+                                               stream.value(QStringLiteral("url")))
+                                      .toString().trimmed();
+        if (streamUrl.isEmpty())
+            continue;
+        QVariantMap playable = sourceItem;
+        for (auto it = stream.cbegin(); it != stream.cend(); ++it)
+            playable.insert(it.key(), it.value());
+        playable.insert(QStringLiteral("streamUrl"), streamUrl);
+        playable.insert(QStringLiteral("type"), QStringLiteral("nzbStream"));
+        if (playable.value(QStringLiteral("title")).toString().trimmed().isEmpty())
+            playable.insert(QStringLiteral("title"), QStringLiteral("Tater Tube Stream"));
+        playableStreams.append(playable);
+    }
+
+    if (playableStreams.isEmpty()) {
+        m_discoverErrorMessage = QStringLiteral("The server did not return a playable file.");
+        emit discoverChanged();
+        return;
+    }
+    if (playableStreams.size() == 1) {
+        m_discoverErrorMessage.clear();
+        emit discoverChanged();
+        emit discoverPlaybackReady(playableStreams.constFirst().toMap());
+        return;
+    }
+
+    m_discoverHistory.append(DiscoverPage{m_discoverItems, m_discoverTitle,
+                                            m_discoverStage, m_discoverMediaType,
+                                            sourceItem});
+    m_discoverItems = playableStreams;
+    m_discoverTitle = QStringLiteral("Choose a file");
+    m_discoverStage = QStringLiteral("streams");
+    m_discoverPendingItem = sourceItem;
+    m_discoverErrorMessage.clear();
+    emit discoverChanged();
+}
+
+void ServerClient::restoreDiscoverPage(const DiscoverPage &page)
+{
+    m_discoverItems = page.items;
+    m_discoverTitle = page.title;
+    m_discoverStage = page.stage;
+    m_discoverMediaType = page.mediaType;
+    m_discoverPendingItem = page.pendingItem;
+}
+
+void ServerClient::resetDiscover()
+{
+    ++m_discoverGeneration;
+    m_discoverCategories.clear();
+    m_discoverItems.clear();
+    m_discoverTitle = QStringLiteral("Discover");
+    m_discoverStage = QStringLiteral("catalog");
+    m_discoverMediaType.clear();
+    m_discoverErrorMessage.clear();
+    m_discoverPendingItem.clear();
+    m_discoverHistory.clear();
+    m_discoverLoading = false;
 }
 
 QVariantMap ServerClient::guideProgram(const QVariantList &schedule,
