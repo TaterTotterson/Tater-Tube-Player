@@ -127,24 +127,6 @@ ApplicationWindow {
                 ? serverClient.recentlyAdded : serverClient.continueWatching
     }
 
-    function librarySources() {
-        if (demoMode) {
-            return [{title: "Movies", detail: "LOCAL MEDIA", id: "demo:movies"},
-                    {title: "TV Shows", detail: "LOCAL MEDIA", id: "demo:tv"}]
-        }
-        var result = []
-        for (var i = 0; i < serverClient.libraries.length; ++i) {
-            var source = serverClient.libraries[i]
-            if (source && source.type === "localDiscoverRoot" && source.children) {
-                for (var j = 0; j < source.children.length; ++j)
-                    result.push(source.children[j])
-            } else {
-                result.push(source)
-            }
-        }
-        return result
-    }
-
     function displayedLibraryItems() {
         if (demoMode)
             return libraryMediaItems()
@@ -1597,30 +1579,6 @@ ApplicationWindow {
                                 onClicked: serverClient.libraryDepth > 0
                                            ? serverClient.refreshLibrary()
                                            : serverClient.refreshLibraries()
-                            }
-                        }
-                    }
-
-                    Flow {
-                        width: parent.width
-                        spacing: 12
-                        visible: demoMode || serverClient.libraryDepth === 0
-
-                        Repeater {
-                            model: root.librarySources().length
-
-                            FocusButton {
-                                required property int index
-                                property var library: root.librarySources()[index]
-                                width: Math.max(190, implicitWidth)
-                                text: root.itemTitle(library, "Library")
-                                onClicked: {
-                                    if (!demoMode) {
-                                        root.libraryVisibleLimit = 60
-                                        serverClient.browseLibrary(library)
-                                        sectionScroller.contentY = 0
-                                    }
-                                }
                             }
                         }
                     }
