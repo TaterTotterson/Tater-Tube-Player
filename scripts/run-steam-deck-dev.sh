@@ -15,7 +15,9 @@ fi
 
 if [ -S "${pulse_socket}" ]; then
     exec /usr/bin/distrobox enter --no-tty "${container_name}" -- \
-        env XDG_RUNTIME_DIR="${runtime_dir}" PULSE_SERVER="unix:${pulse_socket}" \
+        env XDG_RUNTIME_DIR="${runtime_dir}" \
+        PULSE_SERVER="unix:${pulse_socket}" \
+        QT_AUDIO_BACKEND="pulseaudio" \
         "${player_binary}" --compatible-playback "$@"
 fi
 
