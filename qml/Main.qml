@@ -39,6 +39,7 @@ ApplicationWindow {
     property string playbackQuality: "Direct play"
     property bool playbackControlsVisible: true
     property bool playbackEnded: false
+    property bool playbackHasVideoFrame: false
     readonly property bool compatiblePlayback: compatiblePlaybackMode === true
     property int libraryVisibleLimit: 60
     property int discoverVisibleLimit: 60
@@ -508,6 +509,7 @@ ApplicationWindow {
             return
 
         mediaPlayer.stop()
+        playbackHasVideoFrame = false
         playbackItem = item
         playbackIsLive = String(kind || "").indexOf("CHANNEL") === 0
         playbackSourceUrl = source
@@ -555,6 +557,7 @@ ApplicationWindow {
             savePlaybackState(false)
         mediaPlayer.stop()
         playbackOpen = false
+        playbackHasVideoFrame = false
         playbackError = ""
         playbackStatusMessage = ""
         var target = returnFocusItem
@@ -577,6 +580,7 @@ ApplicationWindow {
         playbackError = ""
         playbackStatusMessage = "Optimizing video and audio for your Steam Deck…"
         playbackQuality = "Video H.264 • Audio AAC"
+        playbackHasVideoFrame = false
         mediaPlayer.stop()
         mediaPlayer.source = serverClient.playbackTranscodeUrl(
                     playbackSourceUrl, "hdmi_1080p", Math.round(resumeAt))
@@ -605,6 +609,7 @@ ApplicationWindow {
         if (playbackUsingFallback) {
             playbackBaseOffsetMs = target
             playbackStatusMessage = "Seeking…"
+            playbackHasVideoFrame = false
             mediaPlayer.stop()
             mediaPlayer.source = serverClient.playbackTranscodeUrl(
                         playbackSourceUrl, "hdmi_1080p", Math.round(target))
@@ -612,6 +617,7 @@ ApplicationWindow {
         } else if (playbackUsingAudioTranscode) {
             playbackBaseOffsetMs = target
             playbackStatusMessage = "Seeking…"
+            playbackHasVideoFrame = false
             mediaPlayer.stop()
             mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
                         playbackSourceUrl, "hdmi_1080p", Math.round(target))
@@ -2974,6 +2980,16 @@ ApplicationWindow {
         }
     }
 
+    Connections {
+        target: playerVideo.videoSink
+
+        function onVideoFrameChanged(frame) {
+            if (root.playbackOpen
+                    && mediaPlayer.playbackState === MediaPlayer.PlayingState)
+                root.playbackHasVideoFrame = true
+        }
+    }
+
     Timer {
         id: playbackProgressTimer
         interval: 15000
@@ -3098,9 +3114,10 @@ ApplicationWindow {
         Column {
             anchors.centerIn: parent
             visible: root.playbackError.length === 0
-                     && (mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia
-                         || mediaPlayer.mediaStatus === MediaPlayer.BufferingMedia
-                         || mediaPlayer.mediaStatus === MediaPlayer.StalledMedia)
+                     && (mediaPlayer.mediaStatus === MediaPlayer.StalledMedia
+                         || (!root.playbackHasVideoFrame
+                             && (mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia
+                                 || mediaPlayer.mediaStatus === MediaPlayer.BufferingMedia)))
             z: 5
             spacing: 14
 
