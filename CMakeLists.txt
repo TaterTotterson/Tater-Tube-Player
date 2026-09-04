@@ -32,6 +32,10 @@ qt_add_executable(tater-tube-player
     src/ServerClient.h
 )
 
+set_source_files_properties(qml/components/UiSounds.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE TRUE
+)
+
 qt_add_qml_module(tater-tube-player
     URI TaterTube.Player
     VERSION 1.0
@@ -42,10 +46,15 @@ qt_add_qml_module(tater-tube-player
         qml/components/MediaCard.qml
         qml/components/PosterCard.qml
         qml/components/SectionTitle.qml
+        qml/components/UiSounds.qml
     RESOURCES
         assets/mascot/tater-front.png
         assets/mascot/tater-salute.png
         assets/mascot/tater-wave.png
+        assets/sounds/tater-alert.wav
+        assets/sounds/tater-back.wav
+        assets/sounds/tater-select.wav
+        assets/sounds/tater-step.wav
 )
 
 target_link_libraries(tater-tube-player PRIVATE

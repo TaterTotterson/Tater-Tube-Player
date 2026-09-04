@@ -45,6 +45,16 @@ ApplicationWindow {
     property int discoverVisibleLimit: 60
     property bool sideMenuOpen: false
     property var sideMenuReturnFocus: null
+    property bool uiFocusSoundsArmed: false
+    property var uiLastFocusItem: null
+
+    onActiveFocusItemChanged: {
+        var nextItem = root.activeFocusItem
+        if (root.uiFocusSoundsArmed && !root.playbackOpen
+                && nextItem && nextItem !== root.uiLastFocusItem)
+            UiSounds.navigate()
+        root.uiLastFocusItem = nextItem
+    }
 
     function itemTitle(item, fallback) {
         return item && item.title ? item.title : fallback
@@ -831,6 +841,7 @@ ApplicationWindow {
 
     function navigateRight() {
         if (sideMenuOpen) {
+            UiSounds.back()
             closeSideMenu(true)
             return
         }
@@ -860,6 +871,16 @@ ApplicationWindow {
             heroWatchLive.forceActiveFocus()
     }
 
+    Timer {
+        interval: 450
+        running: true
+        repeat: false
+        onTriggered: {
+            root.uiLastFocusItem = root.activeFocusItem
+            root.uiFocusSoundsArmed = true
+        }
+    }
+
     Connections {
         target: gamepadInput
         function onNavigateLeft() {
@@ -882,7 +903,10 @@ ApplicationWindow {
             if (root.playbackOpen) root.togglePlayback()
             else root.activateFocusedItem()
         }
-        function onBack() { root.goBack() }
+        function onBack() {
+            UiSounds.back()
+            root.goBack()
+        }
     }
 
     Connections {
@@ -914,7 +938,13 @@ ApplicationWindow {
     Shortcut { sequence: "Right"; onActivated: root.playbackOpen ? root.seekPlaybackBy(10000) : root.navigateRight() }
     Shortcut { sequence: "Up"; onActivated: root.playbackOpen ? root.changePlaybackVolume(0.05) : root.moveFocus(0, -1) }
     Shortcut { sequence: "Down"; onActivated: root.playbackOpen ? root.changePlaybackVolume(-0.05) : root.moveFocus(0, 1) }
-    Shortcut { sequence: "Esc"; onActivated: root.goBack() }
+    Shortcut {
+        sequence: "Esc"
+        onActivated: {
+            UiSounds.back()
+            root.goBack()
+        }
+    }
     Shortcut { sequence: "Space"; enabled: root.playbackOpen; onActivated: root.togglePlayback() }
 
     onClosing: function(close) {
@@ -1571,6 +1601,7 @@ ApplicationWindow {
                     width: 126
                     text: "‹  Back"
                     compact: true
+                    soundRole: "back"
                     onClicked: root.goBack()
                 }
 
@@ -2796,7 +2827,10 @@ ApplicationWindow {
 
         MouseArea {
             anchors.fill: parent
-            onClicked: root.closeDetails()
+            onClicked: {
+                UiSounds.back()
+                root.closeDetails()
+            }
         }
 
         Rectangle {
@@ -2919,6 +2953,7 @@ ApplicationWindow {
                         width: 160
                         text: "Back"
                         primary: true
+                        soundRole: "back"
                         onClicked: root.closeDetails()
                     }
 
@@ -2986,6 +3021,7 @@ ApplicationWindow {
             root.playbackError = errorString && errorString.length > 0
                     ? errorString : "This video could not be played."
             root.playbackControlsVisible = true
+            UiSounds.alert()
         }
     }
 
@@ -3071,6 +3107,7 @@ ApplicationWindow {
                     width: 116
                     text: "‹  Back"
                     compact: true
+                    soundRole: "back"
                     onClicked: root.closePlayback()
                 }
 
@@ -3213,6 +3250,7 @@ ApplicationWindow {
 
                         FocusButton {
                             text: "Back"
+                            soundRole: "back"
                             onClicked: root.closePlayback()
                         }
                     }
@@ -3447,7 +3485,10 @@ ApplicationWindow {
                         border.width: pinField.activeFocus ? 2 : 1
                         border.color: pinField.activeFocus ? root.orange : "#41464c"
                     }
-                    onAccepted: serverClient.pair(serverField.text, text)
+                    onAccepted: {
+                        UiSounds.select()
+                        serverClient.pair(serverField.text, text)
+                    }
                 }
 
                 Text {

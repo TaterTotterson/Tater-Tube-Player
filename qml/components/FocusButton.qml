@@ -7,6 +7,7 @@ FocusScope {
     property bool primary: false
     property bool compact: false
     property bool selected: false
+    property string soundRole: "select"
     signal clicked()
 
     implicitWidth: Math.max(compact ? 94 : 142, label.implicitWidth + (compact ? 32 : 46))
@@ -14,6 +15,7 @@ FocusScope {
     activeFocusOnTab: true
 
     function activate() {
+        UiSounds.playRole(control.soundRole)
         control.forceActiveFocus()
         control.clicked()
     }
@@ -62,4 +64,3 @@ FocusScope {
         onClicked: control.activate()
     }
 }
-
