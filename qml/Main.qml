@@ -2348,6 +2348,8 @@ ApplicationWindow {
                                 required property int index
                                 property var channel: root.displayedLiveChannels()[index]
                                 property var programs: root.guidePrograms(channel)
+                                property var currentProgram: programs.length > 0
+                                    ? programs[0] : (channel && channel.now ? channel.now : null)
                                 width: liveGuide.width
                                 spacing: 12
 
@@ -2357,6 +2359,11 @@ ApplicationWindow {
                                     title: root.itemTitle(guideRow.channel, "Tater Tube")
                                     meta: "WATCH CHANNEL"
                                     isCurrent: true
+                                    artSource: guideRow.currentProgram && guideRow.currentProgram.poster
+                                               ? guideRow.currentProgram.poster : ""
+                                    accent: root.cardAccent(guideRow.index)
+                                    progress: root.progressValue(guideRow.currentProgram
+                                                                 ? guideRow.currentProgram.progressPercent : 0)
                                     onActivated: {
                                         if (guideRow.channel && guideRow.channel.streamUrl)
                                             root.startPlayback(guideRow.channel,
@@ -2380,6 +2387,8 @@ ApplicationWindow {
                                         meta: root.guideProgramMeta(program)
                                         isCurrent: root.guideProgramIsCurrent(guideRow.channel,
                                                                               program, index)
+                                        artSource: program && program.poster ? program.poster : ""
+                                        accent: root.cardAccent(guideRow.index + index)
                                         progress: root.progressValue(program
                                                                      ? program.progressPercent : 0)
                                         onActivated: root.activateGuideProgram(guideRow.channel,
