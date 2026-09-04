@@ -335,7 +335,7 @@ ApplicationWindow {
             serverClient.refreshLiveGuide()
         Qt.callLater(function() {
             if (name === "home")
-                homeNav.forceActiveFocus()
+                heroWatchLive.forceActiveFocus()
             else
                 sectionBack.forceActiveFocus()
         })
@@ -370,7 +370,7 @@ ApplicationWindow {
                 if (target && target.visible && target.enabled)
                     target.forceActiveFocus()
                 else if (currentPage === "home")
-                    homeNav.forceActiveFocus()
+                    heroWatchLive.forceActiveFocus()
                 else
                     sectionBack.forceActiveFocus()
             })
@@ -477,7 +477,7 @@ ApplicationWindow {
         if (target && target.visible)
             Qt.callLater(function() { target.forceActiveFocus() })
         else
-            Qt.callLater(function() { homeNav.forceActiveFocus() })
+            Qt.callLater(function() { heroWatchLive.forceActiveFocus() })
     }
 
     function retryWithCompatibleStream(reason) {
@@ -641,6 +641,10 @@ ApplicationWindow {
         var scroller = currentPage === "home" ? page : sectionScroller
         if (!isDescendant(item, scroller.contentItem))
             return
+        if (currentPage === "home" && isDescendant(item, hero)) {
+            scroller.contentY = 0
+            return
+        }
         var point = item.mapToItem(scroller.contentItem, 0, 0)
         var upper = scroller.contentY + 24
         var lower = scroller.contentY + scroller.height - 30
@@ -743,13 +747,13 @@ ApplicationWindow {
 
     Component.onCompleted: {
         if (String(playbackPreviewUrl || "").length > 0) {
-            returnFocusItem = homeNav
+            returnFocusItem = heroWatchLive
             startPlayback({title: "Playback preview", mediaType: "video",
                               streamUrl: playbackPreviewUrl}, "VIDEO")
         } else if (pairingOverlay.visible)
             serverField.forceActiveFocus()
         else
-            homeNav.forceActiveFocus()
+            heroWatchLive.forceActiveFocus()
     }
 
     Connections {
@@ -939,6 +943,7 @@ ApplicationWindow {
                         spacing: 12
 
                         FocusButton {
+                            id: heroWatchLive
                             text: "▶  Watch live"
                             primary: true
                             onClicked: root.showPage("live")
@@ -947,89 +952,6 @@ ApplicationWindow {
                             text: "Browse library"
                             onClicked: root.showPage("library")
                         }
-                    }
-                }
-            }
-
-            Rectangle {
-                id: homeMenu
-                width: contentColumn.width
-                height: 86
-                radius: 22
-                color: "#1d2024"
-                border.width: 1
-                border.color: "#3b4046"
-
-                Row {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 20
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 13
-
-                    Image {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 56
-                        height: 56
-                        source: "../assets/mascot/tater-front.png"
-                        fillMode: Image.PreserveAspectFit
-                        smooth: true
-                    }
-
-                    Column {
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 2
-
-                        Text {
-                            text: "Where to, spud?"
-                            color: root.textPrimary
-                            font.pixelSize: 17
-                            font.weight: Font.Bold
-                        }
-
-                        Text {
-                            text: "Your Tater Tube menu"
-                            color: root.textSecondary
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.6
-                        }
-                    }
-                }
-
-                Row {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 18
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 10
-
-                    FocusButton {
-                        id: homeNav
-                        width: 132
-                        text: "Home"
-                        compact: true
-                        selected: true
-                        onClicked: root.showPage("home")
-                    }
-
-                    FocusButton {
-                        width: 132
-                        text: "Library"
-                        compact: true
-                        onClicked: root.showPage("library")
-                    }
-
-                    FocusButton {
-                        width: 132
-                        text: "Live TV"
-                        compact: true
-                        onClicked: root.showPage("live")
-                    }
-
-                    FocusButton {
-                        width: 132
-                        text: "Search"
-                        compact: true
-                        onClicked: root.showPage("search")
                     }
                 }
             }
