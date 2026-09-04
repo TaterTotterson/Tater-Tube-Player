@@ -156,6 +156,32 @@ ApplicationWindow {
         return row && row.items ? row.items : []
     }
 
+    function libraryCollectionRow(kind) {
+        var rows = libraryPageRows()
+        var targetId = kind === "movies" ? "local-discover:movies"
+                                          : "local-discover:series"
+        var fallbackTitles = kind === "movies" ? ["movies"]
+                                                : ["series", "tv shows"]
+        for (var i = 0; i < rows.length; ++i) {
+            var entry = rows[i] && rows[i].entry ? rows[i].entry : ({})
+            if (String(entry.id || "").toLowerCase() === targetId)
+                return rows[i]
+        }
+        for (var j = 0; j < rows.length; ++j) {
+            var title = String(rows[j] && rows[j].title
+                               ? rows[j].title : "").toLowerCase()
+            if (fallbackTitles.indexOf(title) >= 0)
+                return rows[j]
+        }
+        return null
+    }
+
+    function openLibraryCollection(kind) {
+        var row = libraryCollectionRow(kind)
+        if (row)
+            openLibraryRow(row)
+    }
+
     function openLibraryRow(row) {
         if (!row)
             return
@@ -1501,6 +1527,92 @@ ApplicationWindow {
                                 onClicked: serverClient.libraryDepth > 0
                                            ? serverClient.refreshLibrary()
                                            : serverClient.refreshLibraries()
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: demoMode || serverClient.libraryDepth === 0
+                        width: parent.width
+                        height: 94
+                        radius: 22
+                        clip: true
+                        color: "#1d2024"
+                        border.width: 1
+                        border.color: "#41464c"
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            width: 5
+                            color: root.orange
+                        }
+
+                        Row {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 22
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 14
+
+                            Rectangle {
+                                width: 58
+                                height: 58
+                                radius: 18
+                                color: "#2b211b"
+                                border.width: 1
+                                border.color: "#70401f"
+
+                                Image {
+                                    anchors.fill: parent
+                                    anchors.margins: 3
+                                    source: "../assets/mascot/tater-wave.png"
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                }
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Text {
+                                    text: "QUICK BROWSE"
+                                    color: root.orangeBright
+                                    font.pixelSize: 11
+                                    font.weight: Font.Bold
+                                    font.letterSpacing: 1.35
+                                }
+
+                                Text {
+                                    text: "Jump straight into your complete collection."
+                                    color: root.textPrimary
+                                    font.pixelSize: 16
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+
+                        Row {
+                            id: libraryQuickActions
+                            anchors.right: parent.right
+                            anchors.rightMargin: 18
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 12
+
+                            FocusButton {
+                                width: 220
+                                text: "All Movies  ›"
+                                primary: true
+                                enabled: !!root.libraryCollectionRow("movies")
+                                onClicked: root.openLibraryCollection("movies")
+                            }
+
+                            FocusButton {
+                                width: 220
+                                text: "All TV Shows  ›"
+                                enabled: !!root.libraryCollectionRow("series")
+                                onClicked: root.openLibraryCollection("series")
                             }
                         }
                     }
