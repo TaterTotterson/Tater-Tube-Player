@@ -1702,6 +1702,14 @@ ApplicationWindow {
                                 enabled: !!root.libraryCollectionRow("series")
                                 onClicked: root.openLibraryCollection("series")
                             }
+
+                            FocusButton {
+                                id: libraryDiscover
+                                visible: demoMode || !!serverClient.capabilities.newznab
+                                width: 190
+                                text: "Discover  ›"
+                                onClicked: root.showPage("discover")
+                            }
                         }
                     }
 
