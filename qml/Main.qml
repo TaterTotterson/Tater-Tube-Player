@@ -1127,6 +1127,11 @@ ApplicationWindow {
                             text: "Browse library"
                             onClicked: root.showPage("library")
                         }
+                        FocusButton {
+                            visible: demoMode || !!serverClient.capabilities.newznab
+                            text: "Discover"
+                            onClicked: root.showPage("discover")
+                        }
                     }
                 }
             }
