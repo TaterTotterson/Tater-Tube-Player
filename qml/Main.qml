@@ -1181,12 +1181,12 @@ ApplicationWindow {
 
                 Image {
                     anchors.right: parent.right
-                    anchors.rightMargin: 60
+                    anchors.rightMargin: 82
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: -10
-                    width: 390
-                    height: 330
-                    source: "../assets/mascot/tater-pi5-hero.png"
+                    anchors.bottomMargin: 3
+                    width: 340
+                    height: 292
+                    source: "../assets/mascot/tater-hero-remote.png"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }
@@ -2855,10 +2855,8 @@ ApplicationWindow {
                 height: 124
 
                 Image {
-                    anchors.centerIn: parent
-                    width: parent.width
-                    height: parent.height
-                    source: "../assets/tater-tube-logo-pi5.png"
+                    anchors.fill: parent
+                    source: "../assets/tater-tube-logo-leaning.png"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true

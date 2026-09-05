@@ -49,11 +49,11 @@ qt_add_qml_module(tater-tube-player
         qml/components/UiSounds.qml
     RESOURCES
         assets/mascot/tater-front.png
-        assets/mascot/tater-pi5-hero.png
+        assets/mascot/tater-hero-remote.png
         assets/mascot/tater-salute.png
         assets/mascot/tater-wave.png
         assets/tater-scanlines.png
-        assets/tater-tube-logo-pi5.png
+        assets/tater-tube-logo-leaning.png
         assets/sounds/tater-alert.wav
         assets/sounds/tater-back.wav
         assets/sounds/tater-select.wav
