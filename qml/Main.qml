@@ -133,15 +133,6 @@ ApplicationWindow {
         return itemTitle(channel, "Tater Tube")
     }
 
-    function taterLiveMessage() {
-        if (serverClient.liveChannels.length === 0)
-            return "Your channels are ready whenever you are."
-        var channel = serverClient.liveChannels[0]
-        if (channel.next && channel.next.title)
-            return channel.next.title + " is coming up on channel " + channel.number + "."
-        return channelTitle(channel) + " is live now on channel " + channel.number + "."
-    }
-
     function libraryMediaItems() {
         if (demoMode) {
             return [
@@ -1385,209 +1376,93 @@ ApplicationWindow {
                 }
             }
 
-            Row {
+            Column {
                 width: contentColumn.width
-                spacing: 22
+                spacing: 12
                 visible: demoMode
 
-                Column {
-                    id: liveColumn
-                    width: parent.width * 0.72
-                    spacing: 12
-
-                    SectionTitle {
-                        width: parent.width
-                        title: "Live on Tater Tube"
-                        actionText: "OPEN GUIDE  ›"
-                        actionEnabled: true
-                        onActionActivated: root.showPage("live")
-                    }
-
-                    Row {
-                        width: parent.width
-                        spacing: 15
-
-                        MediaCard {
-                            width: (parent.width - 30) / 3
-                            eyebrow: "CH 12  •  LIVE"
-                            title: "Saturday Cartoons"
-                            subtitle: "Up next: Galaxy Rangers"
-                            badge: "12"
-                            accent: "#ef7423"
-                            progress: 0.67
-                            onActivated: root.showPage("live")
-                        }
-                        MediaCard {
-                            width: (parent.width - 30) / 3
-                            eyebrow: "CH 24  •  LIVE"
-                            title: "Creature Features"
-                            subtitle: "Up next: Night Visitors"
-                            badge: "24"
-                            accent: "#75864b"
-                            progress: 0.38
-                            onActivated: root.showPage("live")
-                        }
-                        MediaCard {
-                            width: (parent.width - 30) / 3
-                            eyebrow: "CH 88  •  LIVE"
-                            title: "Neon Nights"
-                            subtitle: "Up next: Electric Dreams"
-                            badge: "88"
-                            accent: "#6a597d"
-                            progress: 0.52
-                            onActivated: root.showPage("live")
-                        }
-                    }
+                SectionTitle {
+                    width: parent.width
+                    title: "Live on Tater Tube"
+                    actionText: "OPEN GUIDE  ›"
+                    actionEnabled: true
+                    onActionActivated: root.showPage("live")
                 }
 
-                Rectangle {
-                    width: parent.width - liveColumn.width - parent.spacing
-                    height: 232
-                    anchors.bottom: parent.bottom
-                    radius: 22
-                    color: "#24282d"
-                    border.width: 1
-                    border.color: "#41464c"
-                    clip: true
+                Row {
+                    width: parent.width
+                    spacing: 15
 
-                    Image {
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.rightMargin: -12
-                        anchors.bottomMargin: -4
-                        width: 145
-                        height: 145
-                        source: "../assets/mascot/tater-wave.png"
-                        fillMode: Image.PreserveAspectFit
+                    MediaCard {
+                        width: (parent.width - 45) / 4
+                        eyebrow: "CH 12  •  LIVE"
+                        title: "Saturday Cartoons"
+                        subtitle: "Up next: Galaxy Rangers"
+                        badge: "12"
+                        accent: "#ef7423"
+                        progress: 0.67
+                        onActivated: root.showPage("live")
                     }
-
-                    Column {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.margins: 22
-                        width: parent.width - 130
-                        spacing: 9
-
-                        Text {
-                            text: "TATER SAYS"
-                            color: root.orange
-                            font.pixelSize: 11
-                            font.weight: Font.Bold
-                            font.letterSpacing: 1.4
-                        }
-                        Text {
-                            width: parent.width
-                            text: "Your sci-fi channel starts a new movie in 8 minutes."
-                            color: root.textPrimary
-                            wrapMode: Text.WordWrap
-                            font.pixelSize: 18
-                            font.weight: Font.DemiBold
-                        }
-                        Text {
-                            text: "VIEW CHANNEL  ›"
-                            color: root.orangeBright
-                            font.pixelSize: 11
-                            font.weight: Font.Bold
-                        }
+                    MediaCard {
+                        width: (parent.width - 45) / 4
+                        eyebrow: "CH 24  •  LIVE"
+                        title: "Creature Features"
+                        subtitle: "Up next: Night Visitors"
+                        badge: "24"
+                        accent: "#75864b"
+                        progress: 0.38
+                        onActivated: root.showPage("live")
+                    }
+                    MediaCard {
+                        width: (parent.width - 45) / 4
+                        eyebrow: "CH 88  •  LIVE"
+                        title: "Neon Nights"
+                        subtitle: "Up next: Electric Dreams"
+                        badge: "88"
+                        accent: "#6a597d"
+                        progress: 0.52
+                        onActivated: root.showPage("live")
                     }
                 }
             }
 
-            Row {
+            Column {
                 width: contentColumn.width
-                spacing: 22
+                spacing: 12
                 visible: !demoMode && serverClient.homeReady
                          && serverClient.liveChannels.length > 0
 
-                Column {
-                    id: serverLiveColumn
-                    width: parent.width * 0.72
-                    spacing: 12
-
-                    SectionTitle {
-                        width: parent.width
-                        title: "Live on Tater Tube"
-                        actionText: "OPEN GUIDE  ›"
-                        actionEnabled: true
-                        onActionActivated: root.showPage("live")
-                    }
-
-                    Row {
-                        width: parent.width
-                        spacing: 15
-
-                        Repeater {
-                            model: Math.min(3, serverClient.liveChannels.length)
-
-                            MediaCard {
-                                required property int index
-                                property var channel: serverClient.liveChannels[index]
-                                property var currentProgram: root.channelNow(channel)
-
-                                width: (parent.width - 30) / 3
-                                eyebrow: "CH " + channel.number + "  •  LIVE"
-                                title: root.channelTitle(channel)
-                                subtitle: root.channelSubtitle(channel)
-                                badge: channel.number || "TV"
-                                artSource: currentProgram && currentProgram.poster
-                                           ? currentProgram.poster : ""
-                                accent: root.cardAccent(index)
-                                progress: root.progressValue(currentProgram
-                                                             ? currentProgram.progressPercent : 0)
-                                onActivated: root.openDetails(channel, "CHANNEL " + channel.number)
-                            }
-                        }
-                    }
+                SectionTitle {
+                    width: parent.width
+                    title: "Live on Tater Tube"
+                    actionText: "OPEN GUIDE  ›"
+                    actionEnabled: true
+                    onActionActivated: root.showPage("live")
                 }
 
-                Rectangle {
-                    width: parent.width - serverLiveColumn.width - parent.spacing
-                    height: 232
-                    anchors.bottom: parent.bottom
-                    radius: 22
-                    color: "#24282d"
-                    border.width: 1
-                    border.color: "#41464c"
-                    clip: true
+                Row {
+                    width: parent.width
+                    spacing: 15
 
-                    Image {
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.rightMargin: -12
-                        anchors.bottomMargin: -4
-                        width: 145
-                        height: 145
-                        source: "../assets/mascot/tater-wave.png"
-                        fillMode: Image.PreserveAspectFit
-                    }
+                    Repeater {
+                        model: Math.min(4, serverClient.liveChannels.length)
 
-                    Column {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.margins: 22
-                        width: parent.width - 130
-                        spacing: 9
+                        MediaCard {
+                            required property int index
+                            property var channel: serverClient.liveChannels[index]
+                            property var currentProgram: root.channelNow(channel)
 
-                        Text {
-                            text: "TATER SAYS"
-                            color: root.orange
-                            font.pixelSize: 11
-                            font.weight: Font.Bold
-                            font.letterSpacing: 1.4
-                        }
-                        Text {
-                            width: parent.width
-                            text: root.taterLiveMessage()
-                            color: root.textPrimary
-                            wrapMode: Text.WordWrap
-                            font.pixelSize: 18
-                            font.weight: Font.DemiBold
-                        }
-                        Text {
-                            text: "VIEW CHANNEL  ›"
-                            color: root.orangeBright
-                            font.pixelSize: 11
-                            font.weight: Font.Bold
+                            width: (parent.width - 45) / 4
+                            eyebrow: "CH " + channel.number + "  •  LIVE"
+                            title: root.channelTitle(channel)
+                            subtitle: root.channelSubtitle(channel)
+                            badge: channel.number || "TV"
+                            artSource: currentProgram && currentProgram.poster
+                                       ? currentProgram.poster : ""
+                            accent: root.cardAccent(index)
+                            progress: root.progressValue(currentProgram
+                                                         ? currentProgram.progressPercent : 0)
+                            onActivated: root.openDetails(channel, "CHANNEL " + channel.number)
                         }
                     }
                 }
