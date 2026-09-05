@@ -30,6 +30,7 @@ class ServerClient final : public QObject
     Q_PROPERTY(QVariantList liveChannels READ liveChannels NOTIFY homeChanged)
     Q_PROPERTY(QVariantList libraries READ libraries NOTIFY homeChanged)
     Q_PROPERTY(QVariantMap capabilities READ capabilities NOTIFY homeChanged)
+    Q_PROPERTY(QVariantMap homeHero READ homeHero NOTIFY homeChanged)
     Q_PROPERTY(QStringList homeWarnings READ homeWarnings NOTIFY homeChanged)
     Q_PROPERTY(QVariantList libraryItems READ libraryItems NOTIFY libraryChanged)
     Q_PROPERTY(QVariantList libraryRows READ libraryRows NOTIFY libraryChanged)
@@ -68,6 +69,7 @@ public:
     QVariantList liveChannels() const { return m_liveChannels; }
     QVariantList libraries() const { return m_libraries; }
     QVariantMap capabilities() const { return m_capabilities; }
+    QVariantMap homeHero() const { return m_homeHero; }
     QStringList homeWarnings() const { return m_homeWarnings; }
     QVariantList libraryItems() const { return m_libraryItems; }
     QVariantList libraryRows() const { return m_libraryRows; }
@@ -196,6 +198,7 @@ private:
     QVariantList m_liveChannels;
     QVariantList m_libraries;
     QVariantMap m_capabilities;
+    QVariantMap m_homeHero;
     QStringList m_homeWarnings;
     QVariantList m_libraryItems;
     QVariantList m_libraryRows;

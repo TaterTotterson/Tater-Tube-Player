@@ -775,6 +775,7 @@ void ServerClient::resetHome()
     m_liveChannels.clear();
     m_libraries.clear();
     m_capabilities.clear();
+    m_homeHero.clear();
     m_homeWarnings.clear();
 }
 
@@ -881,6 +882,7 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     m_liveChannels = data.value("liveChannels").toArray().toVariantList();
     m_libraries = data.value("libraries").toArray().toVariantList();
     m_capabilities = data.value("capabilities").toObject().toVariantMap();
+    m_homeHero = data.value("hero").toObject().toVariantMap();
     if (m_capabilities.contains(QStringLiteral("newznab"))
         && !m_capabilities.value(QStringLiteral("newznab")).toBool()) {
         resetDiscover();

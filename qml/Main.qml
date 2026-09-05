@@ -48,6 +48,23 @@ ApplicationWindow {
     property bool uiFocusSoundsArmed: false
     property var uiLastFocusItem: null
 
+    function hasPersonalizedHero() {
+        var heroCopy = serverClient.homeHero
+        return !demoMode && heroCopy && heroCopy.personalized === true
+                && String(heroCopy.message || "").trim().length > 0
+    }
+
+    function personalizedHeroHeadline() {
+        var hour = (new Date()).getHours()
+        if (hour >= 5 && hour < 12)
+            return "Good morning.\nSomething good is waiting."
+        if (hour >= 12 && hour < 17)
+            return "Good afternoon.\nHere’s a pick for right now."
+        if (hour >= 17 && hour < 22)
+            return "Good evening.\nYour next watch is ready."
+        return "Still up?\nTater found something good."
+    }
+
     onActiveFocusItemChanged: {
         var nextItem = root.activeFocusItem
         if (root.uiFocusSoundsArmed && !root.playbackOpen
@@ -1063,7 +1080,10 @@ ApplicationWindow {
                         }
 
                         Text {
-                            text: "TATER'S PICK FOR TONIGHT"
+                            text: root.hasPersonalizedHero()
+                                  ? String(serverClient.homeHero.eyebrow
+                                           || "TATER LINK  •  PICKED FOR YOU")
+                                  : "WELCOME TO TATER TUBE"
                             color: root.orangeBright
                             font.pixelSize: 12
                             font.weight: Font.Bold
@@ -1072,7 +1092,9 @@ ApplicationWindow {
                     }
 
                     Text {
-                        text: "Everything good,\nright where you left it."
+                        text: root.hasPersonalizedHero()
+                              ? root.personalizedHeroHeadline()
+                              : "Everything good,\nright where you left it."
                         color: root.textPrimary
                         font.pixelSize: 38
                         font.weight: Font.Black
@@ -1081,10 +1103,14 @@ ApplicationWindow {
 
                     Text {
                         width: parent.width
-                        text: "Movies, shows, and your own live channels—served privately from Tater Tube Server."
+                        text: root.hasPersonalizedHero()
+                              ? String(serverClient.homeHero.message)
+                              : "Movies, shows, and your own live channels—served privately from Tater Tube Server."
                         color: "#c4c6c8"
                         font.pixelSize: 16
                         wrapMode: Text.WordWrap
+                        maximumLineCount: 3
+                        elide: Text.ElideRight
                     }
 
                     Row {
