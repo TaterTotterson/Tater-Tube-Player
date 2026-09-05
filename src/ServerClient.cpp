@@ -707,6 +707,35 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
     connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
 }
 
+void ServerClient::preparePlayback(const QVariantMap &item, const QString &kind,
+                                   const QVariantMap &capabilities)
+{
+    const QString streamUrl = item.value(QStringLiteral("streamUrl")).toString().trimmed();
+    if (!paired() || streamUrl.isEmpty()) {
+        emit playbackPlanFailed(QStringLiteral("Playback details are unavailable."));
+        return;
+    }
+
+    const int generation = ++m_playbackGeneration;
+    const QJsonObject payload{
+        {QStringLiteral("stream_url"), streamUrl},
+        {QStringLiteral("media_type"), kind.trimmed().toLower()},
+        {QStringLiteral("profile"), QStringLiteral("hdmi_1080p")},
+        {QStringLiteral("capabilities"), QJsonObject::fromVariantMap(capabilities)},
+    };
+    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/v1/player/playback/sessions"))};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(20000);
+    QNetworkReply *reply = m_network.post(
+        request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, generation] { handlePlaybackPlanReply(reply, generation); });
+}
+
 QString ServerClient::playbackTranscodeUrl(const QString &streamUrl,
                                            const QString &profile,
                                            qint64 startMs) const
@@ -720,11 +749,18 @@ QString ServerClient::playbackTranscodeUrl(const QString &streamUrl,
     query.removeAllQueryItems(QStringLiteral("transcode"));
     query.removeAllQueryItems(QStringLiteral("profile"));
     query.removeAllQueryItems(QStringLiteral("codec"));
+    query.removeAllQueryItems(QStringLiteral("audio_codec"));
     query.removeAllQueryItems(QStringLiteral("start"));
+    query.removeAllQueryItems(QStringLiteral("tater_video_mode"));
+    query.removeAllQueryItems(QStringLiteral("tater_audio_mode"));
+    query.removeAllQueryItems(QStringLiteral("tater_audio_codec"));
     query.addQueryItem(QStringLiteral("transcode"), QStringLiteral("1"));
     query.addQueryItem(QStringLiteral("profile"), profile.trimmed().isEmpty()
                            ? QStringLiteral("hdmi_1080p") : profile.trimmed());
     query.addQueryItem(QStringLiteral("codec"), QStringLiteral("h264"));
+    query.addQueryItem(QStringLiteral("tater_video_mode"), QStringLiteral("transcode"));
+    query.addQueryItem(QStringLiteral("tater_audio_mode"), QStringLiteral("transcode"));
+    query.addQueryItem(QStringLiteral("tater_audio_codec"), QStringLiteral("aac"));
     if (startMs > 0) {
         query.addQueryItem(QStringLiteral("start"),
                            QString::number(static_cast<double>(startMs) / 1000.0, 'f', 3));
@@ -746,10 +782,58 @@ QString ServerClient::playbackAudioTranscodeUrl(const QString &streamUrl,
     query.removeAllQueryItems(QStringLiteral("transcode"));
     query.removeAllQueryItems(QStringLiteral("profile"));
     query.removeAllQueryItems(QStringLiteral("codec"));
+    query.removeAllQueryItems(QStringLiteral("audio_codec"));
     query.removeAllQueryItems(QStringLiteral("start"));
+    query.removeAllQueryItems(QStringLiteral("tater_video_mode"));
+    query.removeAllQueryItems(QStringLiteral("tater_audio_mode"));
+    query.removeAllQueryItems(QStringLiteral("tater_audio_codec"));
     query.addQueryItem(QStringLiteral("transcode"), QStringLiteral("audio"));
     query.addQueryItem(QStringLiteral("profile"), profile.trimmed().isEmpty()
                            ? QStringLiteral("hdmi_1080p") : profile.trimmed());
+    query.addQueryItem(QStringLiteral("tater_video_mode"), QStringLiteral("direct"));
+    query.addQueryItem(QStringLiteral("tater_audio_mode"), QStringLiteral("transcode"));
+    query.addQueryItem(QStringLiteral("tater_audio_codec"), QStringLiteral("aac"));
+    if (startMs > 0) {
+        query.addQueryItem(QStringLiteral("start"),
+                           QString::number(static_cast<double>(startMs) / 1000.0, 'f', 3));
+    }
+    url.setQuery(query);
+    return url.toString(QUrl::FullyEncoded);
+}
+
+QString ServerClient::playbackVideoTranscodeUrl(const QString &streamUrl,
+                                                const QString &profile,
+                                                const QString &audioCodec,
+                                                const QString &audioMode,
+                                                qint64 startMs) const
+{
+    QUrl url(streamUrl);
+    if (!url.isValid() || url.scheme().isEmpty())
+        return {};
+
+    QUrlQuery query(url);
+    query.removeAllQueryItems(QStringLiteral("direct"));
+    query.removeAllQueryItems(QStringLiteral("transcode"));
+    query.removeAllQueryItems(QStringLiteral("profile"));
+    query.removeAllQueryItems(QStringLiteral("codec"));
+    query.removeAllQueryItems(QStringLiteral("audio_codec"));
+    query.removeAllQueryItems(QStringLiteral("start"));
+    query.removeAllQueryItems(QStringLiteral("tater_video_mode"));
+    query.removeAllQueryItems(QStringLiteral("tater_audio_mode"));
+    query.removeAllQueryItems(QStringLiteral("tater_audio_codec"));
+    query.addQueryItem(QStringLiteral("transcode"), QStringLiteral("video"));
+    query.addQueryItem(QStringLiteral("profile"), profile.trimmed().isEmpty()
+                           ? QStringLiteral("hdmi_1080p") : profile.trimmed());
+    query.addQueryItem(QStringLiteral("codec"), QStringLiteral("h264"));
+    query.addQueryItem(QStringLiteral("tater_video_mode"), QStringLiteral("transcode"));
+    query.addQueryItem(QStringLiteral("tater_audio_mode"),
+                       audioMode.trimmed().compare(QStringLiteral("bitstream"),
+                                                   Qt::CaseInsensitive) == 0
+                           ? QStringLiteral("bitstream") : QStringLiteral("direct"));
+    if (!audioCodec.trimmed().isEmpty())
+        query.addQueryItem(QStringLiteral("audio_codec"), audioCodec.trimmed().toLower());
+    if (!audioCodec.trimmed().isEmpty())
+        query.addQueryItem(QStringLiteral("tater_audio_codec"), audioCodec.trimmed().toLower());
     if (startMs > 0) {
         query.addQueryItem(QStringLiteral("start"),
                            QString::number(static_cast<double>(startMs) / 1000.0, 'f', 3));
@@ -1216,6 +1300,41 @@ void ServerClient::handleDiscoverPlayReply(QNetworkReply *reply, int generation,
     m_discoverPendingItem = sourceItem;
     m_discoverErrorMessage.clear();
     emit discoverChanged();
+}
+
+void ServerClient::handlePlaybackPlanReply(QNetworkReply *reply, int generation)
+{
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool succeeded = reply->error() == QNetworkReply::NoError
+        && status >= 200 && status < 300;
+    reply->deleteLater();
+    if (generation != m_playbackGeneration)
+        return;
+
+    if (!succeeded) {
+        if (status == 401 || status == 403) {
+            forgetServer();
+            emit playbackPlanFailed(
+                QStringLiteral("This player is no longer authorized."));
+            return;
+        }
+        emit playbackPlanFailed(responseError(
+            body, status == 404
+                ? QStringLiteral("This server uses legacy playback planning.")
+                : QStringLiteral("The server could not prepare a playback plan.")));
+        return;
+    }
+
+    QJsonObject response = QJsonDocument::fromJson(body).object();
+    if (response.value(QStringLiteral("data")).isObject())
+        response = response.value(QStringLiteral("data")).toObject();
+    QVariantMap plan = response.toVariantMap();
+    if (plan.value(QStringLiteral("stream_url")).toString().trimmed().isEmpty()) {
+        emit playbackPlanFailed(QStringLiteral("The server returned an empty playback plan."));
+        return;
+    }
+    emit playbackPlanReady(plan);
 }
 
 void ServerClient::restoreDiscoverPage(const DiscoverPage &page)

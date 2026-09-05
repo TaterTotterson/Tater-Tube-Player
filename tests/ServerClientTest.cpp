@@ -16,6 +16,7 @@ private slots:
     void loadsVersionedHome();
     void addsPlaybackTranscodeParameters();
     void addsAudioOnlyTranscodeParameters();
+    void addsVideoOnlyTranscodeParameters();
     void postsPlaybackProgress();
 };
 
@@ -79,6 +80,8 @@ void ServerClientTest::loadsVersionedHome()
                     body = R"({"success":true,"data":{"title":"Search: Discover Me 2026","items":[{"title":"Discover.Me.2026.1080p","type":"nzb","mediaType":"nzb","nzbUrl":"http://indexer.test/get/one","sizeText":"8.2 GB"},{"title":"Discover.Me.2026.720p","type":"nzb","nzbUrl":"http://indexer.test/get/two","sizeText":"4.1 GB"}]}})";
                 } else if (request.startsWith("POST /api/tater/usenet/play ")) {
                     body = R"({"streams":[{"title":"Discover Me 2026","url":"http://tube.test/api/files/stream?player_token=test-token"}],"queue_status":"streamable"})";
+                } else if (request.startsWith("POST /api/v1/player/playback/sessions ")) {
+                    body = R"({"success":true,"data":{"stream_url":"http://tube.test/movie?transcode=video","mode":"video_transcode","video_mode":"transcode","audio_mode":"direct","video_codec":"h264","audio_codec":"eac3","quality_label":"Video H.264 • Audio Direct — Dolby Digital Plus","source":{"video_codec":"hevc","audio_codec":"eac3"}}})";
                 } else if (request.startsWith("GET /api/tater/tv/lineup ")) {
                     body = R"({"success":true,"data":{"startedAt":"2026-09-02T12:00:00Z","serverNow":"2026-09-02T12:00:30Z","channels":[{"number":"12","title":"Cartoons","streamUrl":"http://tube.test/live/12","schedule":[{"title":"Playing Now","kind":"movie","categoryId":"local:movies","sourceIndex":2,"path":"Playing Now/movie.mkv","start":0,"end":60},{"title":"Up Next","kind":"movie","categoryId":"local:movies","sourceIndex":2,"path":"Up Next/movie.mkv","start":60,"end":120}]}]}})";
                 } else {
@@ -192,6 +195,22 @@ void ServerClientTest::loadsVersionedHome()
     QCOMPARE(preparedItem.value("streamUrl").toString(),
              QStringLiteral("http://tube.test/api/files/stream?player_token=test-token"));
     QVERIFY(requests.contains("POST /api/tater/usenet/play "));
+
+    QSignalSpy planSpy(&client, &ServerClient::playbackPlanReady);
+    client.preparePlayback({
+        {QStringLiteral("streamUrl"), QStringLiteral("http://tube.test/movie")},
+    }, QStringLiteral("movie"), {
+        {QStringLiteral("output_name"), QStringLiteral("Living Room TV")},
+        {QStringLiteral("video_codecs"), QStringList{QStringLiteral("h264")}},
+        {QStringLiteral("audio_codecs"), QStringList{QStringLiteral("eac3")}},
+    });
+    QTRY_COMPARE_WITH_TIMEOUT(planSpy.count(), 1, 3000);
+    const QVariantMap plan = planSpy.first().first().toMap();
+    QCOMPARE(plan.value(QStringLiteral("mode")).toString(), QStringLiteral("video_transcode"));
+    QCOMPARE(plan.value(QStringLiteral("audio_mode")).toString(), QStringLiteral("direct"));
+    QVERIFY(requests.contains("POST /api/v1/player/playback/sessions "));
+    QVERIFY(requests.contains("Living Room TV"));
+
     client.browseDiscoverBack();
     QCOMPARE(client.discoverStage(), QStringLiteral("titles"));
     QCOMPARE(client.discoverItems().size(), 1);
@@ -255,6 +274,26 @@ void ServerClientTest::addsAudioOnlyTranscodeParameters()
     QCOMPARE(query.queryItemValue(QStringLiteral("start")), QStringLiteral("12.345"));
     QVERIFY(!query.hasQueryItem(QStringLiteral("direct")));
     QVERIFY(!query.hasQueryItem(QStringLiteral("codec")));
+}
+
+void ServerClientTest::addsVideoOnlyTranscodeParameters()
+{
+    ServerClient client;
+    const QString fallback = client.playbackVideoTranscodeUrl(
+        QStringLiteral("http://tube.local/api/tater/local/stream?player_token=a%20b&direct=1"),
+        QStringLiteral("hdmi_4k"), QStringLiteral("truehd"),
+        QStringLiteral("bitstream"), 12345);
+    const QUrl url(fallback);
+    const QUrlQuery query(url);
+
+    QCOMPARE(query.queryItemValue(QStringLiteral("player_token")), QStringLiteral("a b"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("transcode")), QStringLiteral("video"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("profile")), QStringLiteral("hdmi_4k"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("codec")), QStringLiteral("h264"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("audio_codec")), QStringLiteral("truehd"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("tater_audio_mode")), QStringLiteral("bitstream"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("start")), QStringLiteral("12.345"));
+    QVERIFY(!query.hasQueryItem(QStringLiteral("direct")));
 }
 
 void ServerClientTest::postsPlaybackProgress()

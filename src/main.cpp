@@ -1,14 +1,19 @@
 #include "ServerClient.h"
 #include "GamepadInput.h"
+#include "PlaybackCapabilities.h"
 
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QGuiApplication>
 #include <QImage>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QTimer>
+
+#include <cstdio>
 
 #ifndef TATER_TUBE_PLAYER_VERSION
 #define TATER_TUBE_PLAYER_VERSION "0.0.0"
@@ -40,13 +45,30 @@ int main(int argc, char *argv[])
                       QStringLiteral("url")});
     parser.addOption({QStringLiteral("compatible-playback"),
                       QStringLiteral("Use server-provided H.264/AAC playback for on-demand video.")});
+    parser.addOption({QStringLiteral("print-capabilities"),
+                      QStringLiteral("Print detected playback capabilities and exit.")});
     parser.process(app);
 
     ServerClient serverClient;
     GamepadInput gamepadInput;
+    PlaybackCapabilities playbackCapabilities(
+        parser.isSet(QStringLiteral("compatible-playback")));
+    if (parser.isSet(QStringLiteral("print-capabilities"))) {
+        QTimer::singleShot(750, &app, [&app, &playbackCapabilities] {
+            const QByteArray output = QJsonDocument(
+                QJsonObject::fromVariantMap(playbackCapabilities.report()))
+                                          .toJson(QJsonDocument::Compact);
+            fwrite(output.constData(), 1, static_cast<size_t>(output.size()), stdout);
+            fputc('\n', stdout);
+            app.quit();
+        });
+        return app.exec();
+    }
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("serverClient"), &serverClient);
     engine.rootContext()->setContextProperty(QStringLiteral("gamepadInput"), &gamepadInput);
+    engine.rootContext()->setContextProperty(QStringLiteral("playbackCapabilities"),
+                                             &playbackCapabilities);
     engine.rootContext()->setContextProperty(QStringLiteral("demoMode"),
                                              parser.isSet(QStringLiteral("demo")));
     engine.rootContext()->setContextProperty(QStringLiteral("playbackPreviewUrl"),

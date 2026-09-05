@@ -28,6 +28,8 @@ qt_add_executable(tater-tube-player
     src/main.cpp
     src/GamepadInput.cpp
     src/GamepadInput.h
+    src/PlaybackCapabilities.cpp
+    src/PlaybackCapabilities.h
     src/ServerClient.cpp
     src/ServerClient.h
 )

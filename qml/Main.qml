@@ -32,6 +32,10 @@ ApplicationWindow {
     property string playbackSourceUrl: ""
     property bool playbackUsingFallback: false
     property bool playbackUsingAudioTranscode: false
+    property bool playbackUsingVideoTranscode: false
+    property bool playbackPlanPending: false
+    property string playbackAudioCodec: ""
+    property string playbackAudioMode: "direct"
     property real playbackBaseOffsetMs: 0
     property real playbackPendingResumeMs: 0
     property string playbackError: ""
@@ -769,6 +773,10 @@ ApplicationWindow {
         playbackSourceUrl = source
         playbackUsingFallback = false
         playbackUsingAudioTranscode = false
+        playbackUsingVideoTranscode = false
+        playbackPlanPending = false
+        playbackAudioCodec = ""
+        playbackAudioMode = "direct"
         playbackBaseOffsetMs = 0
         playbackPendingResumeMs = playbackIsLive ? 0 : Number(item.viewOffset || 0)
         if (playbackPendingResumeMs <= 0 && item.viewOffsetSeconds)
@@ -780,16 +788,90 @@ ApplicationWindow {
         playbackControlsVisible = true
         detailsOpen = false
         playbackOpen = true
-        if (!playbackIsLive && compatiblePlayback) {
+        if (playbackIsLive) {
+            mediaPlayer.source = source
+            mediaPlayer.play()
+            playbackControlsTimer.restart()
+        } else if (serverClient.paired) {
+            playbackPlanPending = true
+            playbackStatusMessage = "Matching playback to this screen…"
+            playbackQuality = "Choosing best quality"
+            serverClient.preparePlayback(item, kind || mediaLabel(item),
+                                         playbackCapabilities.report)
+        } else {
+            applyLegacyPlaybackPlan()
+        }
+    }
+
+    function applyLegacyPlaybackPlan() {
+        playbackPlanPending = false
+        playbackUsingFallback = false
+        playbackUsingVideoTranscode = false
+        if (compatiblePlayback) {
             playbackUsingAudioTranscode = true
             playbackBaseOffsetMs = Math.max(0, playbackPendingResumeMs)
             playbackPendingResumeMs = 0
             playbackStatusMessage = "Preparing compatible audio…"
             playbackQuality = "Video Direct • Audio AAC"
             mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
-                        source, "hdmi_1080p", Math.round(playbackBaseOffsetMs))
+                        playbackSourceUrl, "hdmi_1080p", Math.round(playbackBaseOffsetMs))
         } else {
-            mediaPlayer.source = source
+            playbackUsingAudioTranscode = false
+            mediaPlayer.source = playbackSourceUrl
+        }
+        mediaPlayer.play()
+        playbackControlsTimer.restart()
+    }
+
+    function applyPlaybackPlan(plan) {
+        if (!playbackOpen || !plan)
+            return
+        var plannedUrl = String(plan.stream_url || "").trim()
+        if (plannedUrl.length === 0) {
+            applyLegacyPlaybackPlan()
+            return
+        }
+
+        var mode = String(plan.mode || "direct")
+        var resumeAt = Math.max(0, playbackPendingResumeMs)
+        playbackPlanPending = false
+        playbackUsingFallback = mode === "full_transcode"
+        playbackUsingAudioTranscode = mode === "audio_transcode"
+        playbackUsingVideoTranscode = mode === "video_transcode"
+        playbackAudioCodec = String(plan.source && plan.source.audio_codec
+                                    ? plan.source.audio_codec
+                                    : plan.audio_codec || "")
+        playbackAudioMode = String(plan.audio_mode || "direct")
+        playbackQuality = String(plan.quality_label || "Direct play")
+        playbackError = ""
+        playbackHasVideoFrame = false
+
+        if (playbackUsingFallback) {
+            playbackBaseOffsetMs = resumeAt
+            playbackPendingResumeMs = 0
+            playbackStatusMessage = "Optimizing video and audio…"
+            mediaPlayer.source = serverClient.playbackTranscodeUrl(
+                        playbackSourceUrl, "hdmi_1080p", Math.round(resumeAt))
+        } else if (playbackUsingAudioTranscode) {
+            playbackBaseOffsetMs = resumeAt
+            playbackPendingResumeMs = 0
+            playbackStatusMessage = "Preparing compatible audio…"
+            mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
+                        playbackSourceUrl, "hdmi_1080p", Math.round(resumeAt))
+        } else if (playbackUsingVideoTranscode) {
+            playbackBaseOffsetMs = resumeAt
+            playbackPendingResumeMs = 0
+            playbackStatusMessage = "Optimizing video and preserving audio…"
+            mediaPlayer.source = serverClient.playbackVideoTranscodeUrl(
+                        playbackSourceUrl, "hdmi_1080p", playbackAudioCodec,
+                        playbackAudioMode,
+                        Math.round(resumeAt))
+        } else {
+            playbackBaseOffsetMs = 0
+            playbackStatusMessage = String(plan.audio_mode || "") === "bitstream"
+                    ? "Sending original audio to your sound system…"
+                    : "Opening your media…"
+            mediaPlayer.source = plannedUrl
         }
         mediaPlayer.play()
         playbackControlsTimer.restart()
@@ -811,6 +893,7 @@ ApplicationWindow {
             savePlaybackState(false)
         mediaPlayer.stop()
         playbackOpen = false
+        playbackPlanPending = false
         playbackHasVideoFrame = false
         playbackError = ""
         playbackStatusMessage = ""
@@ -829,6 +912,7 @@ ApplicationWindow {
         var resumeAt = Math.max(playbackPendingResumeMs, playbackPositionMs())
         playbackUsingFallback = true
         playbackUsingAudioTranscode = false
+        playbackUsingVideoTranscode = false
         playbackBaseOffsetMs = resumeAt
         playbackPendingResumeMs = 0
         playbackError = ""
@@ -875,6 +959,16 @@ ApplicationWindow {
             mediaPlayer.stop()
             mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
                         playbackSourceUrl, "hdmi_1080p", Math.round(target))
+            Qt.callLater(function() { mediaPlayer.play() })
+        } else if (playbackUsingVideoTranscode) {
+            playbackBaseOffsetMs = target
+            playbackStatusMessage = "Seeking…"
+            playbackHasVideoFrame = false
+            mediaPlayer.stop()
+            mediaPlayer.source = serverClient.playbackVideoTranscodeUrl(
+                        playbackSourceUrl, "hdmi_1080p", playbackAudioCodec,
+                        playbackAudioMode,
+                        Math.round(target))
             Qt.callLater(function() { mediaPlayer.play() })
         } else {
             mediaPlayer.setPosition(Math.round(target))
@@ -1189,6 +1283,15 @@ ApplicationWindow {
 
         function onDiscoverPlaybackReady(item) {
             root.startPlayback(item, root.mediaLabel(item))
+        }
+
+        function onPlaybackPlanReady(plan) {
+            root.applyPlaybackPlan(plan)
+        }
+
+        function onPlaybackPlanFailed(message) {
+            if (root.playbackOpen && root.playbackPlanPending)
+                root.applyLegacyPlaybackPlan()
         }
     }
 
@@ -3363,6 +3466,7 @@ ApplicationWindow {
 
     AudioOutput {
         id: playerAudio
+        device: playbackCapabilities.defaultAudioOutput
         volume: 0.85
         muted: false
     }

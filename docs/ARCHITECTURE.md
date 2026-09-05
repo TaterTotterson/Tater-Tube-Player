@@ -53,6 +53,7 @@ Implemented:
 GET  /api/v1/player/home
 GET  /api/v1/player/library
 GET  /api/v1/player/artwork/local
+POST /api/v1/player/playback/sessions
 GET  /api/tater/local/stream
 GET  /api/tater/usenet/catalog
 GET  /api/tater/usenet/items
@@ -62,13 +63,31 @@ POST /api/tater/playstate
 
 The home response aggregates capabilities, Continue Watching, Recently Added,
 library roots, and lightweight Tube TV now/next data. Local artwork accepts
-media-adjacent `poster`, `folder`, `cover`, and title-matched images. The Steam
-Deck compatibility path copies the original video into a streamable Matroska
-container without re-encoding it and transcodes only the first audio track to
-stereo AAC. If the original video cannot
-be copied safely into the compatibility stream, the player falls back to a full
-H.264/AAC `hdmi_1080p` transcode. Tube TV channel URLs are server-produced HLS
-and keep server-scheduled commercials, bumpers, spots, and station IDs intact.
+media-adjacent `poster`, `folder`, `cover`, and title-matched images. Before
+on-demand playback, the player reports its current display, audio output,
+decoder, resolution, channel, and passthrough capabilities. The server probes
+the source and selects one of four track-level plans:
+
+```text
+Video direct     + Audio direct/bitstream = direct play
+Video direct     + Audio transcode        = audio-only transcode
+Video transcode  + Audio direct/bitstream = video-only transcode
+Video transcode  + Audio transcode        = full transcode
+```
+
+Selective video transcoding uses H.264 while copying the original audio track;
+selective audio transcoding copies the original video while producing AAC.
+Playback activity records the video and audio paths separately so the server UI
+can describe what is actually happening. If a selective stream fails, the
+player falls back to a full H.264/AAC `hdmi_1080p` transcode. Tube TV channel
+URLs are server-produced HLS and keep server-scheduled commercials, bumpers,
+spots, and station IDs intact.
+
+Qt Multimedia exposes decoded audio capabilities and follows the system's
+default output, but this Steam client does not advertise encoded HDMI
+passthrough. Native Apple TV and Google TV clients can use the same contract and
+advertise passthrough only when their platform playback engine and connected
+audio route confirm it.
 
 The Library landing page uses one compact versioned request to populate its
 media shelves, while deeper browsing and Live TV still use the existing
@@ -82,16 +101,13 @@ GET  /api/v1/player/server
 POST /api/v1/player/pair
 GET  /api/v1/player/items/{id}
 GET  /api/v1/player/search
-POST /api/v1/player/playback/sessions
 POST /api/v1/player/playback/progress
 GET  /api/v1/player/tv/lineup
 GET  /api/v1/player/images/{id}/{kind}
 ```
 
-`playback/sessions` should accept codec, container, HDR, audio, subtitle, and
-resolution capabilities and return either a direct stream or an HLS stream.
-That server-selected playback plan will replace the client's first-generation
-error-triggered fallback and enable adaptive bandwidth profiles.
+Future playback-session revisions can add bandwidth, HDR, subtitle, and
+container-specific decisions without changing the track-level modes.
 
 ## Platform plan
 

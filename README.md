@@ -36,7 +36,9 @@ with:
   folders, shows, and seasons, with incremental title rendering;
 - a refreshable Live TV lineup with channel now/next information and one-click
   tuning;
-- automatic H.264 1080p server transcoding when direct playback fails;
+- capability-aware playback planning for the active screen and audio output;
+- independent video and audio decisions: direct play, audio-only conversion,
+  video-only conversion, or full H.264/AAC conversion;
 - Tube TV HLS playback that preserves server-scheduled commercials, spots,
   bumpers, and station IDs;
 - play/pause, 10-second seeking, volume, back, and auto-hiding playback controls
@@ -99,10 +101,17 @@ Distrobox launcher is only for development; the Steam release will ship a
 self-contained runtime and will not require Distrobox.
 
 The Deck launcher forwards SteamOS's PipeWire/Pulse audio socket into the
-development container. For on-demand video, it keeps the original video stream
-untouched and asks the server to convert only the audio to stereo AAC. If that
-video cannot be copied into the compatibility stream, the player falls back to
-a full H.264/AAC transcode.
+development container. The player follows changes to the system's default
+audio output, reports the active display, decoder, channel, and output
+capabilities to Tater Tube Server, and asks the server for the least destructive
+playback path. The server can preserve both tracks, convert only audio, convert
+only video while preserving audio, or convert both tracks. If a selective path
+fails during playback, the player retries with a full H.264/AAC transcode.
+
+The current Qt Multimedia engine decodes supported audio to PCM; it does not
+claim encoded HDMI bitstream support. The versioned capability contract already
+supports passthrough declarations for native Apple TV and Google TV players, or
+for a future Steam playback engine selected under the project's license policy.
 
 ## Licensing status
 

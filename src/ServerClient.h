@@ -104,6 +104,8 @@ public:
     Q_INVOKABLE void browseDiscoverBack();
     Q_INVOKABLE void refreshLiveGuide();
     Q_INVOKABLE void forgetServer();
+    Q_INVOKABLE void preparePlayback(const QVariantMap &item, const QString &kind,
+                                     const QVariantMap &capabilities);
     Q_INVOKABLE void savePlaybackProgress(const QVariantMap &item, qint64 positionMs,
                                           qint64 durationMs, bool completed = false);
     Q_INVOKABLE QString playbackTranscodeUrl(const QString &streamUrl,
@@ -111,6 +113,11 @@ public:
                                              qint64 startMs = 0) const;
     Q_INVOKABLE QString playbackAudioTranscodeUrl(const QString &streamUrl,
                                                   const QString &profile,
+                                                  qint64 startMs = 0) const;
+    Q_INVOKABLE QString playbackVideoTranscodeUrl(const QString &streamUrl,
+                                                  const QString &profile,
+                                                  const QString &audioCodec,
+                                                  const QString &audioMode,
                                                   qint64 startMs = 0) const;
 
     static QString normalizedServerUrl(const QString &rawUrl);
@@ -124,6 +131,8 @@ signals:
     void libraryChanged();
     void discoverChanged();
     void discoverPlaybackReady(const QVariantMap &item);
+    void playbackPlanReady(const QVariantMap &plan);
+    void playbackPlanFailed(const QString &message);
     void liveGuideChanged();
     void pairingCompleted();
 
@@ -175,6 +184,7 @@ private:
                                    const QString &fallbackTitle);
     void handleDiscoverPlayReply(QNetworkReply *reply, int generation,
                                  const QVariantMap &sourceItem);
+    void handlePlaybackPlanReply(QNetworkReply *reply, int generation);
     void restoreDiscoverPage(const DiscoverPage &page);
     void resetDiscover();
     void handleLiveGuideReply(QNetworkReply *reply);
@@ -219,6 +229,7 @@ private:
     QVariantMap m_discoverPendingItem;
     QVector<DiscoverPage> m_discoverHistory;
     int m_discoverGeneration = 0;
+    int m_playbackGeneration = 0;
     bool m_discoverLoading = false;
     QVariantList m_liveGuideChannels;
     QString m_liveGuideErrorMessage;
