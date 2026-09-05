@@ -7,6 +7,7 @@ FocusScope {
     property string meta: ""
     property string resumeTitle: ""
     property url artSource: ""
+    property url backdropSource: ""
     property real progress: 0
     property color accent: "#f47a23"
     signal activated()
@@ -38,23 +39,23 @@ FocusScope {
         border.color: card.activeFocus ? "#ff9349" : "#3b4147"
 
         Image {
-            id: artwork
+            id: backdropArtwork
             anchors.fill: parent
-            source: card.artSource
+            source: card.backdropSource
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
             visible: status === Image.Ready
-            opacity: 0.56
+            opacity: 0.28
         }
 
         Rectangle {
             anchors.fill: parent
             gradient: Gradient {
                 orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: artwork.visible ? "#ea121416" : Qt.darker(card.accent, 2.4) }
-                GradientStop { position: 0.62; color: "#b5171a1e" }
-                GradientStop { position: 1.0; color: "#f017191d" }
+                GradientStop { position: 0.0; color: backdropArtwork.visible ? "#e8121416" : Qt.darker(card.accent, 2.4) }
+                GradientStop { position: 0.62; color: "#e3171a1e" }
+                GradientStop { position: 1.0; color: "#c52a1d17" }
             }
         }
 
@@ -69,8 +70,8 @@ FocusScope {
         Column {
             anchors.left: parent.left
             anchors.leftMargin: 24
-            anchors.right: parent.right
-            anchors.rightMargin: 20
+            anchors.right: seasonPoster.left
+            anchors.rightMargin: 16
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
 
@@ -98,6 +99,40 @@ FocusScope {
                 elide: Text.ElideRight
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
+            }
+        }
+
+        Rectangle {
+            id: seasonPoster
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            anchors.margins: 11
+            width: Math.min(108, parent.width * 0.31)
+            radius: 13
+            clip: true
+            color: "#272b30"
+            border.width: 1
+            border.color: "#68462f"
+
+            Image {
+                id: seasonArtwork
+                anchors.fill: parent
+                source: card.artSource
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                cache: true
+                visible: status === Image.Ready
+            }
+
+            Image {
+                anchors.centerIn: parent
+                width: 64
+                height: 64
+                source: "../../assets/mascot/tater-front.png"
+                fillMode: Image.PreserveAspectFit
+                visible: !seasonArtwork.visible
+                opacity: 0.72
             }
         }
 

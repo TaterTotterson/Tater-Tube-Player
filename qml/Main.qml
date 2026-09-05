@@ -257,6 +257,31 @@ ApplicationWindow {
         return ""
     }
 
+    function librarySpecificArtwork(field, items) {
+        var rows = items || displayedLibraryItems()
+        for (var i = 0; i < rows.length; ++i) {
+            if (rows[i] && rows[i][field])
+                return rows[i][field]
+            if (rows[i] && rows[i].resumeItem && rows[i].resumeItem[field])
+                return rows[i].resumeItem[field]
+        }
+        return ""
+    }
+
+    function libraryBackdrop(items) {
+        return librarySpecificArtwork("backdrop", items) || libraryArtwork(items)
+    }
+
+    function librarySeriesPoster(items) {
+        return librarySpecificArtwork("seriesPoster", items) || libraryArtwork(items)
+    }
+
+    function librarySeasonPoster(items) {
+        return librarySpecificArtwork("seasonPoster", items)
+                || librarySeriesPoster(items)
+                || libraryArtwork(items)
+    }
+
     function libraryResumeItem(items) {
         var rows = items || displayedLibraryItems()
         for (var i = 0; i < rows.length; ++i) {
@@ -2032,7 +2057,7 @@ ApplicationWindow {
 
                             Image {
                                 anchors.fill: parent
-                                source: root.libraryArtwork()
+                                source: root.libraryBackdrop()
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 cache: true
@@ -2135,7 +2160,9 @@ ApplicationWindow {
                                 Image {
                                     id: heroPosterArtwork
                                     anchors.fill: parent
-                                    source: root.libraryArtwork()
+                                    source: tvCollectionHero.browseStage === "seasons"
+                                            ? root.librarySeriesPoster()
+                                            : root.librarySeasonPoster()
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     cache: true
@@ -2221,7 +2248,10 @@ ApplicationWindow {
                                     title: root.itemTitle(media, "Season")
                                     meta: root.seasonCardMeta(media)
                                     resumeTitle: media && media.resumeTitle ? media.resumeTitle : ""
-                                    artSource: media && media.poster ? media.poster : ""
+                                    artSource: media && media.seasonPoster
+                                               ? media.seasonPoster
+                                               : (media && media.poster ? media.poster : "")
+                                    backdropSource: media && media.backdrop ? media.backdrop : ""
                                     progress: root.progressValue(media ? media.progressPercent : 0)
                                     accent: root.cardAccent(index)
                                     onActivated: root.openLibraryEntry(media)
@@ -2251,7 +2281,9 @@ ApplicationWindow {
                                     title: root.itemTitle(media, "Episode")
                                     meta: root.episodeCardMeta(media)
                                     description: media && media.description ? media.description : ""
-                                    artSource: media && media.poster ? media.poster : ""
+                                    artSource: media && media.episodeStill
+                                               ? media.episodeStill
+                                               : (media && media.poster ? media.poster : "")
                                     progress: root.progressValue(media ? media.progressPercent : 0)
                                     current: !!resumeMedia && media
                                              && String(resumeMedia.path || "") === String(media.path || "")
