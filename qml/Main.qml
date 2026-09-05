@@ -1582,33 +1582,41 @@ ApplicationWindow {
                 }
 
                 Row {
+                    id: demoRecentlyAddedRow
+                    width: parent.width
                     spacing: 15
                     PosterCard {
+                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
                         title: "Cosmic Drift"; meta: "2026  •  1h 52m"
                         number: "01"; accent: "#7d4d91"
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
                     PosterCard {
+                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
                         title: "Harbor Street"; meta: "2024  •  2 seasons"
                         number: "02"; accent: "#4d7485"
                         onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
                     }
                     PosterCard {
+                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
                         title: "The Long Winter"; meta: "2025  •  1h 44m"
                         number: "03"; accent: "#506c79"
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
                     PosterCard {
+                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
                         title: "Signal Lost"; meta: "2023  •  8 episodes"
                         number: "04"; accent: "#9c5a39"
                         onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
                     }
                     PosterCard {
+                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
                         title: "Dust & Thunder"; meta: "2026  •  2h 06m"
                         number: "05"; accent: "#805a3d"
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
                     PosterCard {
+                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
                         title: "Side Streets"; meta: "2022  •  1h 37m"
                         number: "06"; accent: "#526158"
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
@@ -1631,6 +1639,8 @@ ApplicationWindow {
                 }
 
                 Row {
+                    id: recentlyAddedRow
+                    width: parent.width
                     spacing: 15
 
                     Repeater {
@@ -1640,6 +1650,7 @@ ApplicationWindow {
                             required property int index
                             property var media: serverClient.recentlyAdded[index]
 
+                            width: (recentlyAddedRow.width - 5 * recentlyAddedRow.spacing) / 6
                             title: root.itemTitle(media, "Untitled")
                             meta: root.itemMeta(media)
                             number: index < 9 ? "0" + (index + 1) : String(index + 1)
