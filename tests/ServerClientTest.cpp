@@ -60,7 +60,7 @@ void ServerClientTest::loadsVersionedHome()
                 if (request.startsWith("GET /api/tater/server ")) {
                     body = R"({"success":true,"data":{"name":"Test Tater Server","version":"9.9.9"}})";
                 } else if (request.startsWith("GET /api/v1/player/home ")) {
-                    body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"newznab":true,"tubeTV":true,"commercials":true},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Movie","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
+                    body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"newznab":true,"tubeTV":true,"commercials":true},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Show","mediaType":"show","categoryId":"local:tv","sourceIndex":0,"path":"New Show","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
                 } else if (request.startsWith("GET /api/v1/player/library ")) {
                     body = R"({"success":true,"data":{"rows":[{"title":"Movies","entry":{"id":"local:movies","type":"local","title":"Movies"},"items":[{"title":"Shelf Preview","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Preview.mkv","streamUrl":"http://tube.test/preview"}]},{"title":"All Movies","entry":{"id":"local-discover:movies","type":"localDiscover","title":"All Movies"},"items":[{"title":"Discovery Preview","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"DiscoveryPreview.mkv","streamUrl":"http://tube.test/discovery-preview"}]}]}})";
                 } else if (request.startsWith("GET /api/tater/usenet/catalog ")) {
@@ -122,6 +122,13 @@ void ServerClientTest::loadsVersionedHome()
     const QVariantMap movieShelf = client.libraryRows().first().toMap();
     QCOMPARE(movieShelf.value("title").toString(), QStringLiteral("Movies"));
     QCOMPARE(movieShelf.value("items").toList().size(), 1);
+
+    const qsizetype homeItemRequestCount = requests.count("GET /api/tater/usenet/items?");
+    client.browseLibraryItem(client.recentlyAdded().first().toMap());
+    QTRY_COMPARE_WITH_TIMEOUT(client.libraryDepth(), 1, 3000);
+    QVERIFY(requests.count("GET /api/tater/usenet/items?") > homeItemRequestCount);
+    client.browseLibraryBack();
+    QCOMPARE(client.libraryDepth(), 0);
 
     client.refreshLibraries();
     QTRY_VERIFY_WITH_TIMEOUT(requests.contains("GET /api/tater/usenet/catalog "), 3000);

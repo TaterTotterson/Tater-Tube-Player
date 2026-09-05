@@ -225,8 +225,10 @@ ApplicationWindow {
             return
         if (item.streamUrl) {
             openDetails(item, mediaLabel(item))
-        } else if (!demoMode) {
+        } else if (!demoMode && (item.categoryId || item.path)) {
             libraryVisibleLimit = 60
+            if (currentPage !== "library")
+                showPage("library")
             serverClient.browseLibraryItem(item)
             sectionScroller.contentY = 0
         } else {
@@ -1445,12 +1447,36 @@ ApplicationWindow {
 
                 Row {
                     spacing: 15
-                    PosterCard { title: "Cosmic Drift"; meta: "2026  •  1h 52m"; number: "01"; accent: "#7d4d91" }
-                    PosterCard { title: "Harbor Street"; meta: "2024  •  2 seasons"; number: "02"; accent: "#4d7485" }
-                    PosterCard { title: "The Long Winter"; meta: "2025  •  1h 44m"; number: "03"; accent: "#506c79" }
-                    PosterCard { title: "Signal Lost"; meta: "2023  •  8 episodes"; number: "04"; accent: "#9c5a39" }
-                    PosterCard { title: "Dust & Thunder"; meta: "2026  •  2h 06m"; number: "05"; accent: "#805a3d" }
-                    PosterCard { title: "Side Streets"; meta: "2022  •  1h 37m"; number: "06"; accent: "#526158" }
+                    PosterCard {
+                        title: "Cosmic Drift"; meta: "2026  •  1h 52m"
+                        number: "01"; accent: "#7d4d91"
+                        onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
+                    }
+                    PosterCard {
+                        title: "Harbor Street"; meta: "2024  •  2 seasons"
+                        number: "02"; accent: "#4d7485"
+                        onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
+                    }
+                    PosterCard {
+                        title: "The Long Winter"; meta: "2025  •  1h 44m"
+                        number: "03"; accent: "#506c79"
+                        onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
+                    }
+                    PosterCard {
+                        title: "Signal Lost"; meta: "2023  •  8 episodes"
+                        number: "04"; accent: "#9c5a39"
+                        onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
+                    }
+                    PosterCard {
+                        title: "Dust & Thunder"; meta: "2026  •  2h 06m"
+                        number: "05"; accent: "#805a3d"
+                        onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
+                    }
+                    PosterCard {
+                        title: "Side Streets"; meta: "2022  •  1h 37m"
+                        number: "06"; accent: "#526158"
+                        onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
+                    }
                 }
             }
 
@@ -1483,7 +1509,7 @@ ApplicationWindow {
                             number: index < 9 ? "0" + (index + 1) : String(index + 1)
                             artSource: media && media.poster ? media.poster : ""
                             accent: root.cardAccent(index)
-                            onActivated: root.openDetails(media, root.mediaLabel(media))
+                            onActivated: root.openLibraryEntry(media)
                         }
                     }
                 }
@@ -2591,7 +2617,7 @@ ApplicationWindow {
                                 number: index < 9 ? "0" + (index + 1) : String(index + 1)
                                 artSource: media && media.poster ? media.poster : ""
                                 accent: root.cardAccent(index)
-                                onActivated: root.openDetails(media, root.mediaLabel(media))
+                                onActivated: root.openLibraryEntry(media)
                             }
                         }
                     }

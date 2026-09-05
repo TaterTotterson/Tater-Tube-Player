@@ -280,21 +280,28 @@ void ServerClient::browseLibrary(const QVariantMap &entry)
 
 void ServerClient::browseLibraryItem(const QVariantMap &item)
 {
-    if (!paired() || m_libraryLoading || m_libraryHistory.isEmpty()
+    if (!paired() || m_libraryLoading
         || !item.value(QStringLiteral("streamUrl")).toString().trimmed().isEmpty()) {
         return;
     }
 
-    const LibraryLocation &current = m_libraryHistory.constLast();
     LibraryLocation location;
     location.categoryId = item.value(QStringLiteral("categoryId")).toString().trimmed();
-    if (location.categoryId.isEmpty())
-        location.categoryId = current.categoryId;
+    if (location.categoryId.isEmpty() && !m_libraryHistory.isEmpty())
+        location.categoryId = m_libraryHistory.constLast().categoryId;
+    if (location.categoryId.isEmpty()) {
+        m_libraryErrorMessage = QStringLiteral("This item does not have a browsable server ID.");
+        emit libraryChanged();
+        return;
+    }
     location.title = item.value(QStringLiteral("title"), QStringLiteral("Library"))
                          .toString().trimmed();
     location.path = item.value(QStringLiteral("path")).toString().trimmed();
     location.sourceIndex = item.contains(QStringLiteral("sourceIndex"))
-        ? item.value(QStringLiteral("sourceIndex")).toInt() : current.sourceIndex;
+        ? item.value(QStringLiteral("sourceIndex")).toInt()
+        : (m_libraryHistory.isEmpty() ? -1 : m_libraryHistory.constLast().sourceIndex);
+    if (m_libraryHistory.isEmpty())
+        m_libraryItems.clear();
     loadLibraryLocation(location, true);
 }
 
