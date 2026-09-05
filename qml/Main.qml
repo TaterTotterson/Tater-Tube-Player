@@ -47,6 +47,7 @@ ApplicationWindow {
     property var sideMenuReturnFocus: null
     property bool uiFocusSoundsArmed: false
     property var uiLastFocusItem: null
+    property double guideClockMs: Date.now()
 
     function hasPersonalizedHero() {
         var heroCopy = serverClient.homeHero
@@ -308,8 +309,15 @@ ApplicationWindow {
 
     function demoLiveChannels() {
         return [{number: "12", title: "Saturday Cartoons",
-                 streamUrl: "", now: {title: "Galaxy Rangers", progressPercent: 67},
-                 next: {title: "Creature Features"}, later: {title: "Robot Roundup"}},
+                 streamUrl: "", guideElapsedSeconds: 45,
+                 guideStartedAtMs: Date.now() - 45000,
+                 schedule: [
+                     {title: "Station ID", kind: "bumper", start: 30, end: 40},
+                     {title: "Snack Attack", kind: "commercial", start: 40, end: 62},
+                     {title: "Tater Tube", kind: "tater_bumper", start: 62, end: 72},
+                     {title: "Galaxy Rangers", kind: "episode", start: 72, end: 1872},
+                     {title: "Creature Features", kind: "movie", start: 1872, end: 7272}
+                 ]},
                 {number: "24", title: "Creature Features",
                  streamUrl: "", now: {title: "Night Visitors", progressPercent: 38},
                  next: {title: "Midnight Matinee"}, later: {title: "Shock Theater"}},
@@ -325,22 +333,116 @@ ApplicationWindow {
                 ? serverClient.liveGuideChannels : serverClient.liveChannels
     }
 
+    function isGuideInterstitial(program) {
+        if (!program)
+            return false
+        var kind = String(program.kind || program.mediaType || "").toLowerCase()
+        return kind === "commercial" || kind === "bumper" || kind === "tater_bumper"
+    }
+
+    function commercialBreakProgram(schedule, currentIndex, elapsed) {
+        var first = currentIndex
+        var last = currentIndex
+        while (first > 0 && root.isGuideInterstitial(schedule[first - 1]))
+            --first
+        while (last + 1 < schedule.length
+               && root.isGuideInterstitial(schedule[last + 1]))
+            ++last
+
+        var start = Number(schedule[first].start || 0)
+        var end = Number(schedule[last].end || start)
+        var progress = end > start ? ((elapsed - start) / (end - start)) * 100 : 0
+        return {
+            title: "Commercial Break",
+            kind: "commercial_break",
+            mediaType: "commercial_break",
+            start: start,
+            end: end,
+            progressPercent: Math.max(0, Math.min(100, progress)),
+            isCommercialBreak: true,
+            breakItemCount: last - first + 1
+        }
+    }
+
+    function currentGuideElapsed(channel) {
+        var elapsed = Number(channel && channel.guideElapsedSeconds
+                             ? channel.guideElapsedSeconds : 0)
+        var measuredAt = Number(channel && channel.guideServerNowMs
+                                ? channel.guideServerNowMs : 0)
+        if (measuredAt > 0)
+            elapsed += Math.max(0, (root.guideClockMs - measuredAt) / 1000)
+        return elapsed
+    }
+
+    function guideProgramWithProgress(program, elapsed) {
+        if (!program)
+            return program
+        var enriched = ({})
+        for (var key in program)
+            enriched[key] = program[key]
+        var start = Number(program.start || 0)
+        var end = Number(program.end || 0)
+        if (end > start)
+            enriched.progressPercent = Math.max(0, Math.min(100,
+                ((elapsed - start) / (end - start)) * 100))
+        return enriched
+    }
+
     function guidePrograms(channel) {
         var programs = []
         if (!channel)
             return programs
         var schedule = channel.schedule || []
-        var elapsed = Number(channel.guideElapsedSeconds || 0)
-        for (var i = 0; i < schedule.length && programs.length < 3; ++i) {
-            var program = schedule[i]
-            if (Number(program.end || 0) > elapsed)
-                programs.push(program)
+        var elapsed = root.currentGuideElapsed(channel)
+        if (schedule.length > 0) {
+            var currentIndex = -1
+            var firstFutureIndex = schedule.length
+            for (var i = 0; i < schedule.length; ++i) {
+                var start = Number(schedule[i].start || 0)
+                var end = Number(schedule[i].end || 0)
+                if (start <= elapsed && elapsed < end) {
+                    currentIndex = i
+                    firstFutureIndex = i + 1
+                    break
+                }
+                if (start > elapsed && firstFutureIndex === schedule.length)
+                    firstFutureIndex = i
+            }
+
+            if (currentIndex >= 0) {
+                var current = schedule[currentIndex]
+                programs.push(root.isGuideInterstitial(current)
+                              ? root.commercialBreakProgram(schedule, currentIndex, elapsed)
+                              : root.guideProgramWithProgress(current, elapsed))
+            }
+
+            for (var j = firstFutureIndex;
+                 j < schedule.length && programs.length < 3; ++j) {
+                if (!root.isGuideInterstitial(schedule[j]))
+                    programs.push(schedule[j])
+            }
+            return programs
         }
-        if (programs.length === 0 && channel.now)
-            programs.push(channel.now)
-        if (programs.length < 3 && channel.next)
+
+        if (channel.now) {
+            if (root.isGuideInterstitial(channel.now)) {
+                var fallbackBreak = ({})
+                for (var key in channel.now)
+                    fallbackBreak[key] = channel.now[key]
+                fallbackBreak.title = "Commercial Break"
+                fallbackBreak.kind = "commercial_break"
+                fallbackBreak.mediaType = "commercial_break"
+                fallbackBreak.isCommercialBreak = true
+                programs.push(fallbackBreak)
+            } else {
+                programs.push(channel.now)
+            }
+        }
+        if (programs.length < 3 && channel.next
+                && !root.isGuideInterstitial(channel.next))
             programs.push(channel.next)
-        if (programs.length < 3 && channel.later)
+        if (programs.length < 3 && channel.later
+                && !root.isGuideInterstitial(channel.later))
             programs.push(channel.later)
         return programs
     }
@@ -349,7 +451,7 @@ ApplicationWindow {
         if (!program)
             return false
         if (program.start !== undefined && program.end !== undefined) {
-            var elapsed = Number(channel.guideElapsedSeconds || 0)
+            var elapsed = root.currentGuideElapsed(channel)
             return Number(program.start) <= elapsed && elapsed < Number(program.end)
         }
         return index === 0
@@ -369,9 +471,20 @@ ApplicationWindow {
         return index === 1 ? "UP NEXT" : "LATER"
     }
 
-    function guideProgramMeta(program) {
+    function guideProgramMeta(channel, program) {
         if (!program)
             return "TATER TUBE"
+        if (program.isCommercialBreak === true) {
+            var duration = Math.max(1, Math.ceil((Number(program.end || 0)
+                                                  - Number(program.start || 0)) / 60))
+            if (channel && channel.guideStartedAtMs && program.end !== undefined) {
+                var endsAt = new Date(Number(channel.guideStartedAtMs)
+                                      + Number(program.end) * 1000)
+                return "BACK AT " + Qt.formatTime(endsAt, "h:mm AP")
+                        + "  •  " + duration + " MIN BREAK"
+            }
+            return duration + " MIN BREAK"
+        }
         var kind = String(program.mediaType || program.kind || "PROGRAM").toUpperCase()
         if (program.start !== undefined && program.end !== undefined) {
             var minutes = Math.max(1, Math.round((Number(program.end) - Number(program.start)) / 60))
@@ -446,6 +559,8 @@ ApplicationWindow {
             serverClient.refreshDiscover()
         if (name === "live" && !demoMode)
             serverClient.refreshLiveGuide()
+        if (name === "live")
+            guideClockMs = Date.now()
         Qt.callLater(function() {
             if (name === "home")
                 heroWatchLive.forceActiveFocus()
@@ -898,6 +1013,14 @@ ApplicationWindow {
             root.uiLastFocusItem = root.activeFocusItem
             root.uiFocusSoundsArmed = true
         }
+    }
+
+    Timer {
+        interval: 1000
+        running: root.currentPage === "live" && !root.playbackOpen
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.guideClockMs = Date.now()
     }
 
     Connections {
@@ -2479,9 +2602,11 @@ ApplicationWindow {
                                         timeLabel: root.guideProgramTime(guideRow.channel,
                                                                          program, index)
                                         title: root.itemTitle(program, "Tater Tube")
-                                        meta: root.guideProgramMeta(program)
+                                        meta: root.guideProgramMeta(guideRow.channel, program)
                                         isCurrent: root.guideProgramIsCurrent(guideRow.channel,
                                                                               program, index)
+                                        alwaysShowProgress: program
+                                                            && program.isCommercialBreak === true
                                         artSource: program && program.poster ? program.poster : ""
                                         accent: root.cardAccent(guideRow.index + index)
                                         progress: root.progressValue(program

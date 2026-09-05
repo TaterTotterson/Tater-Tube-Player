@@ -8,6 +8,7 @@ FocusScope {
     property string meta: ""
     property bool isCurrent: false
     property real progress: 0
+    property bool alwaysShowProgress: false
     property color accent: "#ff781f"
     property url artSource: ""
     signal activated()
@@ -127,7 +128,7 @@ FocusScope {
 
         Rectangle {
             id: progressTrack
-            visible: card.isCurrent && card.progress > 0
+            visible: card.isCurrent && (card.progress > 0 || card.alwaysShowProgress)
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
