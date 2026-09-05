@@ -1020,9 +1020,16 @@ ApplicationWindow {
 
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "#2c1b11" }
-                    GradientStop { position: 0.52; color: "#24272c" }
-                    GradientStop { position: 1.0; color: "#171a1e" }
+                    GradientStop { position: 0.0; color: "#29190f" }
+                    GradientStop { position: 0.52; color: "#1c1f23" }
+                    GradientStop { position: 1.0; color: "#090b0d" }
+                }
+
+                Image {
+                    anchors.fill: parent
+                    source: "../assets/tater-scanlines.png"
+                    fillMode: Image.Tile
+                    opacity: 0.3
                 }
 
                 Rectangle {
@@ -1051,12 +1058,12 @@ ApplicationWindow {
 
                 Image {
                     anchors.right: parent.right
-                    anchors.rightMargin: 82
+                    anchors.rightMargin: 60
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: -17
-                    width: 330
+                    anchors.bottomMargin: -10
+                    width: 390
                     height: 330
-                    source: "../assets/mascot/tater-salute.png"
+                    source: "../assets/mascot/tater-pi5-hero.png"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }
@@ -2718,44 +2725,18 @@ ApplicationWindow {
             anchors.margins: 26
             spacing: 17
 
-            Row {
-                spacing: 13
+            Item {
+                width: parent.width
+                height: 124
 
-                Rectangle {
-                    width: 58
-                    height: 58
-                    radius: 18
-                    color: "#2b211b"
-                    border.width: 1
-                    border.color: "#7b4828"
-
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: 2
-                        source: "../assets/mascot/tater-wave.png"
-                        fillMode: Image.PreserveAspectFit
-                        smooth: true
-                    }
-                }
-
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 1
-
-                    Text {
-                        text: "Tater Tube"
-                        color: root.textPrimary
-                        font.pixelSize: 21
-                        font.weight: Font.Black
-                    }
-
-                    Text {
-                        text: "PLAYER MENU"
-                        color: root.orange
-                        font.pixelSize: 10
-                        font.weight: Font.Bold
-                        font.letterSpacing: 1.2
-                    }
+                Image {
+                    anchors.centerIn: parent
+                    width: parent.width
+                    height: parent.height
+                    source: "../assets/tater-tube-logo-pi5.png"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
                 }
             }
 
