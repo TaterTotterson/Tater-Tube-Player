@@ -78,7 +78,7 @@ void ServerClientTest::loadsVersionedHome()
                 } else if (request.startsWith("POST /api/tater/usenet/play ")) {
                     body = R"({"streams":[{"title":"Discover Me 2026","url":"http://tube.test/api/files/stream?player_token=test-token"}],"queue_status":"streamable"})";
                 } else if (request.startsWith("GET /api/tater/tv/lineup ")) {
-                    body = R"({"success":true,"data":{"startedAt":"2026-09-02T12:00:00Z","serverNow":"2026-09-02T12:00:30Z","channels":[{"number":"12","title":"Cartoons","streamUrl":"http://tube.test/live/12","schedule":[{"title":"Playing Now","kind":"movie","start":0,"end":60},{"title":"Up Next","kind":"movie","start":60,"end":120}]}]}})";
+                    body = R"({"success":true,"data":{"startedAt":"2026-09-02T12:00:00Z","serverNow":"2026-09-02T12:00:30Z","channels":[{"number":"12","title":"Cartoons","streamUrl":"http://tube.test/live/12","schedule":[{"title":"Playing Now","kind":"movie","categoryId":"local:movies","sourceIndex":2,"path":"Playing Now/movie.mkv","start":0,"end":60},{"title":"Up Next","kind":"movie","categoryId":"local:movies","sourceIndex":2,"path":"Up Next/movie.mkv","start":60,"end":120}]}]}})";
                 } else {
                     body = R"({"success":false,"error":{"message":"Not found"}})";
                 }
@@ -199,6 +199,18 @@ void ServerClientTest::loadsVersionedHome()
     QCOMPARE(channel.value("next").toMap().value("title").toString(),
              QStringLiteral("Up Next"));
     QCOMPARE(channel.value("now").toMap().value("progressPercent").toDouble(), 50.0);
+    const QVariantMap scheduledNow = channel.value("schedule").toList().first().toMap();
+    QCOMPARE(scheduledNow.value("progressPercent").toDouble(), 50.0);
+    const QUrl guidePoster(scheduledNow.value("poster").toString());
+    const QUrlQuery guidePosterQuery(guidePoster);
+    QCOMPARE(guidePoster.path(), QStringLiteral("/api/v1/player/artwork/local"));
+    QCOMPARE(guidePosterQuery.queryItemValue(QStringLiteral("category_id")),
+             QStringLiteral("local:movies"));
+    QCOMPARE(guidePosterQuery.queryItemValue(QStringLiteral("source")), QStringLiteral("2"));
+    QCOMPARE(guidePosterQuery.queryItemValue(QStringLiteral("path")),
+             QStringLiteral("Playing Now/movie.mkv"));
+    QCOMPARE(guidePosterQuery.queryItemValue(QStringLiteral("player_token")),
+             QStringLiteral("test-token"));
     QCOMPARE(channel.value("guideElapsedSeconds").toDouble(), 30.0);
     QVERIFY(channel.value("guideStartedAtMs").toLongLong() > 0);
 

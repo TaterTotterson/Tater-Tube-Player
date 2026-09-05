@@ -1221,6 +1221,28 @@ QVariantMap ServerClient::guideProgram(const QVariantList &schedule,
     return {};
 }
 
+QString ServerClient::guideArtworkUrl(const QVariantMap &program) const
+{
+    const QString existing = program.value(QStringLiteral("poster")).toString().trimmed();
+    if (!existing.isEmpty())
+        return existing;
+
+    const QString categoryId = program.value(QStringLiteral("categoryId")).toString().trimmed();
+    const QString path = program.value(QStringLiteral("path")).toString().trimmed();
+    if (categoryId.isEmpty() || path.isEmpty())
+        return {};
+
+    QUrl url(endpointUrl(m_serverUrl, QStringLiteral("/api/v1/player/artwork/local")));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("category_id"), categoryId);
+    query.addQueryItem(QStringLiteral("source"),
+                       QString::number(program.value(QStringLiteral("sourceIndex")).toInt()));
+    query.addQueryItem(QStringLiteral("path"), path);
+    query.addQueryItem(QStringLiteral("player_token"), m_token);
+    url.setQuery(query);
+    return url.toString();
+}
+
 void ServerClient::handleLiveGuideReply(QNetworkReply *reply)
 {
     const QByteArray body = reply->readAll();
@@ -1255,7 +1277,24 @@ void ServerClient::handleLiveGuideReply(QNetworkReply *reply)
     const QVariantList channels = data.value("channels").toArray().toVariantList();
     for (const QVariant &value : channels) {
         QVariantMap channel = value.toMap();
-        const QVariantList schedule = channel.value(QStringLiteral("schedule")).toList();
+        QVariantList schedule = channel.value(QStringLiteral("schedule")).toList();
+        for (QVariant &programValue : schedule) {
+            QVariantMap program = programValue.toMap();
+            const QString poster = guideArtworkUrl(program);
+            if (!poster.isEmpty())
+                program.insert(QStringLiteral("poster"), poster);
+
+            const double start = program.value(QStringLiteral("start")).toDouble();
+            const double end = program.value(QStringLiteral("end")).toDouble();
+            if (start <= elapsedSeconds && elapsedSeconds < end && end > start) {
+                program.insert(QStringLiteral("progressPercent"),
+                               qBound(0.0,
+                                      ((elapsedSeconds - start) / (end - start)) * 100.0,
+                                      100.0));
+            }
+            programValue = program;
+        }
+        channel.insert(QStringLiteral("schedule"), schedule);
         const QVariantMap now = guideProgram(schedule, elapsedSeconds, true);
         const QVariantMap next = guideProgram(schedule, elapsedSeconds, false);
         if (!now.isEmpty())

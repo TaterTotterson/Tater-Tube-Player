@@ -178,6 +178,7 @@ private:
     void restoreDiscoverPage(const DiscoverPage &page);
     void resetDiscover();
     void handleLiveGuideReply(QNetworkReply *reply);
+    QString guideArtworkUrl(const QVariantMap &program) const;
     static QVariantMap guideProgram(const QVariantList &schedule, double elapsedSeconds,
                                     bool current);
     void handlePairReply(QNetworkReply *reply, const QString &baseUrl);
