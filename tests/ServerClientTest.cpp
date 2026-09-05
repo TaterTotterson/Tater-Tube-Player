@@ -68,6 +68,8 @@ void ServerClientTest::loadsVersionedHome()
                 } else if (request.startsWith("GET /api/tater/usenet/items?")) {
                     if (request.contains("full=1")) {
                         body = R"({"success":true,"data":{"title":"All Movies","items":[{"title":"Movie One","mediaType":"movie","streamUrl":"http://tube.test/one"},{"title":"Movie Two","mediaType":"movie","streamUrl":"http://tube.test/two"},{"title":"Movie Three","mediaType":"movie","streamUrl":"http://tube.test/three"}]}})";
+                    } else if (request.contains("New")) {
+                        body = R"({"success":true,"data":{"title":"New Show","items":[{"title":"Season 10","type":"localFolder","mediaType":"season","categoryId":"local:tv","sourceIndex":0,"path":"New Show/Season 10"},{"title":"Season 2","type":"localFolder","mediaType":"season","categoryId":"local:tv","sourceIndex":0,"path":"New Show/Season 02"},{"title":"Season 1","type":"localFolder","mediaType":"season","categoryId":"local:tv","sourceIndex":0,"path":"New Show/Season 01"}]}})";
                     } else {
                         body = R"({"success":true,"data":{"title":"Movies","items":[{"title":"A Folder","type":"localFolder","mediaType":"folder","categoryId":"local:movies","sourceIndex":0,"path":"Folder"},{"title":"Playable Movie","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Movie.mkv","streamUrl":"http://tube.test/movie"}]}})";
                     }
@@ -130,6 +132,10 @@ void ServerClientTest::loadsVersionedHome()
     client.browseLibraryItem(client.recentlyAdded().first().toMap());
     QTRY_COMPARE_WITH_TIMEOUT(client.libraryDepth(), 1, 3000);
     QVERIFY(requests.count("GET /api/tater/usenet/items?") > homeItemRequestCount);
+    QCOMPARE(client.libraryItems().size(), 3);
+    QCOMPARE(client.libraryItems().at(0).toMap().value("title").toString(), QStringLiteral("Season 1"));
+    QCOMPARE(client.libraryItems().at(1).toMap().value("title").toString(), QStringLiteral("Season 2"));
+    QCOMPARE(client.libraryItems().at(2).toMap().value("title").toString(), QStringLiteral("Season 10"));
     client.browseLibraryBack();
     QCOMPARE(client.libraryDepth(), 0);
 

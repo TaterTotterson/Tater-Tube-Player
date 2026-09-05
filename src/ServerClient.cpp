@@ -11,6 +11,9 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include <algorithm>
+#include <limits>
+
 namespace {
 constexpr auto kSettingsServerUrl = "connection/serverUrl";
 constexpr auto kSettingsToken = "connection/playerToken";
@@ -32,6 +35,44 @@ QVariantList discoverCategoriesFromCatalog(const QJsonArray &categories)
         }
     }
     return {};
+}
+
+int librarySeasonNumber(const QVariant &value)
+{
+    const QVariantMap item = value.toMap();
+    static const QRegularExpression seasonPattern(
+        QStringLiteral(R"(^(?:season[\s._-]*|s)(\d{1,3})$)"),
+        QRegularExpression::CaseInsensitiveOption);
+    const QStringList candidates{
+        item.value(QStringLiteral("path")).toString().replace('\\', '/').section('/', -1),
+        item.value(QStringLiteral("title")).toString(),
+    };
+    for (const QString &candidate : candidates) {
+        const QRegularExpressionMatch match = seasonPattern.match(candidate.trimmed());
+        if (match.hasMatch())
+            return match.captured(1).toInt();
+    }
+    return std::numeric_limits<int>::max();
+}
+
+void sortLibrarySeasons(QVariantList &items)
+{
+    if (items.size() < 2 || !std::all_of(items.cbegin(), items.cend(), [](const QVariant &value) {
+            return value.toMap().value(QStringLiteral("mediaType")).toString()
+                       .compare(QStringLiteral("season"), Qt::CaseInsensitive) == 0;
+        })) {
+        return;
+    }
+
+    std::stable_sort(items.begin(), items.end(), [](const QVariant &left, const QVariant &right) {
+        const int leftNumber = librarySeasonNumber(left);
+        const int rightNumber = librarySeasonNumber(right);
+        if (leftNumber != rightNumber)
+            return leftNumber < rightNumber;
+        return QString::localeAwareCompare(
+                   left.toMap().value(QStringLiteral("title")).toString(),
+                   right.toMap().value(QStringLiteral("title")).toString()) < 0;
+    });
 }
 }
 
@@ -932,6 +973,7 @@ void ServerClient::handleLibraryReply(QNetworkReply *reply,
 
     const QJsonObject data = QJsonDocument::fromJson(body).object().value("data").toObject();
     m_libraryItems = data.value("items").toArray().toVariantList();
+    sortLibrarySeasons(m_libraryItems);
     m_libraryTitle = data.value("title").toString().trimmed();
     if (m_libraryTitle.isEmpty())
         m_libraryTitle = location.title.isEmpty() ? QStringLiteral("Library") : location.title;
