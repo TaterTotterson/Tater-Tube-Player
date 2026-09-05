@@ -6,8 +6,10 @@ FocusScope {
     property string title: "Title"
     property string meta: ""
     property string number: ""
+    property string badge: ""
     property color accent: "#f47a23"
     property url artSource: ""
+    property real progress: 0
     signal activated()
 
     implicitWidth: 178
@@ -77,6 +79,29 @@ FocusScope {
         }
 
         Rectangle {
+            visible: card.badge.length > 0
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.margins: 12
+            width: posterBadgeText.implicitWidth + 18
+            height: 27
+            radius: 9
+            color: "#e61a1d21"
+            border.width: 1
+            border.color: "#6a4a33"
+
+            Text {
+                id: posterBadgeText
+                anchors.centerIn: parent
+                text: card.badge
+                color: "#ff9a55"
+                font.pixelSize: 10
+                font.weight: Font.Bold
+                font.letterSpacing: 0.8
+            }
+        }
+
+        Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
@@ -87,8 +112,9 @@ FocusScope {
         Column {
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
+            anchors.bottom: progressTrack.visible ? progressTrack.top : parent.bottom
             anchors.margins: 16
+            anchors.bottomMargin: progressTrack.visible ? 13 : 16
             spacing: 6
 
             Text {
@@ -108,6 +134,22 @@ FocusScope {
                 color: "#b9bcc0"
                 elide: Text.ElideRight
                 font.pixelSize: 12
+            }
+        }
+
+        Rectangle {
+            id: progressTrack
+            visible: card.progress > 0
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 6
+            color: "#4b5055"
+
+            Rectangle {
+                width: parent.width * Math.max(0, Math.min(1, card.progress))
+                height: parent.height
+                color: "#ff7a1a"
             }
         }
     }

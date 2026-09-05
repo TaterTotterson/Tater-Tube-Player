@@ -229,6 +229,100 @@ ApplicationWindow {
         return itemMeta(item)
     }
 
+    function libraryBrowseStage() {
+        if (demoMode || serverClient.libraryDepth === 0)
+            return "root"
+        var items = displayedLibraryItems()
+        if (items.length === 0)
+            return "generic"
+        var type = String(items[0] && items[0].mediaType
+                          ? items[0].mediaType : "").toLowerCase()
+        if (type === "show")
+            return "shows"
+        if (type === "season")
+            return "seasons"
+        if (type === "episode")
+            return "episodes"
+        return "generic"
+    }
+
+    function libraryArtwork(items) {
+        var rows = items || displayedLibraryItems()
+        for (var i = 0; i < rows.length; ++i) {
+            if (rows[i] && rows[i].poster)
+                return rows[i].poster
+            if (rows[i] && rows[i].resumeItem && rows[i].resumeItem.poster)
+                return rows[i].resumeItem.poster
+        }
+        return ""
+    }
+
+    function libraryResumeItem(items) {
+        var rows = items || displayedLibraryItems()
+        for (var i = 0; i < rows.length; ++i) {
+            if (rows[i] && rows[i].resumeItem && rows[i].resumeItem.streamUrl)
+                return rows[i].resumeItem
+        }
+        for (var j = 0; j < rows.length; ++j) {
+            if (rows[j] && rows[j].streamUrl
+                    && Number(rows[j].progressPercent || 0) > 0)
+                return rows[j]
+        }
+        return null
+    }
+
+    function libraryEpisodeCount(items) {
+        var rows = items || displayedLibraryItems()
+        var count = 0
+        for (var i = 0; i < rows.length; ++i)
+            count += Number(rows[i] && rows[i].episodeCount ? rows[i].episodeCount : 0)
+        return count
+    }
+
+    function showCardMeta(item) {
+        if (!item)
+            return "SHOW"
+        if (item.resumeTitle)
+            return "Continue " + item.resumeTitle
+        var seasons = Number(item.seasonCount || 0)
+        var episodes = Number(item.episodeCount || item.leafCount || 0)
+        if (seasons > 0)
+            return seasons + (seasons === 1 ? " season" : " seasons")
+                    + (episodes > 0 ? "  •  " + episodes + " episodes" : "")
+        if (episodes > 0)
+            return episodes + (episodes === 1 ? " episode" : " episodes")
+        return "SHOW"
+    }
+
+    function seasonCardMeta(item) {
+        if (!item)
+            return "SEASON"
+        var episodes = Number(item.episodeCount || item.leafCount || 0)
+        return episodes > 0
+                ? episodes + (episodes === 1 ? " episode" : " episodes") : "Season"
+    }
+
+    function episodeCardMeta(item) {
+        if (!item)
+            return "EPISODE"
+        var parts = ["EPISODE"]
+        if (item.durationDisplay)
+            parts.push(item.durationDisplay)
+        if (Number(item.progressPercent || 0) > 0)
+            parts.push("RESUME")
+        return parts.join("  •  ")
+    }
+
+    function continueButtonText(item) {
+        if (!item)
+            return "▶  Continue"
+        var title = itemTitle(item, "episode")
+        var episodeCode = title.match(/S\d+E\d+/i)
+        return episodeCode && episodeCode.length > 0
+                ? "▶  Continue " + episodeCode[0].toUpperCase()
+                : "▶  Continue episode"
+    }
+
     function openLibraryEntry(item) {
         if (!item)
             return
@@ -887,6 +981,12 @@ ApplicationWindow {
     }
 
     function focusFirstSectionControl() {
+        if (currentPage === "library" && serverClient.libraryDepth > 0
+                && tvContinueButton.visible && tvContinueButton.enabled) {
+            tvContinueButton.forceActiveFocus()
+            revealFocusedItem(tvContinueButton)
+            return
+        }
         var candidates = focusableItems()
         for (var i = 0; i < candidates.length; ++i) {
             if (isDescendant(candidates[i], sectionScroller.contentItem)) {
@@ -1690,9 +1790,15 @@ ApplicationWindow {
 
                             Text {
                                 width: parent.width
-                                text: !demoMode && serverClient.libraryDepth > 0
-                                      ? "Choose a folder, show, or season—or open a title to start watching."
-                                      : "Browse every local movie, show, season, and folder on your Tater Tube Server."
+                                text: root.libraryBrowseStage() === "shows"
+                                      ? "Choose a show. Tater will bring your current episode forward when you return."
+                                      : (root.libraryBrowseStage() === "seasons"
+                                         ? "Pick a season, or jump straight back into the episode you were watching."
+                                         : (root.libraryBrowseStage() === "episodes"
+                                            ? "Choose an episode. Your progress stays synced with Tater Tube Server."
+                                            : (!demoMode && serverClient.libraryDepth > 0
+                                               ? "Choose a folder or title to keep browsing."
+                                               : "Browse every local movie, show, season, and folder on your Tater Tube Server.")))
                                 color: root.textSecondary
                                 wrapMode: Text.WordWrap
                                 font.pixelSize: 16
@@ -1898,9 +2004,150 @@ ApplicationWindow {
                         visible: !demoMode && serverClient.libraryDepth > 0
                         spacing: 22
 
+                        Rectangle {
+                            id: tvCollectionHero
+                            readonly property string browseStage: root.libraryBrowseStage()
+                            readonly property var resumeMedia: root.libraryResumeItem()
+                            visible: !serverClient.libraryLoading
+                                     && serverClient.libraryErrorMessage.length === 0
+                                     && (browseStage === "seasons" || browseStage === "episodes")
+                            width: parent.width
+                            height: browseStage === "seasons" ? 290 : 224
+                            radius: 26
+                            clip: true
+                            color: "#1c2024"
+                            border.width: 1
+                            border.color: "#464b51"
+
+                            Image {
+                                anchors.fill: parent
+                                source: root.libraryArtwork()
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: true
+                                opacity: 0.34
+                            }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                gradient: Gradient {
+                                    orientation: Gradient.Horizontal
+                                    GradientStop { position: 0.0; color: "#f0121417" }
+                                    GradientStop { position: 0.62; color: "#df171a1e" }
+                                    GradientStop { position: 1.0; color: "#ee2d1d15" }
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 6
+                                color: root.orange
+                            }
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 36
+                                anchors.right: heroPoster.left
+                                anchors.rightMargin: 34
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 11
+
+                                Text {
+                                    text: tvCollectionHero.browseStage === "seasons"
+                                          ? "TATER TV  •  SERIES" : "TATER TV  •  SEASON"
+                                    color: root.orangeBright
+                                    font.pixelSize: 11
+                                    font.weight: Font.Bold
+                                    font.letterSpacing: 1.35
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: serverClient.libraryTitle
+                                    color: root.textPrimary
+                                    font.pixelSize: tvCollectionHero.browseStage === "seasons" ? 42 : 36
+                                    font.weight: Font.Black
+                                    maximumLineCount: 2
+                                    wrapMode: Text.WordWrap
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: tvCollectionHero.browseStage === "seasons"
+                                          ? root.displayedLibraryItems().length
+                                            + (root.displayedLibraryItems().length === 1 ? " season" : " seasons")
+                                            + (root.libraryEpisodeCount() > 0
+                                               ? "  •  " + root.libraryEpisodeCount() + " episodes" : "")
+                                          : root.displayedLibraryItems().length
+                                            + (root.displayedLibraryItems().length === 1 ? " episode" : " episodes")
+                                    color: "#c6c9cb"
+                                    font.pixelSize: 15
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    visible: !tvCollectionHero.resumeMedia
+                                    text: tvCollectionHero.browseStage === "seasons"
+                                          ? "Choose a season and settle in."
+                                          : "Pick an episode and Tater will remember your place."
+                                    color: root.textSecondary
+                                    font.pixelSize: 14
+                                }
+
+                                FocusButton {
+                                    id: tvContinueButton
+                                    visible: !!tvCollectionHero.resumeMedia
+                                    width: Math.min(390, Math.max(240, implicitWidth))
+                                    text: root.continueButtonText(tvCollectionHero.resumeMedia)
+                                    primary: true
+                                    onClicked: root.startPlayback(tvCollectionHero.resumeMedia,
+                                                                  root.mediaLabel(tvCollectionHero.resumeMedia))
+                                }
+                            }
+
+                            Rectangle {
+                                id: heroPoster
+                                anchors.right: parent.right
+                                anchors.rightMargin: 28
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: tvCollectionHero.browseStage === "seasons" ? 176 : 150
+                                height: parent.height - 30
+                                radius: 20
+                                clip: true
+                                color: "#25292d"
+                                border.width: 1
+                                border.color: "#5a4434"
+
+                                Image {
+                                    id: heroPosterArtwork
+                                    anchors.fill: parent
+                                    source: root.libraryArtwork()
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    cache: true
+                                    visible: status === Image.Ready
+                                }
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 120
+                                    height: 120
+                                    source: "../assets/mascot/tater-salute.png"
+                                    fillMode: Image.PreserveAspectFit
+                                    visible: !heroPosterArtwork.visible
+                                }
+                            }
+                        }
+
                         SectionTitle {
                             width: parent.width
-                            title: serverClient.libraryTitle
+                            title: root.libraryBrowseStage() === "seasons"
+                                   ? "Seasons"
+                                   : (root.libraryBrowseStage() === "episodes"
+                                      ? "Episodes" : serverClient.libraryTitle)
                             actionText: serverClient.libraryLoading
                                         ? "LOADING…"
                                         : root.displayedLibraryItems().length + " ITEMS"
@@ -1911,6 +2158,8 @@ ApplicationWindow {
                             width: parent.width
                             visible: !serverClient.libraryLoading
                                      && serverClient.libraryErrorMessage.length === 0
+                                     && root.libraryBrowseStage() !== "seasons"
+                                     && root.libraryBrowseStage() !== "episodes"
                             columns: Math.max(1, Math.floor(width / 205))
                             columnSpacing: 15
                             rowSpacing: 18
@@ -1926,12 +2175,75 @@ ApplicationWindow {
                                             - (libraryGrid.columns - 1) * libraryGrid.columnSpacing)
                                            / libraryGrid.columns
                                     title: root.itemTitle(media, "Untitled")
-                                    meta: root.libraryItemMeta(media)
+                                    meta: String(media && media.mediaType || "").toLowerCase() === "show"
+                                          ? root.showCardMeta(media) : root.libraryItemMeta(media)
                                     number: media && media.streamUrl
                                             ? (index < 9 ? "0" + (index + 1) : String(index + 1))
                                             : "›"
+                                    badge: media && media.resumeTitle ? "IN PROGRESS" : ""
                                     artSource: media && media.poster ? media.poster : ""
+                                    progress: root.progressValue(media ? media.progressPercent : 0)
                                     accent: root.cardAccent(index)
+                                    onActivated: root.openLibraryEntry(media)
+                                }
+                            }
+                        }
+
+                        Grid {
+                            id: seasonGrid
+                            width: parent.width
+                            visible: !serverClient.libraryLoading
+                                     && serverClient.libraryErrorMessage.length === 0
+                                     && root.libraryBrowseStage() === "seasons"
+                            columns: 4
+                            columnSpacing: 18
+                            rowSpacing: 20
+
+                            Repeater {
+                                model: Math.min(root.libraryVisibleLimit,
+                                                root.displayedLibraryItems().length)
+
+                                SeasonCard {
+                                    required property int index
+                                    property var media: root.displayedLibraryItems()[index]
+                                    width: (seasonGrid.width - 3 * seasonGrid.columnSpacing) / 4
+                                    title: root.itemTitle(media, "Season")
+                                    meta: root.seasonCardMeta(media)
+                                    resumeTitle: media && media.resumeTitle ? media.resumeTitle : ""
+                                    artSource: media && media.poster ? media.poster : ""
+                                    progress: root.progressValue(media ? media.progressPercent : 0)
+                                    accent: root.cardAccent(index)
+                                    onActivated: root.openLibraryEntry(media)
+                                }
+                            }
+                        }
+
+                        Grid {
+                            id: episodeGrid
+                            width: parent.width
+                            visible: !serverClient.libraryLoading
+                                     && serverClient.libraryErrorMessage.length === 0
+                                     && root.libraryBrowseStage() === "episodes"
+                            columns: 2
+                            columnSpacing: 18
+                            rowSpacing: 18
+
+                            Repeater {
+                                model: Math.min(root.libraryVisibleLimit,
+                                                root.displayedLibraryItems().length)
+
+                                EpisodeCard {
+                                    required property int index
+                                    property var media: root.displayedLibraryItems()[index]
+                                    property var resumeMedia: root.libraryResumeItem()
+                                    width: (episodeGrid.width - episodeGrid.columnSpacing) / 2
+                                    title: root.itemTitle(media, "Episode")
+                                    meta: root.episodeCardMeta(media)
+                                    description: media && media.description ? media.description : ""
+                                    artSource: media && media.poster ? media.poster : ""
+                                    progress: root.progressValue(media ? media.progressPercent : 0)
+                                    current: !!resumeMedia && media
+                                             && String(resumeMedia.path || "") === String(media.path || "")
                                     onActivated: root.openLibraryEntry(media)
                                 }
                             }
