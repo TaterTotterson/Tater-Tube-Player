@@ -53,7 +53,7 @@ qt_add_qml_module(tater-tube-player
         assets/mascot/tater-salute.png
         assets/mascot/tater-wave.png
         assets/tater-scanlines.png
-        assets/tater-tube-logo-leaning.png
+        assets/tater-tube-logo-leaning-transparent.png
         assets/sounds/tater-alert.wav
         assets/sounds/tater-back.wav
         assets/sounds/tater-select.wav

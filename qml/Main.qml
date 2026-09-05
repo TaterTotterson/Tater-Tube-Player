@@ -2856,7 +2856,7 @@ ApplicationWindow {
 
                 Image {
                     anchors.fill: parent
-                    source: "../assets/tater-tube-logo-leaning.png"
+                    source: "../assets/tater-tube-logo-leaning-transparent.png"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
