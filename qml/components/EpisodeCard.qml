@@ -33,9 +33,10 @@ FocusScope {
         anchors.fill: parent
         radius: 20
         clip: true
-        color: "#202328"
+        color: "#2e16191d"
         border.width: card.activeFocus ? 3 : (card.current ? 2 : 1)
-        border.color: card.activeFocus ? "#ff9349" : (card.current ? "#86502e" : "#3b4046")
+        border.color: card.activeFocus ? "#ff9349"
+                                      : (card.current ? "#b086502e" : "#704b5157")
 
         Row {
             anchors.fill: parent
@@ -43,7 +44,7 @@ FocusScope {
             Rectangle {
                 width: parent.width * 0.39
                 height: parent.height
-                color: "#171a1e"
+                color: "#2e171a1e"
                 clip: true
 
                 Image {
@@ -61,8 +62,8 @@ FocusScope {
                     anchors.fill: parent
                     visible: !artwork.visible
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: "#61351d" }
-                        GradientStop { position: 1.0; color: "#1b1f23" }
+                        GradientStop { position: 0.0; color: "#8061351d" }
+                        GradientStop { position: 1.0; color: "#521b1f23" }
                     }
                 }
 

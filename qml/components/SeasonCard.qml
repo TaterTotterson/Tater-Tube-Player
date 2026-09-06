@@ -34,9 +34,9 @@ FocusScope {
         anchors.fill: parent
         radius: 20
         clip: true
-        color: "#22262b"
+        color: "#2e16191d"
         border.width: card.activeFocus ? 3 : 1
-        border.color: card.activeFocus ? "#ff9349" : "#3b4147"
+        border.color: card.activeFocus ? "#ff9349" : "#704b5157"
 
         Image {
             id: backdropArtwork
@@ -53,9 +53,9 @@ FocusScope {
             anchors.fill: parent
             gradient: Gradient {
                 orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: backdropArtwork.visible ? "#e8121416" : Qt.darker(card.accent, 2.4) }
-                GradientStop { position: 0.62; color: "#e3171a1e" }
-                GradientStop { position: 1.0; color: "#c52a1d17" }
+                GradientStop { position: 0.0; color: "#5c0c0e11" }
+                GradientStop { position: 0.62; color: "#38171a1e" }
+                GradientStop { position: 1.0; color: "#24171412" }
             }
         }
 
@@ -111,9 +111,9 @@ FocusScope {
             width: Math.min(108, parent.width * 0.31)
             radius: 13
             clip: true
-            color: "#272b30"
+            color: "#66272b30"
             border.width: 1
-            border.color: "#68462f"
+            border.color: "#8f68462f"
 
             Image {
                 id: seasonArtwork
