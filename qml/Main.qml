@@ -1290,6 +1290,7 @@ ApplicationWindow {
     Connections {
         target: serverClient
         function onLibraryChanged() {
+            sectionPage.syncLibraryArtwork()
             var current = root.activeFocusItem
             if (root.currentPage === "library" && !serverClient.libraryLoading
                     && (!current || !root.isItemShown(current)
@@ -1893,11 +1894,35 @@ ApplicationWindow {
 
     Rectangle {
         id: sectionPage
+        property string heldLibraryArtwork: ""
         readonly property bool showLibraryArtwork:
             root.currentPage === "library" && !demoMode
             && serverClient.libraryDepth > 0
-            && (root.libraryBrowseStage() === "seasons"
+            && heldLibraryArtwork.length > 0
+            && (serverClient.libraryLoading
+                || root.libraryBrowseStage() === "seasons"
                 || root.libraryBrowseStage() === "episodes")
+
+        function syncLibraryArtwork() {
+            if (root.currentPage !== "library" || serverClient.libraryLoading)
+                return
+            var stage = root.libraryBrowseStage()
+            if (stage === "seasons") {
+                var seriesArtwork = root.libraryHeroArtwork()
+                if (seriesArtwork.length > 0)
+                    heldLibraryArtwork = seriesArtwork
+            } else if (stage === "episodes") {
+                // Keep the series artwork already on screen while entering a
+                // season. Only resolve a fallback for a directly opened season.
+                if (heldLibraryArtwork.length === 0) {
+                    var seasonArtwork = root.libraryHeroArtwork()
+                    if (seasonArtwork.length > 0)
+                        heldLibraryArtwork = seasonArtwork
+                }
+            } else {
+                heldLibraryArtwork = ""
+            }
+        }
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
@@ -1914,8 +1939,7 @@ ApplicationWindow {
         Image {
             id: libraryScreenArtwork
             anchors.fill: parent
-            source: sectionPage.showLibraryArtwork
-                    ? root.libraryHeroArtwork() : ""
+            source: sectionPage.heldLibraryArtwork
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
