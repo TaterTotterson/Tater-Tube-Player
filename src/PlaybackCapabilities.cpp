@@ -1,6 +1,8 @@
 #include "PlaybackCapabilities.h"
 
 #include <QGuiApplication>
+#include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -34,6 +36,99 @@ QString pulseCodec(const QString &format)
         return QStringLiteral("dts");
     return {};
 }
+
+bool truthyEnvironmentValue(const QByteArray &value)
+{
+    const QByteArray normalized = value.trimmed().toLower();
+    return normalized == "1" || normalized == "true" || normalized == "yes"
+        || normalized == "on" || normalized == "enabled";
+}
+
+bool environmentFlag(const char *name, bool fallback)
+{
+    if (!qEnvironmentVariableIsSet(name))
+        return fallback;
+    return truthyEnvironmentValue(qgetenv(name));
+}
+
+QStringList environmentList(const char *name)
+{
+    QStringList result;
+    const QString value = qEnvironmentVariable(name).trimmed().toLower();
+    for (const QString &part : value.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        QString normalized = part.trimmed();
+        normalized.replace(QLatin1Char('-'), QLatin1Char('_'));
+        if (normalized == QStringLiteral("dv") || normalized == QStringLiteral("dovi"))
+            normalized = QStringLiteral("dolby_vision");
+        else if (normalized == QStringLiteral("hdr10+"))
+            normalized = QStringLiteral("hdr10plus");
+        appendUnique(result, normalized);
+    }
+    return result;
+}
+
+QVariantList environmentIntegerList(const char *name)
+{
+    QVariantList result;
+    for (const QString &part : qEnvironmentVariable(name).split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        bool ok = false;
+        const int value = part.trimmed().toInt(&ok);
+        if (ok && value > 0 && !result.contains(value))
+            result.append(value);
+    }
+    return result;
+}
+
+struct ConnectedDisplayReport {
+    QString name;
+    QStringList hdrFormats;
+    QString source;
+};
+
+ConnectedDisplayReport connectedDisplayReport(const QString &outputConnection)
+{
+    ConnectedDisplayReport report;
+    const QStringList overrideFormats = environmentList("TATER_DISPLAY_HDR_FORMATS");
+    if (!overrideFormats.isEmpty()) {
+        report.name = qEnvironmentVariable("TATER_DISPLAY_NAME").trimmed();
+        report.hdrFormats = overrideFormats;
+        report.source = QStringLiteral("override");
+        return report;
+    }
+
+#if defined(Q_OS_LINUX)
+    const QDir drm(QStringLiteral("/sys/class/drm"));
+    const QStringList connectors = drm.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &connector : connectors) {
+        if (!connector.contains(QLatin1Char('-')))
+            continue;
+        if (outputConnection == QStringLiteral("hdmi")
+            && !connector.contains(QStringLiteral("HDMI"), Qt::CaseInsensitive)
+            && !connector.contains(QStringLiteral("DP"), Qt::CaseInsensitive)) {
+            continue;
+        }
+        QFile status(drm.filePath(connector + QStringLiteral("/status")));
+        if (!status.open(QIODevice::ReadOnly)
+            || status.readAll().trimmed() != QByteArrayLiteral("connected")) {
+            continue;
+        }
+        QFile edid(drm.filePath(connector + QStringLiteral("/edid")));
+        if (!edid.open(QIODevice::ReadOnly))
+            continue;
+        const QStringList formats = PlaybackCapabilities::hdrFormatsFromEdid(edid.readAll());
+        if (formats.isEmpty() && !report.name.isEmpty())
+            continue;
+        report.name = connector.section(QLatin1Char('-'), 1, -1);
+        report.hdrFormats = formats;
+        report.source = QStringLiteral("edid");
+        if (!formats.isEmpty())
+            break;
+    }
+#else
+    Q_UNUSED(outputConnection)
+#endif
+    return report;
+}
 }
 
 PlaybackCapabilities::PlaybackCapabilities(bool compatibilityMode, QObject *parent)
@@ -45,6 +140,8 @@ PlaybackCapabilities::PlaybackCapabilities(bool compatibilityMode, QObject *pare
     connect(qGuiApp, &QGuiApplication::screenAdded,
             this, [this](QScreen *) { refresh(); });
     connect(qGuiApp, &QGuiApplication::screenRemoved,
+            this, [this](QScreen *) { refresh(); });
+    connect(qGuiApp, &QGuiApplication::primaryScreenChanged,
             this, [this](QScreen *) { refresh(); });
     refresh();
 }
@@ -59,7 +156,27 @@ QVariantMap PlaybackCapabilities::report() const
         maxHeight = std::min(pixels.width(), pixels.height());
     }
 
+    const ConnectedDisplayReport display = connectedDisplayReport(m_outputConnection);
+    const bool hdrTransportAvailable = environmentFlag("TATER_DISPLAY_HDR_ENABLED",
+        environmentFlag("ENABLE_GAMESCOPE_WSI", false)
+            && environmentFlag("STEAM_GAMESCOPE_HDR_SUPPORTED", true));
+    const bool hdrEnabled = !display.hdrFormats.isEmpty() && hdrTransportAvailable;
+    QStringList videoHDRFormats = environmentList("TATER_VIDEO_HDR_FORMATS");
+    if (videoHDRFormats.isEmpty() && hdrEnabled) {
+        const QStringList videoCodecs = supportedVideoCodecs();
+        if (videoCodecs.contains(QStringLiteral("hevc"))
+            || videoCodecs.contains(QStringLiteral("vp9"))
+            || videoCodecs.contains(QStringLiteral("av1"))) {
+            // Gamescope's native HDR client path is PQ/HDR10. HDR10+ can use its
+            // HDR10 base layer, while HLG and Dolby Vision are tone-mapped unless
+            // a future/native playback engine explicitly advertises them.
+            if (display.hdrFormats.contains(QStringLiteral("hdr10")))
+                appendUnique(videoHDRFormats, QStringLiteral("hdr10"));
+        }
+    }
+
     return {
+        {QStringLiteral("capability_version"), 2},
         {QStringLiteral("platform"), QSysInfo::productType()},
         {QStringLiteral("engine"), QStringLiteral("qt_multimedia")},
         {QStringLiteral("output_name"), m_outputName},
@@ -73,12 +190,65 @@ QVariantMap PlaybackCapabilities::report() const
         {QStringLiteral("audio_passthrough"), QStringList{}},
         {QStringLiteral("sink_passthrough_codecs"), m_sinkPassthroughCodecs},
         {QStringLiteral("passthrough_available"), false},
+        {QStringLiteral("video_hdr_formats"), videoHDRFormats},
+        {QStringLiteral("display_hdr_formats"), display.hdrFormats},
+        {QStringLiteral("display_hdr_enabled"), hdrEnabled},
+        {QStringLiteral("display_name"), display.name},
+        {QStringLiteral("display_capability_source"), display.source},
+        {QStringLiteral("max_video_bit_depth"), videoHDRFormats.isEmpty() ? 8 : 10},
+        {QStringLiteral("dolby_vision_profiles"), environmentIntegerList("TATER_DOLBY_VISION_PROFILES")},
         {QStringLiteral("max_width"), maxWidth},
         {QStringLiteral("max_height"), maxHeight},
         {QStringLiteral("max_audio_channels"),
          std::max(2, m_defaultAudioOutput.maximumChannelCount())},
         {QStringLiteral("compatibility_mode"), m_compatibilityMode},
     };
+}
+
+QStringList PlaybackCapabilities::hdrFormatsFromEdid(const QByteArray &edid)
+{
+    QStringList result;
+    if (edid.size() < 128)
+        return result;
+
+    const int availableExtensions = static_cast<int>(edid.size() / 128) - 1;
+    const int extensionCount = std::min(
+        static_cast<int>(static_cast<unsigned char>(edid[126])), availableExtensions);
+    for (int extension = 0; extension < extensionCount; ++extension) {
+        const int base = 128 * (extension + 1);
+        if (static_cast<unsigned char>(edid[base]) != 0x02)
+            continue;
+        int end = static_cast<unsigned char>(edid[base + 2]);
+        if (end == 0 || end > 127)
+            end = 127;
+        for (int offset = 4; offset < end;) {
+            const unsigned char header = static_cast<unsigned char>(edid[base + offset]);
+            const int tag = header >> 5;
+            const int length = header & 0x1f;
+            if (length == 0 || offset + length >= end)
+                break;
+            const unsigned char *payload = reinterpret_cast<const unsigned char *>(
+                edid.constData() + base + offset + 1);
+            if (tag == 7 && length >= 2 && payload[0] == 0x06) {
+                const unsigned char eotf = payload[1];
+                if ((eotf & 0x04) != 0)
+                    appendUnique(result, QStringLiteral("hdr10"));
+                if ((eotf & 0x08) != 0)
+                    appendUnique(result, QStringLiteral("hlg"));
+            }
+            if (tag == 3 && length >= 3) {
+                if (payload[0] == 0x46 && payload[1] == 0xd0 && payload[2] == 0x00)
+                    appendUnique(result, QStringLiteral("dolby_vision"));
+                if (payload[0] == 0x8b && payload[1] == 0x84 && payload[2] == 0x90) {
+                    appendUnique(result, QStringLiteral("hdr10plus"));
+                    appendUnique(result, QStringLiteral("hdr10"));
+                }
+            }
+            offset += length + 1;
+        }
+    }
+    result.sort();
+    return result;
 }
 
 void PlaybackCapabilities::refresh()

@@ -111,6 +111,12 @@ public:
     Q_INVOKABLE QString playbackTranscodeUrl(const QString &streamUrl,
                                              const QString &profile,
                                              qint64 startMs = 0) const;
+    Q_INVOKABLE QString playbackUrlAtPosition(const QString &streamUrl,
+                                              qint64 startMs = 0) const;
+    Q_INVOKABLE QString playbackToneMappedTranscodeUrl(const QString &streamUrl,
+                                                       const QString &profile,
+                                                       const QString &sourceVideoRange,
+                                                       qint64 startMs = 0) const;
     Q_INVOKABLE QString playbackAudioTranscodeUrl(const QString &streamUrl,
                                                   const QString &profile,
                                                   qint64 startMs = 0) const;

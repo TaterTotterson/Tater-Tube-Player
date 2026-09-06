@@ -66,7 +66,8 @@ library roots, and lightweight Tube TV now/next data. Local artwork accepts
 media-adjacent `poster`, `folder`, `cover`, and title-matched images. Before
 on-demand playback, the player reports its current display, audio output,
 decoder, resolution, channel, and passthrough capabilities. The server probes
-the source and selects one of four track-level plans:
+the source codec, bit depth, HDR metadata, and Dolby Vision profile, then selects
+one of four track-level plans:
 
 ```text
 Video direct     + Audio direct/bitstream = direct play
@@ -82,6 +83,14 @@ can describe what is actually happening. If a selective stream fails, the
 player falls back to a full H.264/AAC `hdmi_1080p` transcode. Tube TV channel
 URLs are server-produced HLS and keep server-scheduled commercials, bumpers,
 spots, and station IDs intact.
+
+The version 2 capability report separates decoder HDR formats from connected
+display HDR formats. The server direct-plays HDR only when the complete path is
+available, uses an HDR10-compatible base layer for suitable Dolby Vision/HDR10+
+sources, and otherwise requests HDR-to-SDR tone mapping. Audio remains direct or
+bitstreamed when it does not need conversion. Linux reads display formats from
+EDID; platform-native Apple TV and Google TV clients will populate the same
+fields from their display and media APIs.
 
 Qt Multimedia exposes decoded audio capabilities and follows the system's
 default output, but this Steam client does not advertise encoded HDMI

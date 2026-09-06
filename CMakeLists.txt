@@ -101,4 +101,15 @@ if(BUILD_TESTING)
     target_include_directories(server-client-test PRIVATE src)
     target_link_libraries(server-client-test PRIVATE Qt6::Core Qt6::Network Qt6::Test)
     add_test(NAME server-client-test COMMAND server-client-test)
+
+    qt_add_executable(playback-capabilities-test
+        tests/PlaybackCapabilitiesTest.cpp
+        src/PlaybackCapabilities.cpp
+        src/PlaybackCapabilities.h
+    )
+    target_include_directories(playback-capabilities-test PRIVATE src)
+    target_link_libraries(playback-capabilities-test PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Multimedia Qt6::Test
+    )
+    add_test(NAME playback-capabilities-test COMMAND playback-capabilities-test)
 endif()

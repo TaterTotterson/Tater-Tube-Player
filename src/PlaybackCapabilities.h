@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAudioDevice>
+#include <QByteArray>
 #include <QMediaDevices>
 #include <QObject>
 #include <QStringList>
@@ -25,6 +26,10 @@ public:
     bool hdmiConnected() const { return m_outputConnection == QStringLiteral("hdmi"); }
 
     Q_INVOKABLE void refresh();
+
+    // Public so the platform-neutral EDID parser can be covered by a small
+    // synthetic-display test without requiring physical HDR hardware.
+    static QStringList hdrFormatsFromEdid(const QByteArray &edid);
 
 signals:
     void capabilitiesChanged();

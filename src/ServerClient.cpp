@@ -769,6 +769,47 @@ QString ServerClient::playbackTranscodeUrl(const QString &streamUrl,
     return url.toString(QUrl::FullyEncoded);
 }
 
+QString ServerClient::playbackUrlAtPosition(const QString &streamUrl, qint64 startMs) const
+{
+    QUrl url(streamUrl);
+    if (!url.isValid() || url.scheme().isEmpty())
+        return {};
+
+    QUrlQuery query(url);
+    query.removeAllQueryItems(QStringLiteral("start"));
+    if (startMs > 0) {
+        query.addQueryItem(QStringLiteral("start"),
+                           QString::number(static_cast<double>(startMs) / 1000.0, 'f', 3));
+    }
+    url.setQuery(query);
+    return url.toString(QUrl::FullyEncoded);
+}
+
+QString ServerClient::playbackToneMappedTranscodeUrl(const QString &streamUrl,
+                                                      const QString &profile,
+                                                      const QString &sourceVideoRange,
+                                                      qint64 startMs) const
+{
+    QUrl url(playbackTranscodeUrl(streamUrl, profile, startMs));
+    if (!url.isValid() || url.scheme().isEmpty())
+        return {};
+
+    QUrlQuery query(url);
+    QString sourceRange = sourceVideoRange.trimmed().toLower();
+    if (sourceRange.isEmpty())
+        sourceRange = query.queryItemValue(QStringLiteral("tater_source_video_range")).trimmed().toLower();
+    if (!sourceRange.isEmpty() && sourceRange != QStringLiteral("sdr")) {
+        query.removeAllQueryItems(QStringLiteral("tater_source_video_range"));
+        query.removeAllQueryItems(QStringLiteral("tater_output_video_range"));
+        query.removeAllQueryItems(QStringLiteral("tater_tone_map"));
+        query.addQueryItem(QStringLiteral("tater_source_video_range"), sourceRange);
+        query.addQueryItem(QStringLiteral("tater_output_video_range"), QStringLiteral("sdr"));
+        query.addQueryItem(QStringLiteral("tater_tone_map"), QStringLiteral("1"));
+    }
+    url.setQuery(query);
+    return url.toString(QUrl::FullyEncoded);
+}
+
 QString ServerClient::playbackAudioTranscodeUrl(const QString &streamUrl,
                                                 const QString &profile,
                                                 qint64 startMs) const

@@ -15,6 +15,8 @@ private slots:
     void rejectsUnsupportedAddresses();
     void loadsVersionedHome();
     void addsPlaybackTranscodeParameters();
+    void preservesPlaybackPlanWhenSeeking();
+    void addsToneMappingToHDRFallback();
     void addsAudioOnlyTranscodeParameters();
     void addsVideoOnlyTranscodeParameters();
     void postsPlaybackProgress();
@@ -257,6 +259,35 @@ void ServerClientTest::addsPlaybackTranscodeParameters()
     QCOMPARE(query.queryItemValue(QStringLiteral("codec")), QStringLiteral("h264"));
     QCOMPARE(query.queryItemValue(QStringLiteral("start")), QStringLiteral("12.345"));
     QVERIFY(!query.hasQueryItem(QStringLiteral("direct")));
+}
+
+void ServerClientTest::preservesPlaybackPlanWhenSeeking()
+{
+    ServerClient client;
+    const QString planned = client.playbackUrlAtPosition(
+        QStringLiteral("http://tube.local/movie?transcode=video&tater_tone_map=1&tater_source_video_range=hdr10&tater_output_video_range=sdr&start=1.000"),
+        12345);
+    const QUrlQuery query{QUrl(planned)};
+
+    QCOMPARE(query.queryItemValue(QStringLiteral("transcode")), QStringLiteral("video"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("tater_tone_map")), QStringLiteral("1"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("tater_source_video_range")), QStringLiteral("hdr10"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("tater_output_video_range")), QStringLiteral("sdr"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("start")), QStringLiteral("12.345"));
+}
+
+void ServerClientTest::addsToneMappingToHDRFallback()
+{
+    ServerClient client;
+    const QString fallback = client.playbackToneMappedTranscodeUrl(
+        QStringLiteral("http://tube.local/movie?player_token=test&tater_source_video_range=dolby_vision&tater_output_video_range=dolby_vision"),
+        QStringLiteral("hdmi_1080p"), QStringLiteral("dolby_vision"), 0);
+    const QUrlQuery query{QUrl(fallback)};
+
+    QCOMPARE(query.queryItemValue(QStringLiteral("transcode")), QStringLiteral("1"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("tater_tone_map")), QStringLiteral("1"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("tater_source_video_range")), QStringLiteral("dolby_vision"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("tater_output_video_range")), QStringLiteral("sdr"));
 }
 
 void ServerClientTest::addsAudioOnlyTranscodeParameters()

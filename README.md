@@ -108,6 +108,13 @@ playback path. The server can preserve both tracks, convert only audio, convert
 only video while preserving audio, or convert both tracks. If a selective path
 fails during playback, the player retries with a full H.264/AAC transcode.
 
+The display report also includes HDR10, HDR10+, HLG, and Dolby Vision support
+read from the connected display's EDID on Linux. HDR is only advertised as an
+active direct-play path when both the display and the playback transport confirm
+it. Otherwise the server tone-maps HDR video to SDR while preserving compatible
+audio. This avoids washed-out HDR on SDR outputs and gives native Apple TV and
+Google TV clients the same display-aware contract.
+
 The current Qt Multimedia engine decodes supported audio to PCM; it does not
 claim encoded HDMI bitstream support. The versioned capability contract already
 supports passthrough declarations for native Apple TV and Google TV players, or
