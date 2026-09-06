@@ -2157,6 +2157,11 @@ ApplicationWindow {
                             id: tvCollectionHero
                             readonly property string browseStage: root.libraryBrowseStage()
                             readonly property var resumeMedia: root.libraryResumeItem()
+                            readonly property string artworkSource:
+                                root.librarySpecificArtwork("backdrop")
+                                || (browseStage === "seasons"
+                                    ? root.librarySeriesPoster()
+                                    : root.librarySeasonPoster())
                             visible: !serverClient.libraryLoading
                                      && serverClient.libraryErrorMessage.length === 0
                                      && (browseStage === "seasons" || browseStage === "episodes")
@@ -2164,27 +2169,59 @@ ApplicationWindow {
                             height: browseStage === "seasons" ? 290 : 224
                             radius: 26
                             clip: true
-                            color: "#1c2024"
+                            color: "transparent"
                             border.width: 1
-                            border.color: "#464b51"
+                            border.color: heroBackgroundArtwork.visible
+                                          ? "#6b584a" : "#464b51"
+
+                            Rectangle {
+                                anchors.fill: parent
+                                color: "#1c2024"
+                                visible: !heroBackgroundArtwork.visible
+                            }
 
                             Image {
+                                id: heroBackgroundArtwork
                                 anchors.fill: parent
-                                source: root.libraryBackdrop()
+                                source: tvCollectionHero.artworkSource
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 cache: true
-                                opacity: 0.34
+                                visible: status === Image.Ready
+                                opacity: 0.92
                             }
 
                             Rectangle {
                                 anchors.fill: parent
                                 gradient: Gradient {
                                     orientation: Gradient.Horizontal
-                                    GradientStop { position: 0.0; color: "#f0121417" }
-                                    GradientStop { position: 0.62; color: "#df171a1e" }
-                                    GradientStop { position: 1.0; color: "#ee2d1d15" }
+                                    GradientStop { position: 0.0; color: "#f00c0e11" }
+                                    GradientStop { position: 0.48; color: "#c4121417" }
+                                    GradientStop { position: 0.78; color: "#6b121417" }
+                                    GradientStop { position: 1.0; color: "#30121417" }
                                 }
+                            }
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: Math.min(110, parent.height * 0.46)
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: "#00101215" }
+                                    GradientStop { position: 1.0; color: "#b8101215" }
+                                }
+                            }
+
+                            Image {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 42
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: tvCollectionHero.browseStage === "seasons" ? 190 : 150
+                                height: width
+                                source: "../assets/mascot/tater-salute.png"
+                                fillMode: Image.PreserveAspectFit
+                                visible: !heroBackgroundArtwork.visible
                             }
 
                             Rectangle {
@@ -2198,9 +2235,8 @@ ApplicationWindow {
                             Column {
                                 anchors.left: parent.left
                                 anchors.leftMargin: 36
-                                anchors.right: heroPoster.left
-                                anchors.rightMargin: 34
                                 anchors.verticalCenter: parent.verticalCenter
+                                width: Math.min(parent.width - 72, parent.width * 0.67)
                                 spacing: 11
 
                                 Text {
@@ -2254,41 +2290,6 @@ ApplicationWindow {
                                     primary: true
                                     onClicked: root.startPlayback(tvCollectionHero.resumeMedia,
                                                                   root.mediaLabel(tvCollectionHero.resumeMedia))
-                                }
-                            }
-
-                            Rectangle {
-                                id: heroPoster
-                                anchors.right: parent.right
-                                anchors.rightMargin: 28
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: tvCollectionHero.browseStage === "seasons" ? 176 : 150
-                                height: parent.height - 30
-                                radius: 20
-                                clip: true
-                                color: "#25292d"
-                                border.width: 1
-                                border.color: "#5a4434"
-
-                                Image {
-                                    id: heroPosterArtwork
-                                    anchors.fill: parent
-                                    source: tvCollectionHero.browseStage === "seasons"
-                                            ? root.librarySeriesPoster()
-                                            : root.librarySeasonPoster()
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                    cache: true
-                                    visible: status === Image.Ready
-                                }
-
-                                Image {
-                                    anchors.centerIn: parent
-                                    width: 120
-                                    height: 120
-                                    source: "../assets/mascot/tater-salute.png"
-                                    fillMode: Image.PreserveAspectFit
-                                    visible: !heroPosterArtwork.visible
                                 }
                             }
                         }
