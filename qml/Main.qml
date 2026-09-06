@@ -1192,10 +1192,11 @@ ApplicationWindow {
             return
         }
         var point = item.mapToItem(scroller.contentItem, 0, 0)
-        var upper = scroller.contentY + 24
+        var topPadding = currentPage === "live" ? 94 : 24
+        var upper = scroller.contentY + topPadding
         var lower = scroller.contentY + scroller.height - 30
         if (point.y < upper)
-            scroller.contentY = Math.max(0, point.y - 24)
+            scroller.contentY = Math.max(0, point.y - topPadding)
         else if (point.y + item.height > lower)
             scroller.contentY = Math.min(scroller.contentHeight - scroller.height,
                                          point.y + item.height - scroller.height + 30)
@@ -2870,46 +2871,9 @@ ApplicationWindow {
                         readonly property real programWidth:
                             (width - channelWidth - 3 * 12) / 3
 
-                        Rectangle {
+                        Item {
                             width: parent.width
                             height: 48
-                            radius: 14
-                            color: "#1e2125"
-                            border.width: 1
-                            border.color: "#383d43"
-
-                            Row {
-                                anchors.fill: parent
-                                anchors.leftMargin: 18
-                                anchors.rightMargin: 18
-                                spacing: 12
-
-                                Text {
-                                    width: liveGuide.channelWidth - 18
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: "CHANNEL"
-                                    color: root.textSecondary
-                                    font.pixelSize: 11
-                                    font.weight: Font.Bold
-                                    font.letterSpacing: 1.2
-                                }
-
-                                Repeater {
-                                    model: ["ON NOW", "UP NEXT", "LATER"]
-
-                                    Text {
-                                        required property string modelData
-                                        width: liveGuide.programWidth
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: modelData
-                                        color: modelData === "ON NOW" ? root.orange
-                                                                      : root.textSecondary
-                                        font.pixelSize: 11
-                                        font.weight: Font.Bold
-                                        font.letterSpacing: 1.2
-                                    }
-                                }
-                            }
                         }
 
                         Repeater {
@@ -2931,11 +2895,10 @@ ApplicationWindow {
                                     title: root.itemTitle(guideRow.channel, "Tater Tube")
                                     meta: "WATCH CHANNEL"
                                     isCurrent: true
+                                    showProgress: false
                                     artSource: guideRow.currentProgram && guideRow.currentProgram.poster
                                                ? guideRow.currentProgram.poster : ""
                                     accent: root.cardAccent(guideRow.index)
-                                    progress: root.progressValue(guideRow.currentProgram
-                                                                 ? guideRow.currentProgram.progressPercent : 0)
                                     onActivated: {
                                         if (guideRow.channel && guideRow.channel.streamUrl)
                                             root.startPlayback(guideRow.channel,
@@ -3140,6 +3103,73 @@ ApplicationWindow {
                             color: root.textSecondary
                             font.pixelSize: 17
                         }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            id: liveGuideHeader
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 46
+            anchors.rightMargin: 46
+            anchors.topMargin: 34
+            visible: root.currentPage === "live"
+                     && root.displayedLiveChannels().length > 0
+            height: 48
+            radius: 14
+            clip: true
+            color: "#3d101418"
+            border.width: 0
+            z: 20
+
+            FrostedGlass {
+                anchors.fill: parent
+                sourceItem: sectionScroller.contentItem
+                coordinateItem: liveGuideHeader
+                updateToken: sectionScroller.contentY
+                blurAmount: 0.82
+                cornerRadius: liveGuideHeader.radius
+                tint: "#68101418"
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: liveGuideHeader.radius
+                color: "#26101418"
+            }
+
+            Row {
+                anchors.fill: parent
+                anchors.leftMargin: 18
+                anchors.rightMargin: 18
+                spacing: 12
+
+                Text {
+                    width: liveGuide.channelWidth - 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "CHANNEL"
+                    color: root.textSecondary
+                    font.pixelSize: 11
+                    font.weight: Font.Bold
+                    font.letterSpacing: 1.2
+                }
+
+                Repeater {
+                    model: ["ON NOW", "UP NEXT", "LATER"]
+
+                    Text {
+                        required property string modelData
+                        width: liveGuide.programWidth
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData
+                        color: modelData === "ON NOW" ? root.orange
+                                                      : root.textSecondary
+                        font.pixelSize: 11
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.2
                     }
                 }
             }

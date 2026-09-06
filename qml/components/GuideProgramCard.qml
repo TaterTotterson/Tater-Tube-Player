@@ -7,6 +7,7 @@ FocusScope {
     property string title: "Tater Tube"
     property string meta: ""
     property bool isCurrent: false
+    property bool showProgress: true
     property real progress: 0
     property color accent: "#ff781f"
     property url artSource: ""
@@ -132,7 +133,7 @@ FocusScope {
 
         Rectangle {
             id: progressTrack
-            visible: card.isCurrent
+            visible: card.showProgress && card.isCurrent
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
