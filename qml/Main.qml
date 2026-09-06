@@ -1791,41 +1791,29 @@ ApplicationWindow {
                     id: demoRecentlyAddedRow
                     width: parent.width
                     spacing: 15
-                    PosterCard {
-                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
-                        title: "Cosmic Drift"; meta: "2026  •  1h 52m"
-                        number: "01"; accent: "#7d4d91"
+                    MediaCard {
+                        width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
+                        eyebrow: "MOVIE"; title: "Cosmic Drift"; subtitle: "2026  •  1h 52m"
+                        accent: "#7d4d91"
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
-                    PosterCard {
-                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
-                        title: "Harbor Street"; meta: "2024  •  2 seasons"
-                        number: "02"; accent: "#4d7485"
+                    MediaCard {
+                        width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
+                        eyebrow: "SHOW"; title: "Harbor Street"; subtitle: "2024  •  2 seasons"
+                        accent: "#4d7485"
                         onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
                     }
-                    PosterCard {
-                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
-                        title: "The Long Winter"; meta: "2025  •  1h 44m"
-                        number: "03"; accent: "#506c79"
+                    MediaCard {
+                        width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
+                        eyebrow: "MOVIE"; title: "The Long Winter"; subtitle: "2025  •  1h 44m"
+                        accent: "#506c79"
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
-                    PosterCard {
-                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
-                        title: "Signal Lost"; meta: "2023  •  8 episodes"
-                        number: "04"; accent: "#9c5a39"
+                    MediaCard {
+                        width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
+                        eyebrow: "SHOW"; title: "Signal Lost"; subtitle: "2023  •  8 episodes"
+                        accent: "#9c5a39"
                         onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
-                    }
-                    PosterCard {
-                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
-                        title: "Dust & Thunder"; meta: "2026  •  2h 06m"
-                        number: "05"; accent: "#805a3d"
-                        onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
-                    }
-                    PosterCard {
-                        width: (demoRecentlyAddedRow.width - 5 * demoRecentlyAddedRow.spacing) / 6
-                        title: "Side Streets"; meta: "2022  •  1h 37m"
-                        number: "06"; accent: "#526158"
-                        onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
                 }
             }
@@ -1850,17 +1838,19 @@ ApplicationWindow {
                     spacing: 15
 
                     Repeater {
-                        model: Math.min(6, serverClient.recentlyAdded.length)
+                        model: Math.min(4, serverClient.recentlyAdded.length)
 
-                        PosterCard {
+                        MediaCard {
                             required property int index
                             property var media: serverClient.recentlyAdded[index]
 
-                            width: (recentlyAddedRow.width - 5 * recentlyAddedRow.spacing) / 6
+                            width: (recentlyAddedRow.width - 3 * recentlyAddedRow.spacing) / 4
+                            eyebrow: root.mediaLabel(media)
                             title: root.itemTitle(media, "Untitled")
-                            meta: root.itemMeta(media)
-                            number: index < 9 ? "0" + (index + 1) : String(index + 1)
-                            artSource: media && media.poster ? media.poster : ""
+                            subtitle: root.itemMeta(media)
+                            artSource: root.homeWideArtwork(media)
+                            fallbackArtSource: root.homeArtworkFallback(media)
+                            artworkOpacity: 0.74
                             accent: root.cardAccent(index)
                             onActivated: root.openLibraryEntry(media)
                         }
@@ -2166,19 +2156,22 @@ ApplicationWindow {
                                     spacing: 15
 
                                     Repeater {
-                                        model: Math.min(6, shelfColumn.shelfItems.length)
+                                        model: Math.min(4, shelfColumn.shelfItems.length)
 
-                                        PosterCard {
+                                        MediaCard {
                                             required property int index
                                             property var media: shelfColumn.shelfItems[index]
-                                            width: (shelfColumn.width - 5 * 15) / 6
+                                            width: (shelfColumn.width - 3 * 15) / 4
+                                            eyebrow: root.mediaLabel(media)
                                             title: root.itemTitle(media, "Untitled")
-                                            meta: root.libraryItemMeta(media)
-                                            number: demoMode || (media && media.streamUrl)
-                                                    ? (index < 9 ? "0" + (index + 1)
-                                                                 : String(index + 1))
-                                                    : "›"
-                                            artSource: media && media.poster ? media.poster : ""
+                                            subtitle: String(media && media.mediaType || "").toLowerCase() === "show"
+                                                      ? root.showCardMeta(media)
+                                                      : root.libraryItemMeta(media)
+                                            artSource: root.homeWideArtwork(media)
+                                            fallbackArtSource: root.homeArtworkFallback(media)
+                                            artworkOpacity: 0.74
+                                            progress: root.progressValue(media
+                                                                         ? media.progressPercent : 0)
                                             accent: root.cardAccent(index + shelfColumn.index)
                                             onActivated: root.openLibraryEntry(media)
                                         }
