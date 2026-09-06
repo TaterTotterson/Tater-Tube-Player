@@ -97,6 +97,24 @@ ConnectedDisplayReport connectedDisplayReport(const QString &outputConnection)
     }
 
 #if defined(Q_OS_LINUX)
+    // In Steam Gaming Mode, Gamescope exposes the EDID for the display it is
+    // actively presenting on. Prefer it over DRM connector enumeration so a
+    // docked Deck reports the television instead of its internal display.
+    const QString gamescopeEdidPath =
+        qEnvironmentVariable("GAMESCOPE_PATCHED_EDID_FILE").trimmed();
+    if (!gamescopeEdidPath.isEmpty()) {
+        QFile gamescopeEdid(gamescopeEdidPath);
+        if (gamescopeEdid.open(QIODevice::ReadOnly)) {
+            report.name = qEnvironmentVariable("TATER_DISPLAY_NAME").trimmed();
+            if (report.name.isEmpty())
+                report.name = QStringLiteral("Gamescope display");
+            report.hdrFormats =
+                PlaybackCapabilities::hdrFormatsFromEdid(gamescopeEdid.readAll());
+            report.source = QStringLiteral("gamescope_edid");
+            return report;
+        }
+    }
+
     const QDir drm(QStringLiteral("/sys/class/drm"));
     const QStringList connectors = drm.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     for (const QString &connector : connectors) {
