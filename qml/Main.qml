@@ -139,6 +139,45 @@ ApplicationWindow {
         return itemTitle(channel, "Tater Tube")
     }
 
+    function localArtworkVariant(item, kind) {
+        if (!item || !item.poster)
+            return ""
+        var poster = String(item.poster)
+        if (poster.indexOf("/api/v1/player/artwork/local") < 0)
+            return ""
+        if (poster.match(/[?&]kind=[^&]*/))
+            return poster.replace(/([?&])kind=[^&]*/, "$1kind=" + kind)
+        return poster + (poster.indexOf("?") >= 0 ? "&" : "?") + "kind=" + kind
+    }
+
+    function homeWideArtwork(item) {
+        if (!item)
+            return ""
+        return String(item.backdrop || localArtworkVariant(item, "backdrop")
+                      || item.episodeStill || item.poster || "")
+    }
+
+    function homeArtworkFallback(item) {
+        if (!item)
+            return ""
+        return String(item.episodeStill || item.seasonPoster
+                      || item.seriesPoster || item.poster || "")
+    }
+
+    function homeChannelArtwork(channel) {
+        if (!channel)
+            return ""
+        return homeWideArtwork(channel.now) || homeWideArtwork(channel.next)
+    }
+
+    function homeChannelArtworkFallback(channel) {
+        if (!channel)
+            return ""
+        if (homeWideArtwork(channel.now).length > 0)
+            return homeArtworkFallback(channel.now)
+        return homeArtworkFallback(channel.next)
+    }
+
     function libraryMediaItems() {
         if (demoMode) {
             return [
@@ -1631,7 +1670,9 @@ ApplicationWindow {
                             eyebrow: root.mediaLabel(media)
                             title: root.itemTitle(media, "Untitled")
                             subtitle: root.continueSubtitle(media)
-                            artSource: media && media.poster ? media.poster : ""
+                            artSource: root.homeWideArtwork(media)
+                            fallbackArtSource: root.homeArtworkFallback(media)
+                            artworkOpacity: 0.74
                             accent: root.cardAccent(index)
                             progress: root.progressValue(media ? media.progressPercent : 0)
                             onActivated: root.openDetails(media, root.mediaLabel(media))
@@ -1721,8 +1762,9 @@ ApplicationWindow {
                             title: root.channelTitle(channel)
                             subtitle: root.channelSubtitle(channel)
                             badge: channel.number || "TV"
-                            artSource: currentProgram && currentProgram.poster
-                                       ? currentProgram.poster : ""
+                            artSource: root.homeChannelArtwork(channel)
+                            fallbackArtSource: root.homeChannelArtworkFallback(channel)
+                            artworkOpacity: 0.74
                             accent: root.cardAccent(index)
                             progress: root.progressValue(currentProgram
                                                          ? currentProgram.progressPercent : 0)

@@ -8,9 +8,15 @@ FocusScope {
     property string subtitle: ""
     property color accent: "#f47a23"
     property url artSource: ""
+    property url fallbackArtSource: ""
+    property real artworkOpacity: 0.58
     property real progress: 0
     property string badge: ""
+    property bool fallbackArtworkActive: false
     signal activated()
+
+    onArtSourceChanged: fallbackArtworkActive = false
+    onFallbackArtSourceChanged: fallbackArtworkActive = false
 
     implicitWidth: 300
     implicitHeight: 178
@@ -48,12 +54,20 @@ FocusScope {
         Image {
             id: artwork
             anchors.fill: parent
-            source: card.artSource
+            source: card.fallbackArtworkActive || String(card.artSource).length === 0
+                    ? card.fallbackArtSource : card.artSource
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
             visible: status === Image.Ready
-            opacity: 0.58
+            opacity: card.artworkOpacity
+            onStatusChanged: {
+                if (status === Image.Error && !card.fallbackArtworkActive
+                        && String(card.fallbackArtSource).length > 0
+                        && String(card.fallbackArtSource) !== String(card.artSource)) {
+                    card.fallbackArtworkActive = true
+                }
+            }
         }
 
         Rectangle {
