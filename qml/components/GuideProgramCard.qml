@@ -8,10 +8,15 @@ FocusScope {
     property string meta: ""
     property bool isCurrent: false
     property real progress: 0
-    property bool alwaysShowProgress: false
     property color accent: "#ff781f"
     property url artSource: ""
+    property url fallbackArtSource: ""
+    property real artworkOpacity: 0.62
+    property bool fallbackArtworkActive: false
     signal activated()
+
+    onArtSourceChanged: fallbackArtworkActive = false
+    onFallbackArtSourceChanged: fallbackArtworkActive = false
 
     implicitWidth: 300
     implicitHeight: 160
@@ -33,7 +38,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        radius: 17
+        radius: 20
         clip: true
         color: "#22262b"
         border.width: card.activeFocus ? 3 : (card.isCurrent ? 2 : 1)
@@ -50,12 +55,20 @@ FocusScope {
         Image {
             id: artwork
             anchors.fill: parent
-            source: card.artSource
+            source: card.fallbackArtworkActive || String(card.artSource).length === 0
+                    ? card.fallbackArtSource : card.artSource
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
             visible: status === Image.Ready
-            opacity: 0.62
+            opacity: card.artworkOpacity
+            onStatusChanged: {
+                if (status === Image.Error && !card.fallbackArtworkActive
+                        && String(card.fallbackArtSource).length > 0
+                        && String(card.fallbackArtSource) !== String(card.artSource)) {
+                    card.fallbackArtworkActive = true
+                }
+            }
         }
 
         Rectangle {
@@ -82,21 +95,12 @@ FocusScope {
             border.color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.17)
         }
 
-        Rectangle {
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            width: 6
-            radius: 3
-            color: card.isCurrent ? card.accent : "#4b5056"
-        }
-
         Column {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: progressTrack.visible ? progressTrack.top : parent.bottom
             anchors.margins: 17
-            anchors.leftMargin: 20
+            anchors.leftMargin: 17
             anchors.bottomMargin: progressTrack.visible ? 13 : 17
             spacing: 6
 
@@ -128,7 +132,7 @@ FocusScope {
 
         Rectangle {
             id: progressTrack
-            visible: card.isCurrent && (card.progress > 0 || card.alwaysShowProgress)
+            visible: card.isCurrent
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
@@ -145,7 +149,7 @@ FocusScope {
         Rectangle {
             anchors.fill: parent
             anchors.margins: -5
-            radius: 20
+            radius: 24
             color: "transparent"
             border.width: card.activeFocus ? 2 : 0
             border.color: "#66ff7a1a"

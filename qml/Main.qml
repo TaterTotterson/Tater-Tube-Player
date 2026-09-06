@@ -655,6 +655,32 @@ ApplicationWindow {
         return kind
     }
 
+    function guideCardArtwork(programs, index) {
+        if (!programs || index < 0 || index >= programs.length)
+            return ""
+        var artwork = root.homeWideArtwork(programs[index])
+        if (artwork.length > 0)
+            return artwork
+        for (var nextIndex = index + 1; nextIndex < programs.length; ++nextIndex) {
+            artwork = root.homeWideArtwork(programs[nextIndex])
+            if (artwork.length > 0)
+                return artwork
+        }
+        return ""
+    }
+
+    function guideCardArtworkFallback(programs, index) {
+        if (!programs || index < 0 || index >= programs.length)
+            return ""
+        if (root.homeWideArtwork(programs[index]).length > 0)
+            return root.homeArtworkFallback(programs[index])
+        for (var nextIndex = index + 1; nextIndex < programs.length; ++nextIndex) {
+            if (root.homeWideArtwork(programs[nextIndex]).length > 0)
+                return root.homeArtworkFallback(programs[nextIndex])
+        }
+        return ""
+    }
+
     function activateGuideProgram(channel, program, index) {
         if (root.guideProgramIsCurrent(channel, program, index)
                 && channel && channel.streamUrl) {
@@ -2933,9 +2959,10 @@ ApplicationWindow {
                                         meta: root.guideProgramMeta(guideRow.channel, program)
                                         isCurrent: root.guideProgramIsCurrent(guideRow.channel,
                                                                               program, index)
-                                        alwaysShowProgress: program
-                                                            && program.isCommercialBreak === true
-                                        artSource: program && program.poster ? program.poster : ""
+                                        artSource: root.guideCardArtwork(guideRow.programs, index)
+                                        fallbackArtSource: root.guideCardArtworkFallback(
+                                                               guideRow.programs, index)
+                                        artworkOpacity: 0.74
                                         accent: root.cardAccent(guideRow.index + index)
                                         progress: root.progressValue(program
                                                                      ? program.progressPercent : 0)
