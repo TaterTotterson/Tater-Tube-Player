@@ -675,13 +675,22 @@ ApplicationWindow {
         currentPage = name
         page.contentY = 0
         sectionScroller.contentY = 0
-        if (name === "library" && !demoMode && serverClient.libraries.length === 0)
-            serverClient.refreshLibraries()
-        if (name === "discover" && !demoMode
-                && serverClient.discoverCategories.length === 0)
+        if (name === "home" && !demoMode)
+            serverClient.refreshHome()
+        if (name === "library" && !demoMode) {
+            if (serverClient.libraryDepth > 0)
+                serverClient.refreshLibrary()
+            else {
+                serverClient.refreshLibraries()
+                serverClient.refreshLibraryRows()
+            }
+        }
+        if (name === "discover" && !demoMode)
             serverClient.refreshDiscover()
         if (name === "live" && !demoMode)
             serverClient.refreshLiveGuide()
+        if (name === "search" && !demoMode)
+            serverClient.refreshHome()
         if (name === "live")
             guideClockMs = Date.now()
         Qt.callLater(function() {
@@ -1822,6 +1831,8 @@ ApplicationWindow {
                     serverClient.continueWatching.length > 0
                     || serverClient.recentlyAdded.length > 0
                     || serverClient.liveChannels.length > 0
+                    || serverClient.libraryRows.length > 0
+                    || serverClient.libraries.length > 0
 
                 visible: !demoMode && serverClient.paired
                          && (!serverClient.homeReady || !hasHomeContent)
@@ -1984,55 +1995,6 @@ ApplicationWindow {
                     width: parent.width
                     visible: root.currentPage === "library"
                     spacing: 22
-
-                    Row {
-                        width: parent.width
-                        spacing: 16
-
-                        Column {
-                            width: parent.width - libraryActions.width - parent.spacing
-                            spacing: 7
-
-                            Text {
-                                text: !demoMode && serverClient.libraryDepth > 0
-                                      ? serverClient.libraryTitle : "Your library"
-                                color: root.textPrimary
-                                font.pixelSize: 38
-                                font.weight: Font.Black
-                            }
-
-                            Text {
-                                width: parent.width
-                                text: root.libraryBrowseStage() === "shows"
-                                      ? "Choose a show. Tater will bring your current episode forward when you return."
-                                      : (root.libraryBrowseStage() === "seasons"
-                                         ? "Pick a season, or jump straight back into the episode you were watching."
-                                         : (root.libraryBrowseStage() === "episodes"
-                                            ? "Choose an episode. Your progress stays synced with Tater Tube Server."
-                                            : (!demoMode && serverClient.libraryDepth > 0
-                                               ? "Choose a folder or title to keep browsing."
-                                               : "Browse every local movie, show, season, and folder on your Tater Tube Server.")))
-                                color: root.textSecondary
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 16
-                            }
-                        }
-
-                        Row {
-                            id: libraryActions
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 10
-
-                            FocusButton {
-                                visible: !demoMode
-                                width: 150
-                                text: "Refresh"
-                                onClicked: serverClient.libraryDepth > 0
-                                           ? serverClient.refreshLibrary()
-                                           : serverClient.refreshLibraries()
-                            }
-                        }
-                    }
 
                     Rectangle {
                         id: libraryQuickBrowse
@@ -2597,47 +2559,6 @@ ApplicationWindow {
                     visible: root.currentPage === "discover"
                     spacing: 22
 
-                    Row {
-                        width: parent.width
-                        spacing: 16
-
-                        Column {
-                            width: parent.width - discoverRefresh.width - parent.spacing
-                            spacing: 7
-
-                            Text {
-                                text: !demoMode && serverClient.discoverStage !== "catalog"
-                                      ? serverClient.discoverTitle : "Discover"
-                                color: root.textPrimary
-                                font.pixelSize: 38
-                                font.weight: Font.Black
-                            }
-
-                            Text {
-                                width: parent.width
-                                text: !demoMode && serverClient.discoverStage === "results"
-                                      ? "Choose the NZB release you want Tater Tube Server to prepare."
-                                      : (!demoMode && serverClient.discoverStage === "streams"
-                                         ? "This release contains multiple playable files. Choose the one you want."
-                                         : (!demoMode && serverClient.discoverStage === "titles"
-                                            ? "Choose a title and Tater will search your configured NZB provider automatically."
-                                            : "Browse popular, new, and featured movies and television through your Tater Tube Server."))
-                                color: root.textSecondary
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 16
-                            }
-                        }
-
-                        FocusButton {
-                            id: discoverRefresh
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: !demoMode && serverClient.discoverStage === "catalog"
-                            width: 150
-                            text: "Refresh"
-                            onClicked: serverClient.refreshDiscover()
-                        }
-                    }
-
                     Rectangle {
                         visible: demoMode || serverClient.discoverStage === "catalog"
                         width: parent.width
@@ -2878,40 +2799,6 @@ ApplicationWindow {
                     visible: root.currentPage === "live"
                     spacing: 22
 
-                    Row {
-                        width: parent.width
-                        spacing: 16
-
-                        Column {
-                            width: parent.width - liveRefresh.width - parent.spacing
-                            spacing: 7
-
-                            Text {
-                                text: "Live TV"
-                                color: root.textPrimary
-                                font.pixelSize: 38
-                                font.weight: Font.Black
-                            }
-
-                            Text {
-                                width: parent.width
-                                text: "Choose a channel to watch now. Your commercials, spots, bumpers, and station IDs stay in the server-built stream."
-                                color: root.textSecondary
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 16
-                            }
-                        }
-
-                        FocusButton {
-                            id: liveRefresh
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: !demoMode
-                            width: 170
-                            text: "Refresh guide"
-                            onClicked: serverClient.refreshLiveGuide()
-                        }
-                    }
-
                     Column {
                         id: liveGuide
                         width: parent.width
@@ -3125,21 +3012,6 @@ ApplicationWindow {
                     width: parent.width
                     visible: root.currentPage === "search"
                     spacing: 22
-
-                    Text {
-                        text: "Search"
-                        color: root.textPrimary
-                        font.pixelSize: 38
-                        font.weight: Font.Black
-                    }
-
-                    Text {
-                        width: parent.width
-                        text: "Search the titles already loaded from your Tater Tube home screen. Server-wide search is the next API step."
-                        color: root.textSecondary
-                        wrapMode: Text.WordWrap
-                        font.pixelSize: 16
-                    }
 
                     TextField {
                         id: searchField

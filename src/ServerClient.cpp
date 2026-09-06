@@ -1,13 +1,18 @@
 #include "ServerClient.h"
 
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -18,7 +23,10 @@ namespace {
 constexpr auto kSettingsServerUrl = "connection/serverUrl";
 constexpr auto kSettingsToken = "connection/playerToken";
 constexpr auto kSettingsPlayerName = "connection/playerName";
-constexpr qint64 kLibraryCacheTtlMs = 5 * 60 * 1000;
+constexpr qint64 kContentCacheMaxAgeMs = 30LL * 24 * 60 * 60 * 1000;
+constexpr int kContentCacheVersion = 1;
+constexpr int kMaximumCachedLibraryPages = 48;
+constexpr int kMaximumCachedDiscoverPages = 48;
 
 QVariantList discoverCategoriesFromCatalog(const QJsonArray &categories)
 {
@@ -80,6 +88,7 @@ ServerClient::ServerClient(QObject *parent)
     : QObject(parent)
 {
     loadSettings();
+    loadContentCache();
     if (paired())
         refresh();
 }
@@ -206,10 +215,10 @@ void ServerClient::refreshHome()
 
 void ServerClient::refreshLibraries()
 {
-    if (!paired() || m_libraryLoading)
+    if (!paired() || m_librariesLoading)
         return;
 
-    m_libraryLoading = true;
+    m_librariesLoading = true;
     m_libraryErrorMessage.clear();
     emit libraryChanged();
     QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/tater/usenet/catalog"))};
@@ -248,12 +257,9 @@ ServerClient::LibraryLocation ServerClient::libraryLocationFromEntry(const QVari
 
 void ServerClient::loadLibraryRows(bool forceNetwork)
 {
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (!forceNetwork && !m_libraryRows.isEmpty()
-        && now - m_libraryRowsStoredAtMs < kLibraryCacheTtlMs) {
-        emit libraryChanged();
+    Q_UNUSED(forceNetwork)
+    if (m_libraryRowsPending > 0)
         return;
-    }
 
     ++m_libraryRowsGeneration;
     const int generation = m_libraryRowsGeneration;
@@ -300,6 +306,7 @@ void ServerClient::handleLibraryRowsReply(QNetworkReply *reply, int generation)
     m_libraryRowsStoredAtMs = QDateTime::currentMSecsSinceEpoch();
     m_libraryErrorMessage.clear();
     setOnline(true);
+    saveContentCache();
     emit libraryChanged();
 }
 
@@ -351,6 +358,7 @@ void ServerClient::browseLibraryBack()
     if (m_libraryLoading || m_libraryHistory.isEmpty())
         return;
     if (m_libraryHistory.size() == 1) {
+        ++m_libraryGeneration;
         m_libraryHistory.clear();
         m_libraryItems.clear();
         m_libraryTitle.clear();
@@ -383,13 +391,15 @@ void ServerClient::refreshDiscover()
     }
 
     const int generation = ++m_discoverGeneration;
-    m_discoverLoading = true;
+    const bool showingCatalog = m_discoverStage == QStringLiteral("catalog");
+    m_discoverLoading = showingCatalog && m_discoverCategories.isEmpty();
     m_discoverErrorMessage.clear();
-    m_discoverItems.clear();
-    m_discoverTitle = QStringLiteral("Discover");
-    m_discoverStage = QStringLiteral("catalog");
-    m_discoverHistory.clear();
-    m_discoverPendingItem.clear();
+    if (showingCatalog) {
+        m_discoverItems.clear();
+        m_discoverTitle = QStringLiteral("Discover");
+        m_discoverHistory.clear();
+        m_discoverPendingItem.clear();
+    }
     emit discoverChanged();
 
     QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/tater/usenet/catalog"))};
@@ -419,13 +429,18 @@ void ServerClient::browseDiscover(const QVariantMap &entry)
                                       entry.value(QStringLiteral("title")))
                               .toString().trimmed();
     const QString mediaType = entry.value(QStringLiteral("category")).toString().trimmed();
+    const QString cacheKey = discoverFeedCacheKey(catalog);
+    const auto cached = m_discoverCache.constFind(cacheKey);
     const int generation = ++m_discoverGeneration;
-    m_discoverLoading = true;
+    m_discoverLoading = cached == m_discoverCache.cend();
     m_discoverErrorMessage.clear();
-    m_discoverItems.clear();
-    m_discoverTitle = title.isEmpty() ? QStringLiteral("Discover") : title;
+    m_discoverItems = cached == m_discoverCache.cend() ? QVariantList{} : cached->items;
+    m_discoverTitle = cached == m_discoverCache.cend()
+        ? (title.isEmpty() ? QStringLiteral("Discover") : title)
+        : cached->title;
     m_discoverStage = QStringLiteral("titles");
-    m_discoverMediaType = mediaType;
+    m_discoverMediaType = cached == m_discoverCache.cend()
+        ? mediaType : cached->mediaType;
     m_discoverHistory.clear();
     m_discoverPendingItem.clear();
     emit discoverChanged();
@@ -442,8 +457,8 @@ void ServerClient::browseDiscover(const QVariantMap &entry)
     request.setTransferTimeout(30000);
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, generation, title, mediaType] {
-                handleDiscoverFeedReply(reply, generation, title, mediaType);
+            [this, reply, generation, title, mediaType, cacheKey] {
+                handleDiscoverFeedReply(reply, generation, title, mediaType, cacheKey);
             });
 }
 
@@ -471,13 +486,17 @@ void ServerClient::activateDiscoverItem(const QVariantMap &item)
         const QString fallbackTitle = QStringLiteral("Results for %1")
                                           .arg(item.value(QStringLiteral("title"))
                                                    .toString().trimmed());
+        const QString cacheKey = discoverSearchCacheKey(searchQuery, mediaType);
+        const auto cached = m_discoverCache.constFind(cacheKey);
         const int generation = ++m_discoverGeneration;
-        m_discoverLoading = true;
+        m_discoverLoading = cached == m_discoverCache.cend();
         m_discoverErrorMessage.clear();
-        m_discoverItems.clear();
-        m_discoverTitle = fallbackTitle;
+        m_discoverItems = cached == m_discoverCache.cend() ? QVariantList{} : cached->items;
+        m_discoverTitle = cached == m_discoverCache.cend()
+            ? fallbackTitle : cached->title;
         m_discoverStage = QStringLiteral("results");
-        m_discoverMediaType = mediaType;
+        m_discoverMediaType = cached == m_discoverCache.cend()
+            ? mediaType : cached->mediaType;
         emit discoverChanged();
 
         QUrl url(endpointUrl(m_serverUrl, "/api/tater/usenet/search"));
@@ -492,8 +511,9 @@ void ServerClient::activateDiscoverItem(const QVariantMap &item)
         request.setTransferTimeout(30000);
         QNetworkReply *reply = m_network.get(request);
         connect(reply, &QNetworkReply::finished, this,
-                [this, reply, generation, mediaType, fallbackTitle] {
-                    handleDiscoverSearchReply(reply, generation, mediaType, fallbackTitle);
+                [this, reply, generation, mediaType, fallbackTitle, cacheKey] {
+                    handleDiscoverSearchReply(reply, generation, mediaType, fallbackTitle,
+                                              cacheKey);
                 });
         return;
     }
@@ -569,13 +589,27 @@ QString ServerClient::libraryCacheKey(const LibraryLocation &location) const
              location.path, location.continueWatching ? QStringLiteral("1") : QStringLiteral("0"));
 }
 
+QString ServerClient::discoverFeedCacheKey(const QString &catalog)
+{
+    return QStringLiteral("feed\n%1").arg(catalog.trimmed().toLower());
+}
+
+QString ServerClient::discoverSearchCacheKey(const QString &query,
+                                              const QString &mediaType)
+{
+    return QStringLiteral("search\n%1\n%2")
+        .arg(mediaType.trimmed().toLower(), query.trimmed().toLower());
+}
+
 void ServerClient::loadLibraryLocation(const LibraryLocation &location, bool pushHistory,
                                        bool forceNetwork)
 {
+    Q_UNUSED(forceNetwork)
     const QString cacheKey = libraryCacheKey(location);
     const auto cached = m_libraryCache.constFind(cacheKey);
-    if (!forceNetwork && cached != m_libraryCache.cend()
-        && QDateTime::currentMSecsSinceEpoch() - cached->storedAtMs < kLibraryCacheTtlMs) {
+    const bool hasCachedPage = cached != m_libraryCache.cend();
+    const int generation = ++m_libraryGeneration;
+    if (hasCachedPage) {
         m_libraryItems = cached->items;
         m_libraryTitle = cached->title;
         m_libraryErrorMessage.clear();
@@ -583,7 +617,12 @@ void ServerClient::loadLibraryLocation(const LibraryLocation &location, bool pus
         if (pushHistory)
             m_libraryHistory.append(location);
         emit libraryChanged();
-        return;
+    } else {
+        m_libraryItems.clear();
+        m_libraryTitle = location.title;
+        m_libraryLoading = true;
+        m_libraryErrorMessage.clear();
+        emit libraryChanged();
     }
 
     QUrl url(endpointUrl(m_serverUrl, location.continueWatching
@@ -603,9 +642,6 @@ void ServerClient::loadLibraryLocation(const LibraryLocation &location, bool pus
         url.setQuery(query);
     }
 
-    m_libraryLoading = true;
-    m_libraryErrorMessage.clear();
-    emit libraryChanged();
     QNetworkRequest request{url};
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
@@ -614,8 +650,8 @@ void ServerClient::loadLibraryLocation(const LibraryLocation &location, bool pus
     request.setTransferTimeout(30000);
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, location, pushHistory] {
-                handleLibraryReply(reply, location, pushHistory);
+            [this, reply, location, pushHistory, hasCachedPage, generation] {
+                handleLibraryReply(reply, location, pushHistory && !hasCachedPage, generation);
             });
 }
 
@@ -654,16 +690,20 @@ void ServerClient::forgetServer()
     m_libraryErrorMessage.clear();
     m_libraryHistory.clear();
     m_libraryCache.clear();
+    ++m_libraryGeneration;
     ++m_libraryRowsGeneration;
     m_libraryRowsPending = 0;
     m_libraryRowsStoredAtMs = 0;
+    m_librariesLoading = false;
     resetDiscover();
+    m_discoverCache.clear();
     m_liveGuideChannels.clear();
     m_liveGuideErrorMessage.clear();
     m_liveGuideLoading = false;
     m_liveGuideReady = false;
     QSettings settings;
     settings.remove("connection");
+    clearContentCache();
     emit connectionChanged();
     emit errorMessageChanged();
     emit homeChanged();
@@ -899,6 +939,193 @@ void ServerClient::saveSettings() const
     settings.setValue(kSettingsPlayerName, m_playerName);
 }
 
+QString ServerClient::contentCachePath()
+{
+    const QString directory = QStandardPaths::writableLocation(
+        QStandardPaths::AppLocalDataLocation);
+    return directory.isEmpty()
+        ? QString{}
+        : QDir(directory).filePath(QStringLiteral("content-cache-v1.json"));
+}
+
+void ServerClient::loadContentCache()
+{
+    if (!paired())
+        return;
+
+    QFile file(contentCachePath());
+    if (!file.open(QIODevice::ReadOnly))
+        return;
+
+    QJsonParseError parseError;
+    const QJsonObject cache = QJsonDocument::fromJson(file.readAll(), &parseError).object();
+    if (parseError.error != QJsonParseError::NoError
+        || cache.value(QStringLiteral("version")).toInt() != kContentCacheVersion
+        || normalizedServerUrl(cache.value(QStringLiteral("serverUrl")).toString())
+            != m_serverUrl) {
+        return;
+    }
+
+    const qint64 savedAtMs = cache.value(QStringLiteral("savedAtMs")).toVariant().toLongLong();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (savedAtMs <= 0 || now - savedAtMs > kContentCacheMaxAgeMs)
+        return;
+
+    const QJsonObject home = cache.value(QStringLiteral("home")).toObject();
+    m_continueWatching = home.value(QStringLiteral("continueWatching")).toArray().toVariantList();
+    m_recentlyAdded = home.value(QStringLiteral("recentlyAdded")).toArray().toVariantList();
+    m_liveChannels = home.value(QStringLiteral("liveChannels")).toArray().toVariantList();
+    m_libraries = home.value(QStringLiteral("libraries")).toArray().toVariantList();
+    m_capabilities = home.value(QStringLiteral("capabilities")).toObject().toVariantMap();
+    m_homeHero = home.value(QStringLiteral("hero")).toObject().toVariantMap();
+    for (const QJsonValue &warning : home.value(QStringLiteral("warnings")).toArray()) {
+        const QString message = warning.toString().trimmed();
+        if (!message.isEmpty())
+            m_homeWarnings.append(message);
+    }
+    m_homeReady = home.value(QStringLiteral("ready")).toBool()
+        || !m_continueWatching.isEmpty() || !m_recentlyAdded.isEmpty()
+        || !m_liveChannels.isEmpty() || !m_libraries.isEmpty();
+
+    const QJsonObject library = cache.value(QStringLiteral("library")).toObject();
+    m_libraryRows = library.value(QStringLiteral("rows")).toArray().toVariantList();
+    m_libraryRowsStoredAtMs = library.value(QStringLiteral("rowsStoredAtMs"))
+                                  .toVariant().toLongLong();
+    for (const QJsonValue &value : library.value(QStringLiteral("pages")).toArray()) {
+        const QJsonObject page = value.toObject();
+        const QString key = page.value(QStringLiteral("key")).toString();
+        if (key.isEmpty())
+            continue;
+        m_libraryCache.insert(key, LibraryCacheEntry{
+            page.value(QStringLiteral("items")).toArray().toVariantList(),
+            page.value(QStringLiteral("title")).toString(),
+            page.value(QStringLiteral("storedAtMs")).toVariant().toLongLong(),
+        });
+    }
+
+    const QJsonObject discover = cache.value(QStringLiteral("discover")).toObject();
+    m_discoverCategories = discover.value(QStringLiteral("categories"))
+                               .toArray().toVariantList();
+    for (const QJsonValue &value : discover.value(QStringLiteral("pages")).toArray()) {
+        const QJsonObject page = value.toObject();
+        const QString key = page.value(QStringLiteral("key")).toString();
+        if (key.isEmpty())
+            continue;
+        m_discoverCache.insert(key, DiscoverCacheEntry{
+            page.value(QStringLiteral("items")).toArray().toVariantList(),
+            page.value(QStringLiteral("title")).toString(),
+            page.value(QStringLiteral("mediaType")).toString(),
+            page.value(QStringLiteral("storedAtMs")).toVariant().toLongLong(),
+        });
+    }
+
+    const QJsonObject guide = cache.value(QStringLiteral("guide")).toObject();
+    m_liveGuideChannels = guide.value(QStringLiteral("channels")).toArray().toVariantList();
+    m_liveGuideReady = guide.value(QStringLiteral("ready")).toBool()
+        || !m_liveGuideChannels.isEmpty();
+}
+
+void ServerClient::saveContentCache() const
+{
+    if (!paired())
+        return;
+
+    const QString path = contentCachePath();
+    if (path.isEmpty())
+        return;
+    if (!QDir().mkpath(QFileInfo(path).absolutePath()))
+        return;
+
+    QJsonObject home{
+        {QStringLiteral("ready"), m_homeReady},
+        {QStringLiteral("continueWatching"), QJsonArray::fromVariantList(m_continueWatching)},
+        {QStringLiteral("recentlyAdded"), QJsonArray::fromVariantList(m_recentlyAdded)},
+        {QStringLiteral("liveChannels"), QJsonArray::fromVariantList(m_liveChannels)},
+        {QStringLiteral("libraries"), QJsonArray::fromVariantList(m_libraries)},
+        {QStringLiteral("capabilities"), QJsonObject::fromVariantMap(m_capabilities)},
+        {QStringLiteral("hero"), QJsonObject::fromVariantMap(m_homeHero)},
+        {QStringLiteral("warnings"), QJsonArray::fromStringList(m_homeWarnings)},
+    };
+
+    QVector<QString> libraryKeys;
+    libraryKeys.reserve(m_libraryCache.size());
+    for (auto it = m_libraryCache.cbegin(); it != m_libraryCache.cend(); ++it)
+        libraryKeys.append(it.key());
+    std::sort(libraryKeys.begin(), libraryKeys.end(), [this](const QString &left,
+                                                             const QString &right) {
+        return m_libraryCache.value(left).storedAtMs
+            > m_libraryCache.value(right).storedAtMs;
+    });
+    QJsonArray libraryPages;
+    for (int index = 0;
+         index < libraryKeys.size() && index < kMaximumCachedLibraryPages; ++index) {
+        const QString &key = libraryKeys.at(index);
+        const LibraryCacheEntry page = m_libraryCache.value(key);
+        libraryPages.append(QJsonObject{
+            {QStringLiteral("key"), key},
+            {QStringLiteral("items"), QJsonArray::fromVariantList(page.items)},
+            {QStringLiteral("title"), page.title},
+            {QStringLiteral("storedAtMs"), page.storedAtMs},
+        });
+    }
+
+    QVector<QString> discoverKeys;
+    discoverKeys.reserve(m_discoverCache.size());
+    for (auto it = m_discoverCache.cbegin(); it != m_discoverCache.cend(); ++it)
+        discoverKeys.append(it.key());
+    std::sort(discoverKeys.begin(), discoverKeys.end(), [this](const QString &left,
+                                                               const QString &right) {
+        return m_discoverCache.value(left).storedAtMs
+            > m_discoverCache.value(right).storedAtMs;
+    });
+    QJsonArray discoverPages;
+    for (int index = 0;
+         index < discoverKeys.size() && index < kMaximumCachedDiscoverPages; ++index) {
+        const QString &key = discoverKeys.at(index);
+        const DiscoverCacheEntry page = m_discoverCache.value(key);
+        discoverPages.append(QJsonObject{
+            {QStringLiteral("key"), key},
+            {QStringLiteral("items"), QJsonArray::fromVariantList(page.items)},
+            {QStringLiteral("title"), page.title},
+            {QStringLiteral("mediaType"), page.mediaType},
+            {QStringLiteral("storedAtMs"), page.storedAtMs},
+        });
+    }
+
+    const QJsonObject cache{
+        {QStringLiteral("version"), kContentCacheVersion},
+        {QStringLiteral("serverUrl"), m_serverUrl},
+        {QStringLiteral("savedAtMs"), QDateTime::currentMSecsSinceEpoch()},
+        {QStringLiteral("home"), home},
+        {QStringLiteral("library"), QJsonObject{
+            {QStringLiteral("rows"), QJsonArray::fromVariantList(m_libraryRows)},
+            {QStringLiteral("rowsStoredAtMs"), m_libraryRowsStoredAtMs},
+            {QStringLiteral("pages"), libraryPages},
+        }},
+        {QStringLiteral("discover"), QJsonObject{
+            {QStringLiteral("categories"), QJsonArray::fromVariantList(m_discoverCategories)},
+            {QStringLiteral("pages"), discoverPages},
+        }},
+        {QStringLiteral("guide"), QJsonObject{
+            {QStringLiteral("ready"), m_liveGuideReady},
+            {QStringLiteral("channels"), QJsonArray::fromVariantList(m_liveGuideChannels)},
+        }},
+    };
+
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return;
+    file.write(QJsonDocument(cache).toJson(QJsonDocument::Compact));
+    file.commit();
+}
+
+void ServerClient::clearContentCache() const
+{
+    const QString path = contentCachePath();
+    if (!path.isEmpty())
+        QFile::remove(path);
+}
+
 void ServerClient::setBusy(bool busy)
 {
     if (m_busy == busy)
@@ -970,9 +1197,14 @@ void ServerClient::handlePairReply(QNetworkReply *reply, const QString &baseUrl)
 
     m_serverUrl = baseUrl;
     m_token = token;
+    clearContentCache();
+    resetHome();
     m_libraryCache.clear();
     m_libraryHistory.clear();
     resetDiscover();
+    m_discoverCache.clear();
+    m_liveGuideChannels.clear();
+    m_liveGuideReady = false;
     m_playerName = data.value("player_name").toString().trimmed();
     if (m_playerName.isEmpty())
         m_playerName = QStringLiteral("Tater Tube Player");
@@ -1023,12 +1255,14 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
             setErrorMessage("This player is no longer authorized. Pair it with the server again.");
             return;
         }
-        m_homeReady = false;
-        if (status == 404) {
-            m_homeErrorMessage = QStringLiteral(
-                "Update Tater Tube Server to a version with the Player Home API.");
-        } else {
-            m_homeErrorMessage = responseError(body, "The home screen could not be loaded.");
+        if (!m_homeReady) {
+            if (status == 404) {
+                m_homeErrorMessage = QStringLiteral(
+                    "Update Tater Tube Server to a version with the Player Home API.");
+            } else {
+                m_homeErrorMessage = responseError(
+                    body, "The home screen could not be loaded.");
+            }
         }
         emit homeChanged();
         return;
@@ -1037,8 +1271,8 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     const QJsonObject envelope = QJsonDocument::fromJson(body).object();
     const QJsonObject data = envelope.value("data").toObject();
     if (data.isEmpty()) {
-        m_homeReady = false;
-        m_homeErrorMessage = QStringLiteral("The server returned an empty home response.");
+        if (!m_homeReady)
+            m_homeErrorMessage = QStringLiteral("The server returned an empty home response.");
         emit homeChanged();
         return;
     }
@@ -1052,6 +1286,7 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     if (m_capabilities.contains(QStringLiteral("newznab"))
         && !m_capabilities.value(QStringLiteral("newznab")).toBool()) {
         resetDiscover();
+        m_discoverCache.clear();
         emit discoverChanged();
     }
     m_homeWarnings.clear();
@@ -1069,6 +1304,7 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     m_homeErrorMessage.clear();
     m_homeReady = true;
     setOnline(true);
+    saveContentCache();
     emit connectionChanged();
     emit homeChanged();
     loadLibraryRows(false);
@@ -1076,13 +1312,16 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
 
 void ServerClient::handleLibraryReply(QNetworkReply *reply,
                                       const LibraryLocation &location,
-                                      bool pushHistory)
+                                      bool pushHistory,
+                                      int generation)
 {
     const QByteArray body = reply->readAll();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const bool succeeded = reply->error() == QNetworkReply::NoError
         && status >= 200 && status < 300;
     reply->deleteLater();
+    if (generation != m_libraryGeneration)
+        return;
     m_libraryLoading = false;
 
     if (!succeeded) {
@@ -1091,7 +1330,8 @@ void ServerClient::handleLibraryReply(QNetworkReply *reply,
             setErrorMessage("This player is no longer authorized. Pair it with the server again.");
             return;
         }
-        m_libraryErrorMessage = responseError(body, "This library could not be loaded.");
+        if (m_libraryItems.isEmpty())
+            m_libraryErrorMessage = responseError(body, "This library could not be loaded.");
         emit libraryChanged();
         return;
     }
@@ -1109,6 +1349,7 @@ void ServerClient::handleLibraryReply(QNetworkReply *reply,
     if (pushHistory)
         m_libraryHistory.append(location);
     setOnline(true);
+    saveContentCache();
     emit libraryChanged();
 }
 
@@ -1119,7 +1360,7 @@ void ServerClient::handleLibrariesReply(QNetworkReply *reply)
     const bool succeeded = reply->error() == QNetworkReply::NoError
         && status >= 200 && status < 300;
     reply->deleteLater();
-    m_libraryLoading = false;
+    m_librariesLoading = false;
 
     if (!succeeded) {
         if (status == 401 || status == 403) {
@@ -1127,7 +1368,8 @@ void ServerClient::handleLibrariesReply(QNetworkReply *reply)
             setErrorMessage("This player is no longer authorized. Pair it with the server again.");
             return;
         }
-        m_libraryErrorMessage = responseError(body, "Your libraries could not be loaded.");
+        if (m_libraries.isEmpty())
+            m_libraryErrorMessage = responseError(body, "Your libraries could not be loaded.");
         emit libraryChanged();
         return;
     }
@@ -1146,6 +1388,7 @@ void ServerClient::handleLibrariesReply(QNetworkReply *reply)
     m_libraries = localLibraries;
     m_libraryErrorMessage.clear();
     setOnline(true);
+    saveContentCache();
     emit homeChanged();
     emit libraryChanged();
     loadLibraryRows(true);
@@ -1168,8 +1411,11 @@ void ServerClient::handleDiscoverCatalogReply(QNetworkReply *reply, int generati
             setErrorMessage("This player is no longer authorized. Pair it with the server again.");
             return;
         }
-        m_discoverErrorMessage = responseError(
-            body, QStringLiteral("Discover could not be loaded."));
+        if (m_discoverStage == QStringLiteral("catalog")
+            && m_discoverCategories.isEmpty()) {
+            m_discoverErrorMessage = responseError(
+                body, QStringLiteral("Discover could not be loaded."));
+        }
         emit discoverChanged();
         return;
     }
@@ -1178,19 +1424,23 @@ void ServerClient::handleDiscoverCatalogReply(QNetworkReply *reply, int generati
                                       .value(QStringLiteral("data")).toObject()
                                       .value(QStringLiteral("categories")).toArray();
     m_discoverCategories = discoverCategoriesFromCatalog(categories);
-    if (m_discoverCategories.isEmpty()) {
-        m_discoverErrorMessage = QStringLiteral(
-            "Discover is available when NZB streaming is enabled and configured.");
-    } else {
-        m_discoverErrorMessage.clear();
+    if (m_discoverStage == QStringLiteral("catalog")) {
+        if (m_discoverCategories.isEmpty()) {
+            m_discoverErrorMessage = QStringLiteral(
+                "Discover is available when NZB streaming is enabled and configured.");
+        } else {
+            m_discoverErrorMessage.clear();
+        }
     }
     setOnline(true);
+    saveContentCache();
     emit discoverChanged();
 }
 
 void ServerClient::handleDiscoverFeedReply(QNetworkReply *reply, int generation,
                                            const QString &fallbackTitle,
-                                           const QString &mediaType)
+                                           const QString &mediaType,
+                                           const QString &cacheKey)
 {
     const QByteArray body = reply->readAll();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -1207,8 +1457,10 @@ void ServerClient::handleDiscoverFeedReply(QNetworkReply *reply, int generation,
             setErrorMessage("This player is no longer authorized. Pair it with the server again.");
             return;
         }
-        m_discoverErrorMessage = responseError(
-            body, QStringLiteral("This Discover collection could not be loaded."));
+        if (m_discoverItems.isEmpty()) {
+            m_discoverErrorMessage = responseError(
+                body, QStringLiteral("This Discover collection could not be loaded."));
+        }
         emit discoverChanged();
         return;
     }
@@ -1221,13 +1473,19 @@ void ServerClient::handleDiscoverFeedReply(QNetworkReply *reply, int generation,
         m_discoverTitle = fallbackTitle.isEmpty() ? QStringLiteral("Discover") : fallbackTitle;
     m_discoverMediaType = mediaType;
     m_discoverErrorMessage.clear();
+    m_discoverCache.insert(cacheKey, DiscoverCacheEntry{
+        m_discoverItems, m_discoverTitle, m_discoverMediaType,
+        QDateTime::currentMSecsSinceEpoch(),
+    });
     setOnline(true);
+    saveContentCache();
     emit discoverChanged();
 }
 
 void ServerClient::handleDiscoverSearchReply(QNetworkReply *reply, int generation,
                                              const QString &mediaType,
-                                             const QString &fallbackTitle)
+                                             const QString &fallbackTitle,
+                                             const QString &cacheKey)
 {
     const QByteArray body = reply->readAll();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -1244,8 +1502,10 @@ void ServerClient::handleDiscoverSearchReply(QNetworkReply *reply, int generatio
             setErrorMessage("This player is no longer authorized. Pair it with the server again.");
             return;
         }
-        m_discoverErrorMessage = responseError(
-            body, QStringLiteral("No NZB results could be loaded for this title."));
+        if (m_discoverItems.isEmpty()) {
+            m_discoverErrorMessage = responseError(
+                body, QStringLiteral("No NZB results could be loaded for this title."));
+        }
         emit discoverChanged();
         return;
     }
@@ -1267,7 +1527,12 @@ void ServerClient::handleDiscoverSearchReply(QNetworkReply *reply, int generatio
         m_discoverTitle = fallbackTitle;
     m_discoverMediaType = mediaType;
     m_discoverErrorMessage.clear();
+    m_discoverCache.insert(cacheKey, DiscoverCacheEntry{
+        m_discoverItems, m_discoverTitle, m_discoverMediaType,
+        QDateTime::currentMSecsSinceEpoch(),
+    });
     setOnline(true);
+    saveContentCache();
     emit discoverChanged();
 }
 
@@ -1460,7 +1725,10 @@ void ServerClient::handleLiveGuideReply(QNetworkReply *reply)
             setErrorMessage("This player is no longer authorized. Pair it with the server again.");
             return;
         }
-        m_liveGuideErrorMessage = responseError(body, "The Live TV guide could not be loaded.");
+        if (m_liveGuideChannels.isEmpty()) {
+            m_liveGuideErrorMessage = responseError(
+                body, "The Live TV guide could not be loaded.");
+        }
         emit liveGuideChanged();
         return;
     }
@@ -1512,6 +1780,7 @@ void ServerClient::handleLiveGuideReply(QNetworkReply *reply)
     m_liveGuideErrorMessage.clear();
     m_liveGuideReady = true;
     setOnline(true);
+    saveContentCache();
     emit liveGuideChanged();
 }
 

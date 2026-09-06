@@ -157,6 +157,13 @@ private:
         qint64 storedAtMs = 0;
     };
 
+    struct DiscoverCacheEntry {
+        QVariantList items;
+        QString title;
+        QString mediaType;
+        qint64 storedAtMs = 0;
+    };
+
     struct DiscoverPage {
         QVariantList items;
         QString title;
@@ -167,6 +174,10 @@ private:
 
     void loadSettings();
     void saveSettings() const;
+    void loadContentCache();
+    void saveContentCache() const;
+    void clearContentCache() const;
+    static QString contentCachePath();
     void setBusy(bool busy);
     void setErrorMessage(const QString &message);
     void setOnline(bool online);
@@ -178,16 +189,21 @@ private:
     void loadLibraryLocation(const LibraryLocation &location, bool pushHistory,
                              bool forceNetwork = false);
     void handleLibraryReply(QNetworkReply *reply, const LibraryLocation &location,
-                            bool pushHistory);
+                            bool pushHistory, int generation);
     QString libraryCacheKey(const LibraryLocation &location) const;
+    static QString discoverFeedCacheKey(const QString &catalog);
+    static QString discoverSearchCacheKey(const QString &query,
+                                          const QString &mediaType);
     void handleLibrariesReply(QNetworkReply *reply);
     void handleDiscoverCatalogReply(QNetworkReply *reply, int generation);
     void handleDiscoverFeedReply(QNetworkReply *reply, int generation,
                                  const QString &fallbackTitle,
-                                 const QString &mediaType);
+                                 const QString &mediaType,
+                                 const QString &cacheKey);
     void handleDiscoverSearchReply(QNetworkReply *reply, int generation,
                                    const QString &mediaType,
-                                   const QString &fallbackTitle);
+                                   const QString &fallbackTitle,
+                                   const QString &cacheKey);
     void handleDiscoverPlayReply(QNetworkReply *reply, int generation,
                                  const QVariantMap &sourceItem);
     void handlePlaybackPlanReply(QNetworkReply *reply, int generation);
@@ -223,6 +239,7 @@ private:
     QString m_libraryErrorMessage;
     QVector<LibraryLocation> m_libraryHistory;
     QHash<QString, LibraryCacheEntry> m_libraryCache;
+    int m_libraryGeneration = 0;
     int m_libraryRowsGeneration = 0;
     int m_libraryRowsPending = 0;
     qint64 m_libraryRowsStoredAtMs = 0;
@@ -234,6 +251,7 @@ private:
     QString m_discoverErrorMessage;
     QVariantMap m_discoverPendingItem;
     QVector<DiscoverPage> m_discoverHistory;
+    QHash<QString, DiscoverCacheEntry> m_discoverCache;
     int m_discoverGeneration = 0;
     int m_playbackGeneration = 0;
     bool m_discoverLoading = false;
@@ -244,6 +262,7 @@ private:
     bool m_homeLoading = false;
     bool m_homeReady = false;
     bool m_libraryLoading = false;
+    bool m_librariesLoading = false;
     bool m_liveGuideLoading = false;
     bool m_liveGuideReady = false;
 };

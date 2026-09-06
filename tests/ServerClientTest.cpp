@@ -1,6 +1,9 @@
 #include "ServerClient.h"
 
+#include <QDir>
+#include <QFile>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QtTest>
@@ -105,6 +108,9 @@ void ServerClientTest::loadsVersionedHome()
 
     QCoreApplication::setOrganizationName(QStringLiteral("TaterPlayerTests"));
     QCoreApplication::setApplicationName(QStringLiteral("ServerClientTest"));
+    const QString cachePath = QDir(QStandardPaths::writableLocation(
+        QStandardPaths::AppLocalDataLocation)).filePath(QStringLiteral("content-cache-v1.json"));
+    QFile::remove(cachePath);
     QSettings settings;
     settings.clear();
     settings.setValue(QStringLiteral("connection/serverUrl"),
@@ -160,8 +166,6 @@ void ServerClientTest::loadsVersionedHome()
     client.browseLibrary(client.libraries().last().toMap());
     QCOMPARE(client.libraryDepth(), 1);
     QCOMPARE(client.libraryItems().size(), 2);
-    QCOMPARE(requests.count("GET /api/tater/usenet/items?"), itemRequestCount);
-    client.refreshLibrary();
     QTRY_VERIFY_WITH_TIMEOUT(
         requests.count("GET /api/tater/usenet/items?") > itemRequestCount, 3000);
     QTRY_VERIFY_WITH_TIMEOUT(!client.libraryLoading(), 3000);
@@ -241,7 +245,32 @@ void ServerClientTest::loadsVersionedHome()
     QCOMPARE(channel.value("guideElapsedSeconds").toDouble(), 30.0);
     QVERIFY(channel.value("guideStartedAtMs").toLongLong() > 0);
 
+    const qsizetype cachedItemRequestCount = requests.count("GET /api/tater/usenet/items?");
+    const qsizetype cachedDiscoverRequestCount = requests.count(
+        "GET /api/tater/usenet/discover?");
+    ServerClient cachedClient;
+    QVERIFY(cachedClient.homeReady());
+    QCOMPARE(cachedClient.continueWatching().size(), 1);
+    QCOMPARE(cachedClient.libraryRows().size(), 2);
+    QCOMPARE(cachedClient.discoverCategories().size(), 6);
+    QCOMPARE(cachedClient.liveGuideChannels().size(), 1);
+
+    cachedClient.browseLibrary(allMoviesShelf.value("entry").toMap());
+    QCOMPARE(cachedClient.libraryDepth(), 1);
+    QCOMPARE(cachedClient.libraryItems().size(), 3);
+    QVERIFY(!cachedClient.libraryLoading());
+    QTRY_VERIFY_WITH_TIMEOUT(
+        requests.count("GET /api/tater/usenet/items?") > cachedItemRequestCount, 3000);
+
+    cachedClient.browseDiscover(cachedClient.discoverCategories().first().toMap());
+    QCOMPARE(cachedClient.discoverStage(), QStringLiteral("titles"));
+    QCOMPARE(cachedClient.discoverItems().size(), 1);
+    QVERIFY(!cachedClient.discoverLoading());
+    QTRY_VERIFY_WITH_TIMEOUT(
+        requests.count("GET /api/tater/usenet/discover?") > cachedDiscoverRequestCount, 3000);
+
     settings.clear();
+    QFile::remove(cachePath);
 }
 
 void ServerClientTest::addsPlaybackTranscodeParameters()
