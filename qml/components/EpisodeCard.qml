@@ -7,6 +7,8 @@ FocusScope {
     property string meta: ""
     property string description: ""
     property url artSource: ""
+    property Item glassSource: null
+    property real glassScrollOffset: 0
     property real progress: 0
     property bool current: false
     signal activated()
@@ -33,10 +35,18 @@ FocusScope {
         anchors.fill: parent
         radius: 20
         clip: true
-        color: "#2e16191d"
+        color: "#3d16191d"
         border.width: card.activeFocus ? 3 : (card.current ? 2 : 1)
         border.color: card.activeFocus ? "#ff9349"
                                       : (card.current ? "#b086502e" : "#704b5157")
+
+        FrostedGlass {
+            anchors.fill: parent
+            sourceItem: card.glassSource
+            coordinateItem: card
+            updateToken: card.glassScrollOffset
+            tint: "#3d101418"
+        }
 
         Row {
             anchors.fill: parent

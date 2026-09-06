@@ -7,7 +7,8 @@ FocusScope {
     property string meta: ""
     property string resumeTitle: ""
     property url artSource: ""
-    property url backdropSource: ""
+    property Item glassSource: null
+    property real glassScrollOffset: 0
     property real progress: 0
     property color accent: "#f47a23"
     signal activated()
@@ -34,19 +35,16 @@ FocusScope {
         anchors.fill: parent
         radius: 20
         clip: true
-        color: "#2e16191d"
+        color: "#3d16191d"
         border.width: card.activeFocus ? 3 : 1
         border.color: card.activeFocus ? "#ff9349" : "#704b5157"
 
-        Image {
-            id: backdropArtwork
+        FrostedGlass {
             anchors.fill: parent
-            source: card.backdropSource
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            cache: true
-            visible: status === Image.Ready
-            opacity: 0.28
+            sourceItem: card.glassSource
+            coordinateItem: card
+            updateToken: card.glassScrollOffset
+            tint: "#3d101418"
         }
 
         Rectangle {

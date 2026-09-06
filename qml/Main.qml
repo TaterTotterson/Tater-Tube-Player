@@ -2222,9 +2222,18 @@ ApplicationWindow {
                             height: browseStage === "seasons" ? 290 : 224
                             radius: 26
                             clip: true
-                            color: "#2e16191d"
+                            color: "#3d16191d"
                             border.width: 1
                             border.color: "#806b584a"
+
+                            FrostedGlass {
+                                anchors.fill: parent
+                                sourceItem: libraryScreenArtwork.visible
+                                            ? libraryScreenArtwork : null
+                                coordinateItem: tvCollectionHero
+                                updateToken: sectionScroller.contentY
+                                tint: "#3d101418"
+                            }
 
                             Rectangle {
                                 anchors.fill: parent
@@ -2413,9 +2422,11 @@ ApplicationWindow {
                                     artSource: media && media.seasonPoster
                                                ? media.seasonPoster
                                                : (media && media.poster ? media.poster : "")
-                                    backdropSource: media && media.backdrop ? media.backdrop : ""
                                     progress: root.progressValue(media ? media.progressPercent : 0)
                                     accent: root.cardAccent(index)
+                                    glassSource: libraryScreenArtwork.visible
+                                                 ? libraryScreenArtwork : null
+                                    glassScrollOffset: sectionScroller.contentY
                                     onActivated: root.openLibraryEntry(media)
                                 }
                             }
@@ -2449,6 +2460,9 @@ ApplicationWindow {
                                     progress: root.progressValue(media ? media.progressPercent : 0)
                                     current: !!resumeMedia && media
                                              && String(resumeMedia.path || "") === String(media.path || "")
+                                    glassSource: libraryScreenArtwork.visible
+                                                 ? libraryScreenArtwork : null
+                                    glassScrollOffset: sectionScroller.contentY
                                     onActivated: root.openLibraryEntry(media)
                                 }
                             }

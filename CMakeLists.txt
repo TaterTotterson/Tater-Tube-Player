@@ -45,6 +45,7 @@ qt_add_qml_module(tater-tube-player
         qml/Main.qml
         qml/components/FocusButton.qml
         qml/components/EpisodeCard.qml
+        qml/components/FrostedGlass.qml
         qml/components/GuideProgramCard.qml
         qml/components/MediaCard.qml
         qml/components/PosterCard.qml
