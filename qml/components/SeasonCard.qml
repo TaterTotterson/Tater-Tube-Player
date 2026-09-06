@@ -10,7 +10,6 @@ FocusScope {
     property Item glassSource: null
     property real glassScrollOffset: 0
     property real progress: 0
-    property color accent: "#f47a23"
     signal activated()
 
     implicitWidth: 340
@@ -36,33 +35,29 @@ FocusScope {
         radius: 20
         clip: true
         color: "#3d16191d"
-        border.width: card.activeFocus ? 3 : 1
-        border.color: card.activeFocus ? "#ff9349" : "#704b5157"
+        border.width: card.activeFocus ? 3 : 0
+        border.color: "#ff9349"
+        antialiasing: true
 
         FrostedGlass {
             anchors.fill: parent
             sourceItem: card.glassSource
             coordinateItem: card
             updateToken: card.glassScrollOffset
-            tint: "#3d101418"
+            cornerRadius: 20
+            tint: "#42101418"
         }
 
         Rectangle {
             anchors.fill: parent
+            radius: 20
+            antialiasing: true
             gradient: Gradient {
                 orientation: Gradient.Horizontal
                 GradientStop { position: 0.0; color: "#5c0c0e11" }
                 GradientStop { position: 0.62; color: "#38171a1e" }
                 GradientStop { position: 1.0; color: "#24171412" }
             }
-        }
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            width: 5
-            color: card.accent
         }
 
         Column {

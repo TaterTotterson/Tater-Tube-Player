@@ -1936,24 +1936,30 @@ ApplicationWindow {
             GradientStop { position: 1.0; color: "#0c0e10" }
         }
 
-        Image {
-            id: libraryScreenArtwork
+        Item {
+            id: libraryScreenBackdrop
             anchors.fill: parent
-            source: sectionPage.heldLibraryArtwork
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            cache: true
-            visible: sectionPage.showLibraryArtwork && status === Image.Ready
-            opacity: 0.68
-        }
+            visible: sectionPage.showLibraryArtwork
+                     && libraryScreenArtwork.status === Image.Ready
 
-        Rectangle {
-            anchors.fill: parent
-            visible: libraryScreenArtwork.visible
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#730a0c0f" }
-                GradientStop { position: 0.52; color: "#a80a0c0f" }
-                GradientStop { position: 1.0; color: "#ed0a0c0f" }
+            Image {
+                id: libraryScreenArtwork
+                anchors.fill: parent
+                source: sectionPage.heldLibraryArtwork
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                cache: true
+                visible: sectionPage.showLibraryArtwork && status === Image.Ready
+                opacity: 0.68
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: "#730a0c0f" }
+                    GradientStop { position: 0.52; color: "#a80a0c0f" }
+                    GradientStop { position: 1.0; color: "#ed0a0c0f" }
+                }
             }
         }
 
@@ -2223,34 +2229,29 @@ ApplicationWindow {
                             radius: 26
                             clip: true
                             color: "#3d16191d"
-                            border.width: 1
-                            border.color: "#806b584a"
+                            border.width: 0
+                            antialiasing: true
 
                             FrostedGlass {
                                 anchors.fill: parent
                                 sourceItem: libraryScreenArtwork.visible
-                                            ? libraryScreenArtwork : null
+                                            ? libraryScreenBackdrop : null
                                 coordinateItem: tvCollectionHero
                                 updateToken: sectionScroller.contentY
-                                tint: "#3d101418"
+                                cornerRadius: tvCollectionHero.radius
+                                tint: "#42101418"
                             }
 
                             Rectangle {
                                 anchors.fill: parent
+                                radius: tvCollectionHero.radius
+                                antialiasing: true
                                 gradient: Gradient {
                                     orientation: Gradient.Horizontal
                                     GradientStop { position: 0.0; color: "#5c0c0e11" }
                                     GradientStop { position: 0.64; color: "#2e121417" }
                                     GradientStop { position: 1.0; color: "#14121417" }
                                 }
-                            }
-
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                width: 6
-                                color: root.orange
                             }
 
                             Column {
@@ -2423,9 +2424,8 @@ ApplicationWindow {
                                                ? media.seasonPoster
                                                : (media && media.poster ? media.poster : "")
                                     progress: root.progressValue(media ? media.progressPercent : 0)
-                                    accent: root.cardAccent(index)
                                     glassSource: libraryScreenArtwork.visible
-                                                 ? libraryScreenArtwork : null
+                                                 ? libraryScreenBackdrop : null
                                     glassScrollOffset: sectionScroller.contentY
                                     onActivated: root.openLibraryEntry(media)
                                 }
@@ -2461,7 +2461,7 @@ ApplicationWindow {
                                     current: !!resumeMedia && media
                                              && String(resumeMedia.path || "") === String(media.path || "")
                                     glassSource: libraryScreenArtwork.visible
-                                                 ? libraryScreenArtwork : null
+                                                 ? libraryScreenBackdrop : null
                                     glassScrollOffset: sectionScroller.contentY
                                     onActivated: root.openLibraryEntry(media)
                                 }

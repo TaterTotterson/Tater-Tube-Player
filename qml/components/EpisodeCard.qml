@@ -36,16 +36,18 @@ FocusScope {
         radius: 20
         clip: true
         color: "#3d16191d"
-        border.width: card.activeFocus ? 3 : (card.current ? 2 : 1)
+        border.width: card.activeFocus ? 3 : (card.current ? 2 : 0)
         border.color: card.activeFocus ? "#ff9349"
-                                      : (card.current ? "#b086502e" : "#704b5157")
+                                      : "#b086502e"
+        antialiasing: true
 
         FrostedGlass {
             anchors.fill: parent
             sourceItem: card.glassSource
             coordinateItem: card
             updateToken: card.glassScrollOffset
-            tint: "#3d101418"
+            cornerRadius: 20
+            tint: "#42101418"
         }
 
         Row {
