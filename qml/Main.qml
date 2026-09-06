@@ -681,7 +681,7 @@ ApplicationWindow {
             if (name === "home")
                 heroWatchLive.forceActiveFocus()
             else
-                sectionBack.forceActiveFocus()
+                root.focusFirstSectionControl()
         })
     }
 
@@ -718,7 +718,7 @@ ApplicationWindow {
                 else if (currentPage === "home")
                     heroWatchLive.forceActiveFocus()
                 else
-                    sectionBack.forceActiveFocus()
+                    root.focusFirstSectionControl()
             })
         }
         return true
@@ -1020,7 +1020,7 @@ ApplicationWindow {
         selectedItem = item
         selectedKind = kind || mediaLabel(item)
         detailsOpen = true
-        Qt.callLater(function() { detailsBack.forceActiveFocus() })
+        Qt.callLater(function() { detailsPlay.forceActiveFocus() })
     }
 
     function closeDetails() {
@@ -1121,6 +1121,12 @@ ApplicationWindow {
     }
 
     function focusFirstSectionControl() {
+        if (currentPage === "library" && serverClient.libraryDepth === 0
+                && libraryAllMovies.visible && libraryAllMovies.enabled) {
+            libraryAllMovies.forceActiveFocus()
+            revealFocusedItem(libraryAllMovies)
+            return
+        }
         if (currentPage === "library" && serverClient.libraryDepth > 0
                 && tvContinueButton.visible && tvContinueButton.enabled) {
             tvContinueButton.forceActiveFocus()
@@ -1146,14 +1152,6 @@ ApplicationWindow {
         if (currentIndex < 0) {
             candidates[0].forceActiveFocus()
             revealFocusedItem(candidates[0])
-            return true
-        }
-
-        if (vertical > 0 && current === sectionBack
-                && currentPage === "library" && serverClient.libraryDepth === 0
-                && libraryAllMovies.visible && libraryAllMovies.enabled) {
-            libraryAllMovies.forceActiveFocus()
-            revealFocusedItem(libraryAllMovies)
             return true
         }
 
@@ -1917,15 +1915,6 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.topMargin: 34
                 spacing: 28
-
-                FocusButton {
-                    id: sectionBack
-                    width: 126
-                    text: "‹  Back"
-                    compact: true
-                    soundRole: "back"
-                    onClicked: root.goBack()
-                }
 
                 Column {
                     width: parent.width
@@ -3464,15 +3453,7 @@ ApplicationWindow {
                     spacing: 12
 
                     FocusButton {
-                        id: detailsBack
-                        width: 160
-                        text: "Back"
-                        primary: true
-                        soundRole: "back"
-                        onClicked: root.closeDetails()
-                    }
-
-                    FocusButton {
+                        id: detailsPlay
                         width: 210
                         text: root.selectedKind.indexOf("CHANNEL") === 0
                               ? "▶  Watch live" : "▶  Play"
@@ -3619,17 +3600,9 @@ ApplicationWindow {
                 anchors.topMargin: 24
                 spacing: 18
 
-                FocusButton {
-                    width: 116
-                    text: "‹  Back"
-                    compact: true
-                    soundRole: "back"
-                    onClicked: root.closePlayback()
-                }
-
                 Column {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width - 310
+                    width: Math.max(200, parent.width - qualityPill.width - parent.spacing)
                     spacing: 4
 
                     Text {
@@ -3653,6 +3626,7 @@ ApplicationWindow {
                 }
 
                 Rectangle {
+                    id: qualityPill
                     anchors.verticalCenter: parent.verticalCenter
                     width: qualityLabel.implicitWidth + 24
                     height: 34

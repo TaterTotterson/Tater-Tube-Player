@@ -23,8 +23,8 @@ reimplemented against documented HTTP contracts and fixtures.
 
 - Pair a player and retain its token; move it into platform-secure storage
   before release.
-- Keep full navigation on Home, use contextual Back controls on secondary
-  screens, and expose an edge-triggered side rail for controller navigation.
+- Keep full navigation on Home, use the remote/controller Back action on
+  secondary screens, and expose an edge-triggered side rail for navigation.
 - Render home, library, details, search, guide, and player surfaces.
 - Report playback state and Tater viewing events.
 - Advertise device playback capabilities.
