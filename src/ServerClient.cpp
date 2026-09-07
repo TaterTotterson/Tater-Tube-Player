@@ -1950,6 +1950,7 @@ void ServerClient::handleLibraryReply(QNetworkReply *reply,
     reply->deleteLater();
     if (generation != m_libraryGeneration)
         return;
+    const bool wasLoading = m_libraryLoading;
     m_libraryLoading = false;
 
     if (!succeeded) {
@@ -1965,11 +1966,26 @@ void ServerClient::handleLibraryReply(QNetworkReply *reply,
     }
 
     const QJsonObject data = QJsonDocument::fromJson(body).object().value("data").toObject();
-    m_libraryItems = data.value("items").toArray().toVariantList();
-    sortLibrarySeasons(m_libraryItems);
-    m_libraryTitle = data.value("title").toString().trimmed();
-    if (m_libraryTitle.isEmpty())
-        m_libraryTitle = location.title.isEmpty() ? QStringLiteral("Library") : location.title;
+    QVariantList refreshedItems = data.value("items").toArray().toVariantList();
+    sortLibrarySeasons(refreshedItems);
+    QString refreshedTitle = data.value("title").toString().trimmed();
+    if (refreshedTitle.isEmpty())
+        refreshedTitle = location.title.isEmpty() ? QStringLiteral("Library") : location.title;
+
+    // A cached page is already on screen while this request refreshes it. Avoid
+    // resetting the QML model (and all of its artwork delegates) when the server
+    // returned the exact same collection.
+    if (!wasLoading && refreshedItems == m_libraryItems
+        && refreshedTitle == m_libraryTitle) {
+        m_libraryErrorMessage.clear();
+        if (pushHistory)
+            m_libraryHistory.append(location);
+        setOnline(true);
+        return;
+    }
+
+    m_libraryItems = refreshedItems;
+    m_libraryTitle = refreshedTitle;
     m_libraryErrorMessage.clear();
     m_libraryCache.insert(libraryCacheKey(location), LibraryCacheEntry{
         m_libraryItems, m_libraryTitle, QDateTime::currentMSecsSinceEpoch(),

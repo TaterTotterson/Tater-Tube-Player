@@ -390,12 +390,18 @@ void ServerClientTest::loadsVersionedHome()
     QCOMPARE(cachedClient.recommendations().size(), 1);
     QCOMPARE(cachedClient.liveGuideChannels().size(), 1);
 
+    QTest::qWait(150);
+    QSignalSpy cachedLibraryChanges(&cachedClient, &ServerClient::libraryChanged);
     cachedClient.browseLibrary(allMoviesShelf.value("entry").toMap());
     QCOMPARE(cachedClient.libraryDepth(), 1);
     QCOMPARE(cachedClient.libraryItems().size(), 3);
     QVERIFY(!cachedClient.libraryLoading());
+    QCOMPARE(cachedLibraryChanges.count(), 1);
     QTRY_VERIFY_WITH_TIMEOUT(
         requests.count("GET /api/tater/usenet/items?") > cachedItemRequestCount, 3000);
+    QTest::qWait(100);
+    QCOMPARE(cachedClient.libraryDepth(), 1);
+    QCOMPARE(cachedLibraryChanges.count(), 1);
 
     cachedClient.browseDiscover(cachedClient.discoverCategories().first().toMap());
     QCOMPARE(cachedClient.discoverStage(), QStringLiteral("titles"));

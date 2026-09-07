@@ -39,8 +39,8 @@ with:
   `/api/v1/player/home`;
 - full-screen direct playback for local movies and episodes;
 - server-backed Library browsing across local collections, discovery filters,
-  folders, shows, and seasons, with complete collections materialized in small
-  batches and viewport-prioritized artwork loading;
+  folders, shows, and seasons, with virtualized complete collections and
+  viewport-prioritized artwork loading;
 - a refreshable Live TV lineup with channel now/next information and one-click
   tuning;
 - capability-aware playback planning for the active screen and audio output;

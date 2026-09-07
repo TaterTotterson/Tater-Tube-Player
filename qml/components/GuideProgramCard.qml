@@ -59,6 +59,8 @@ FocusScope {
             anchors.margins: card.logoArtwork ? 14 : 0
             source: card.fallbackArtworkActive || String(card.artSource).length === 0
                     ? card.fallbackArtSource : card.artSource
+            sourceSize: Qt.size(Math.max(600, Math.ceil(card.width * 2)),
+                                Math.max(320, Math.ceil(card.height * 2)))
             fillMode: card.logoArtwork ? Image.PreserveAspectFit : Image.PreserveAspectCrop
             asynchronous: true
             cache: true

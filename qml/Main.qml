@@ -464,8 +464,14 @@ ApplicationWindow {
                           || String(row.entry.type || "").toLowerCase() === "continue")) {
             libraryVisibleLimit = initialLibraryCardBatch
             serverClient.browseLibrary(row.entry)
-            sectionScroller.contentY = 0
+            resetLibraryScrollPosition()
         }
+    }
+
+    function resetLibraryScrollPosition() {
+        sectionScroller.contentY = 0
+        libraryGridView.currentIndex = 0
+        libraryGridView.positionViewAtBeginning()
     }
 
     function libraryItemMeta(item) {
@@ -614,7 +620,7 @@ ApplicationWindow {
             if (currentPage !== "library")
                 showPage("library")
             serverClient.browseLibraryItem(item)
-            sectionScroller.contentY = 0
+            resetLibraryScrollPosition()
         } else {
             openDetails(item, mediaLabel(item))
         }
@@ -1551,7 +1557,7 @@ ApplicationWindow {
                    && serverClient.libraryDepth > 0) {
             libraryVisibleLimit = initialLibraryCardBatch
             serverClient.browseLibraryBack()
-            sectionScroller.contentY = 0
+            resetLibraryScrollPosition()
         } else if (currentPage === "discover" && !demoMode
                    && serverClient.discoverStage !== "catalog") {
             discoverVisibleLimit = 60
@@ -1582,6 +1588,8 @@ ApplicationWindow {
             appendFocusable(detailsPanel, result)
         } else if (sideMenuOpen) {
             appendFocusable(sideMenu, result)
+        } else if (libraryVirtualBrowser.visible) {
+            appendFocusable(libraryGridView.contentItem, result)
         } else {
             appendFocusable(currentPage === "home" ? page.contentItem
                                                     : sectionScroller.contentItem, result)
@@ -1612,6 +1620,14 @@ ApplicationWindow {
     }
 
     function revealFocusedItem(item) {
+        if (libraryVirtualBrowser.visible
+                && isDescendant(item, libraryGridView.contentItem)) {
+            if (typeof item.index === "number") {
+                libraryGridView.currentIndex = item.index
+                libraryGridView.positionViewAtIndex(item.index, GridView.Contain)
+            }
+            return
+        }
         var scroller = currentPage === "home" ? page : sectionScroller
         if (!isDescendant(item, scroller.contentItem))
             return
@@ -1670,21 +1686,16 @@ ApplicationWindow {
             return
 
         var current = root.activeFocusItem
-        if (currentPage === "library" && libraryGrid.visible
-                && current && isDescendant(current, libraryGrid)
-                && typeof current.index === "number") {
-            var rows = Math.max(1, Math.floor((sectionScroller.height - 100)
-                                               / (current.height + libraryGrid.rowSpacing)))
+        if (libraryVirtualBrowser.visible) {
+            var currentIndex = current && isDescendant(current, libraryGridView.contentItem)
+                    && typeof current.index === "number"
+                    ? current.index : Math.max(0, libraryGridView.currentIndex)
+            var rows = Math.max(1, Math.floor(libraryGridView.height
+                                               / libraryGridView.cellHeight))
             var targetIndex = Math.max(0, Math.min(root.displayedLibraryItems().length - 1,
-                                      current.index + direction * rows * libraryGrid.columns))
-            libraryVisibleLimit = Math.max(libraryVisibleLimit, targetIndex + 1)
-            Qt.callLater(function() {
-                var target = libraryGridRepeater.itemAt(targetIndex)
-                if (target) {
-                    target.forceActiveFocus()
-                    root.revealFocusedItem(target)
-                }
-            })
+                                      currentIndex + direction * rows
+                                      * libraryGridView.columnCount))
+            focusLibraryGridIndex(targetIndex, GridView.Beginning)
             return
         }
 
@@ -1706,6 +1717,10 @@ ApplicationWindow {
             revealFocusedItem(libraryAllMovies)
             return
         }
+        if (libraryVirtualBrowser.visible) {
+            focusLibraryGridIndex(0, GridView.Beginning)
+            return
+        }
         if (currentPage === "library" && serverClient.libraryDepth > 0
                 && tvContinueButton.visible && tvContinueButton.enabled) {
             tvContinueButton.forceActiveFocus()
@@ -1723,6 +1738,36 @@ ApplicationWindow {
     }
 
     function moveFocus(horizontal, vertical) {
+        if (libraryVirtualBrowser.visible && !sideMenuOpen && !detailsOpen
+                && !pairingOverlay.visible) {
+            var gridCurrent = root.activeFocusItem
+            if (!gridCurrent || !isDescendant(gridCurrent, libraryGridView.contentItem)
+                    || typeof gridCurrent.index !== "number")
+                return focusLibraryGridIndex(Math.max(0, libraryGridView.currentIndex))
+
+            var targetIndex = gridCurrent.index
+            var column = targetIndex % libraryGridView.columnCount
+            if (horizontal < 0) {
+                if (column === 0)
+                    return false
+                --targetIndex
+            } else if (horizontal > 0) {
+                if (column >= libraryGridView.columnCount - 1
+                        || targetIndex + 1 >= libraryGridView.count)
+                    return false
+                ++targetIndex
+            } else if (vertical < 0) {
+                targetIndex -= libraryGridView.columnCount
+                if (targetIndex < 0)
+                    return false
+            } else if (vertical > 0) {
+                targetIndex += libraryGridView.columnCount
+                if (targetIndex >= libraryGridView.count)
+                    return false
+            }
+            return focusLibraryGridIndex(targetIndex)
+        }
+
         var candidates = focusableItems()
         if (candidates.length === 0)
             return false
@@ -1772,6 +1817,22 @@ ApplicationWindow {
             return true
         }
         return false
+    }
+
+    function focusLibraryGridIndex(index, positioningMode) {
+        if (!libraryVirtualBrowser.visible || libraryGridView.count === 0)
+            return false
+        var targetIndex = Math.max(0, Math.min(libraryGridView.count - 1, index))
+        libraryGridView.currentIndex = targetIndex
+        libraryGridView.positionViewAtIndex(
+                    targetIndex,
+                    positioningMode === undefined ? GridView.Contain : positioningMode)
+        Qt.callLater(function() {
+            var target = libraryGridView.itemAtIndex(targetIndex)
+            if (target)
+                target.forceActiveFocus()
+        })
+        return true
     }
 
     function navigateLeft() {
@@ -1833,6 +1894,8 @@ ApplicationWindow {
         repeat: true
         running: root.currentPage === "library"
                  && !serverClient.libraryLoading
+                 && (root.libraryBrowseStage() === "seasons"
+                     || root.libraryBrowseStage() === "episodes")
                  && root.libraryVisibleLimit < root.displayedLibraryItems().length
         onTriggered: root.libraryVisibleLimit = Math.min(
                          root.displayedLibraryItems().length,
@@ -1877,9 +1940,12 @@ ApplicationWindow {
         function onLibraryChanged() {
             sectionPage.syncLibraryArtwork()
             var current = root.activeFocusItem
+            var currentOnLibraryPage = current
+                    && (root.isDescendant(current, sectionScroller.contentItem)
+                        || root.isDescendant(current, libraryGridView.contentItem))
             if (root.currentPage === "library" && !serverClient.libraryLoading
                     && (!current || !root.isItemShown(current)
-                        || !root.isDescendant(current, sectionScroller.contentItem))) {
+                        || !currentOnLibraryPage)) {
                 Qt.callLater(function() { root.focusFirstSectionControl() })
             }
         }
@@ -2607,6 +2673,7 @@ ApplicationWindow {
         Flickable {
             id: sectionScroller
             anchors.fill: parent
+            visible: !libraryVirtualBrowser.visible
             contentHeight: sectionColumn.implicitHeight + 72
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -2979,46 +3046,6 @@ ApplicationWindow {
                             actionText: serverClient.libraryLoading
                                         ? "LOADING…"
                                         : root.displayedLibraryItems().length + " ITEMS"
-                        }
-
-                        Grid {
-                            id: libraryGrid
-                            width: parent.width
-                            visible: !serverClient.libraryLoading
-                                     && serverClient.libraryErrorMessage.length === 0
-                                     && root.libraryBrowseStage() !== "seasons"
-                                     && root.libraryBrowseStage() !== "episodes"
-                            columns: Math.max(1, Math.floor(width / 205))
-                            columnSpacing: 15
-                            rowSpacing: 18
-
-                            Repeater {
-                                id: libraryGridRepeater
-                                model: Math.min(root.libraryVisibleLimit,
-                                                root.displayedLibraryItems().length)
-
-                                PosterCard {
-                                    required property int index
-                                    property var media: root.displayedLibraryItems()[index]
-                                    width: (libraryGrid.width
-                                            - (libraryGrid.columns - 1) * libraryGrid.columnSpacing)
-                                           / libraryGrid.columns
-                                    title: root.itemTitle(media, "Untitled")
-                                    meta: String(media && media.mediaType || "").toLowerCase() === "show"
-                                          ? root.showCardMeta(media) : root.libraryItemMeta(media)
-                                    number: media && media.streamUrl
-                                            ? (index < 9 ? "0" + (index + 1) : String(index + 1))
-                                            : "›"
-                                    badge: media && media.resumeTitle ? "IN PROGRESS" : ""
-                                    artSource: media && media.poster ? media.poster : ""
-                                    artworkViewport: sectionScroller
-                                    artworkScrollOffset: sectionScroller.contentY
-                                    artworkPreloadMargin: sectionScroller.height * 0.9
-                                    progress: root.progressValue(media ? media.progressPercent : 0)
-                                    accent: root.cardAccent(index)
-                                    onActivated: root.openLibraryEntry(media)
-                                }
-                            }
                         }
 
                         Grid {
@@ -3873,6 +3900,86 @@ ApplicationWindow {
                             font.pixelSize: 17
                         }
                     }
+                }
+            }
+        }
+
+        Item {
+            id: libraryVirtualBrowser
+            anchors.fill: parent
+            anchors.leftMargin: 46
+            anchors.rightMargin: 46
+            anchors.topMargin: 34
+            anchors.bottomMargin: 30
+            visible: root.currentPage === "library" && !demoMode
+                     && serverClient.libraryDepth > 0
+                     && !serverClient.libraryLoading
+                     && serverClient.libraryErrorMessage.length === 0
+                     && root.displayedLibraryItems().length > 0
+                     && root.libraryBrowseStage() !== "seasons"
+                     && root.libraryBrowseStage() !== "episodes"
+
+            SectionTitle {
+                id: libraryVirtualHeader
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                title: serverClient.libraryTitle
+                actionText: libraryGridView.count + " ITEMS"
+            }
+
+            GridView {
+                id: libraryGridView
+                readonly property int columnCount:
+                    Math.max(1, Math.floor(width / 205))
+                readonly property real cardGap: 15
+                readonly property real cardHeight: 284
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: libraryVirtualHeader.bottom
+                anchors.topMargin: 14
+                anchors.bottom: parent.bottom
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: libraryVirtualBrowser.visible
+                       ? root.displayedLibraryItems() : []
+                cellWidth: width / columnCount
+                cellHeight: cardHeight + 18
+                cacheBuffer: Math.max(0, height * 1.1)
+                reuseItems: true
+
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    width: 4
+                    background: Item {}
+                    contentItem: Rectangle { radius: 2; color: "#70575c61" }
+                }
+
+                delegate: PosterCard {
+                    required property int index
+                    required property var modelData
+                    property var media: modelData
+                    width: libraryGridView.cellWidth - libraryGridView.cardGap
+                    height: libraryGridView.cardHeight
+                    title: root.itemTitle(media, "Untitled")
+                    meta: String(media && media.mediaType || "").toLowerCase() === "show"
+                          ? root.showCardMeta(media) : root.libraryItemMeta(media)
+                    number: media && media.streamUrl
+                            ? (index < 9 ? "0" + (index + 1) : String(index + 1))
+                            : "›"
+                    badge: media && media.resumeTitle ? "IN PROGRESS" : ""
+                    artSource: media && media.poster ? media.poster : ""
+                    artworkViewport: libraryGridView
+                    artworkScrollOffset: libraryGridView.contentY
+                    artworkPreloadMargin: libraryGridView.height * 0.8
+                    progress: root.progressValue(media ? media.progressPercent : 0)
+                    accent: root.cardAccent(index)
+                    onActiveFocusChanged: {
+                        if (activeFocus)
+                            libraryGridView.currentIndex = index
+                    }
+                    onActivated: root.openLibraryEntry(media)
                 }
             }
         }

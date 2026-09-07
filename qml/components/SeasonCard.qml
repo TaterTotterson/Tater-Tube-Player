@@ -111,6 +111,8 @@ FocusScope {
                 id: seasonArtwork
                 anchors.fill: parent
                 source: card.artSource
+                sourceSize: Qt.size(Math.max(216, Math.ceil(parent.width * 2)),
+                                    Math.max(368, Math.ceil(parent.height * 2)))
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 cache: true

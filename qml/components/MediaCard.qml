@@ -55,6 +55,8 @@ FocusScope {
             anchors.fill: parent
             source: card.fallbackArtworkActive || String(card.artSource).length === 0
                     ? card.fallbackArtSource : card.artSource
+            sourceSize: Qt.size(Math.max(600, Math.ceil(card.width * 2)),
+                                Math.max(356, Math.ceil(card.height * 2)))
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
