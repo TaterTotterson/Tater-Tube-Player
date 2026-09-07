@@ -51,7 +51,9 @@ ApplicationWindow {
     property bool playbackEnded: false
     property bool playbackHasVideoFrame: false
     readonly property bool compatiblePlayback: compatiblePlaybackMode === true
-    property int libraryVisibleLimit: 60
+    readonly property int initialLibraryCardBatch: 48
+    readonly property int libraryMaterializeBatch: 24
+    property int libraryVisibleLimit: initialLibraryCardBatch
     property int discoverVisibleLimit: 60
     property bool sideMenuOpen: false
     property var sideMenuReturnFocus: null
@@ -460,7 +462,7 @@ ApplicationWindow {
         }
         if (row.entry && (row.entry.id || row.entry.categoryId
                           || String(row.entry.type || "").toLowerCase() === "continue")) {
-            libraryVisibleLimit = 60
+            libraryVisibleLimit = initialLibraryCardBatch
             serverClient.browseLibrary(row.entry)
             sectionScroller.contentY = 0
         }
@@ -608,7 +610,7 @@ ApplicationWindow {
         if (item.streamUrl) {
             openDetails(item, mediaLabel(item))
         } else if (!demoMode && (item.categoryId || item.path)) {
-            libraryVisibleLimit = 60
+            libraryVisibleLimit = initialLibraryCardBatch
             if (currentPage !== "library")
                 showPage("library")
             serverClient.browseLibraryItem(item)
@@ -1547,7 +1549,7 @@ ApplicationWindow {
             closeDetails()
         } else if (currentPage === "library" && !demoMode
                    && serverClient.libraryDepth > 0) {
-            libraryVisibleLimit = 60
+            libraryVisibleLimit = initialLibraryCardBatch
             serverClient.browseLibraryBack()
             sectionScroller.contentY = 0
         } else if (currentPage === "discover" && !demoMode
@@ -1634,6 +1636,67 @@ ApplicationWindow {
         else if (point.y + item.height > lower)
             scroller.contentY = Math.min(scroller.contentHeight - scroller.height,
                                          point.y + item.height - scroller.height + 30)
+    }
+
+    function focusNearestVisibleItem(scroller, preferredX) {
+        var candidates = focusableItems()
+        var winner = null
+        var winnerScore = Number.MAX_VALUE
+        for (var i = 0; i < candidates.length; ++i) {
+            var candidate = candidates[i]
+            if (!isDescendant(candidate, scroller.contentItem))
+                continue
+            var point = candidate.mapToItem(scroller,
+                                            candidate.width / 2,
+                                            candidate.height / 2)
+            if (point.y < 34 || point.y > scroller.height - 34)
+                continue
+            var score = Math.abs(point.x - preferredX)
+                    + Math.abs(point.y - scroller.height * 0.5) * 1.4
+            if (score < winnerScore) {
+                winner = candidate
+                winnerScore = score
+            }
+        }
+        if (winner) {
+            winner.forceActiveFocus()
+            revealFocusedItem(winner)
+        }
+    }
+
+    function jumpPage(direction) {
+        if (direction === 0 || playbackOpen || detailsOpen
+                || sideMenuOpen || pairingOverlay.visible)
+            return
+
+        var current = root.activeFocusItem
+        if (currentPage === "library" && libraryGrid.visible
+                && current && isDescendant(current, libraryGrid)
+                && typeof current.index === "number") {
+            var rows = Math.max(1, Math.floor((sectionScroller.height - 100)
+                                               / (current.height + libraryGrid.rowSpacing)))
+            var targetIndex = Math.max(0, Math.min(root.displayedLibraryItems().length - 1,
+                                      current.index + direction * rows * libraryGrid.columns))
+            libraryVisibleLimit = Math.max(libraryVisibleLimit, targetIndex + 1)
+            Qt.callLater(function() {
+                var target = libraryGridRepeater.itemAt(targetIndex)
+                if (target) {
+                    target.forceActiveFocus()
+                    root.revealFocusedItem(target)
+                }
+            })
+            return
+        }
+
+        var scroller = currentPage === "home" ? page : sectionScroller
+        var preferredX = scroller.width * 0.5
+        if (current && isDescendant(current, scroller.contentItem))
+            preferredX = current.mapToItem(scroller, current.width / 2, 0).x
+        var maximum = Math.max(0, scroller.contentHeight - scroller.height)
+        var distance = Math.max(240, scroller.height - 130)
+        scroller.contentY = Math.max(0, Math.min(maximum,
+                                   scroller.contentY + direction * distance))
+        Qt.callLater(function() { root.focusNearestVisibleItem(scroller, preferredX) })
     }
 
     function focusFirstSectionControl() {
@@ -1765,6 +1828,17 @@ ApplicationWindow {
         onTriggered: root.greetingClockMs = Date.now()
     }
 
+    Timer {
+        interval: 24
+        repeat: true
+        running: root.currentPage === "library"
+                 && !serverClient.libraryLoading
+                 && root.libraryVisibleLimit < root.displayedLibraryItems().length
+        onTriggered: root.libraryVisibleLimit = Math.min(
+                         root.displayedLibraryItems().length,
+                         root.libraryVisibleLimit + root.libraryMaterializeBatch)
+    }
+
     Connections {
         target: gamepadInput
         function onNavigateLeft() {
@@ -1782,6 +1856,12 @@ ApplicationWindow {
         function onNavigateDown() {
             if (root.playbackOpen) root.changePlaybackVolume(-0.05)
             else root.moveFocus(0, 1)
+        }
+        function onPageUp() {
+            root.jumpPage(-1)
+        }
+        function onPageDown() {
+            root.jumpPage(1)
         }
         function onAccept() {
             if (root.playbackOpen) root.togglePlayback()
@@ -1842,6 +1922,8 @@ ApplicationWindow {
     Shortcut { sequence: "Right"; onActivated: root.playbackOpen ? root.seekPlaybackBy(10000) : root.navigateRight() }
     Shortcut { sequence: "Up"; onActivated: root.playbackOpen ? root.changePlaybackVolume(0.05) : root.moveFocus(0, -1) }
     Shortcut { sequence: "Down"; onActivated: root.playbackOpen ? root.changePlaybackVolume(-0.05) : root.moveFocus(0, 1) }
+    Shortcut { sequence: "PgUp"; onActivated: root.jumpPage(-1) }
+    Shortcut { sequence: "PgDown"; onActivated: root.jumpPage(1) }
     Shortcut {
         sequence: "Esc"
         onActivated: {
@@ -2911,6 +2993,7 @@ ApplicationWindow {
                             rowSpacing: 18
 
                             Repeater {
+                                id: libraryGridRepeater
                                 model: Math.min(root.libraryVisibleLimit,
                                                 root.displayedLibraryItems().length)
 
@@ -2928,6 +3011,9 @@ ApplicationWindow {
                                             : "›"
                                     badge: media && media.resumeTitle ? "IN PROGRESS" : ""
                                     artSource: media && media.poster ? media.poster : ""
+                                    artworkViewport: sectionScroller
+                                    artworkScrollOffset: sectionScroller.contentY
+                                    artworkPreloadMargin: sectionScroller.height * 0.9
                                     progress: root.progressValue(media ? media.progressPercent : 0)
                                     accent: root.cardAccent(index)
                                     onActivated: root.openLibraryEntry(media)
@@ -3002,16 +3088,6 @@ ApplicationWindow {
                                     onActivated: root.openLibraryEntry(media)
                                 }
                             }
-                        }
-
-                        FocusButton {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            visible: !serverClient.libraryLoading
-                                     && serverClient.libraryErrorMessage.length === 0
-                                     && root.displayedLibraryItems().length > root.libraryVisibleLimit
-                            width: 220
-                            text: "Show more titles"
-                            onClicked: root.libraryVisibleLimit += 60
                         }
 
                         Rectangle {

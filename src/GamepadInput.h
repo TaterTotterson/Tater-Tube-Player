@@ -21,6 +21,8 @@ signals:
     void navigateRight();
     void navigateUp();
     void navigateDown();
+    void pageUp();
+    void pageDown();
     void accept();
     void back();
 
@@ -38,4 +40,5 @@ private:
     bool m_connected = false;
     int m_axisDirections[2] = {0, 0};
     qint64 m_axisRepeatAt[2] = {0, 0};
+    bool m_triggerPressed[2] = {false, false};
 };

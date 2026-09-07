@@ -9,7 +9,7 @@ Item {
 
     Image {
         anchors.fill: parent
-        source: "../../assets/ui/tater-orange-glow.svg"
+        source: "../../assets/ui/tater-orange-glow.png"
         fillMode: Image.Stretch
         smooth: true
         asynchronous: true

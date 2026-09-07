@@ -98,7 +98,7 @@ qt_add_qml_module(tater-tube-player
         assets/mascot/tater-wave.png
         assets/tater-scanlines.png
         assets/tater-tube-logo-leaning-transparent.png
-        assets/ui/tater-orange-glow.svg
+        assets/ui/tater-orange-glow.png
 )
 
 target_link_libraries(tater-tube-player PRIVATE

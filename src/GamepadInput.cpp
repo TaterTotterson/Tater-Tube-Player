@@ -6,6 +6,7 @@
 
 namespace {
 constexpr int kStickDeadZone = 16000;
+constexpr int kTriggerThreshold = 18000;
 constexpr qint64 kInitialRepeatDelayMs = 340;
 constexpr qint64 kRepeatDelayMs = 115;
 }
@@ -72,6 +73,8 @@ void GamepadInput::closeController()
     setConnected(false);
     m_axisDirections[0] = 0;
     m_axisDirections[1] = 0;
+    m_triggerPressed[0] = false;
+    m_triggerPressed[1] = false;
 }
 
 void GamepadInput::emitAxisDirection(int axisIndex, int direction)
@@ -122,17 +125,11 @@ void GamepadInput::poll()
             }
         } else if (event.type == SDL_CONTROLLERBUTTONDOWN) {
             switch (event.cbutton.button) {
-            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                emit navigateLeft();
+            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+                emit pageUp();
                 break;
-            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                emit navigateRight();
-                break;
-            case SDL_CONTROLLER_BUTTON_DPAD_UP:
-                emit navigateUp();
-                break;
-            case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-                emit navigateDown();
+            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+                emit pageDown();
                 break;
             case SDL_CONTROLLER_BUTTON_A:
                 emit accept();
@@ -160,7 +157,38 @@ void GamepadInput::poll()
 
     const auto horizontal = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
     const auto vertical = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
-    updateAxis(0, horizontal < -kStickDeadZone ? -1 : (horizontal > kStickDeadZone ? 1 : 0));
-    updateAxis(1, vertical < -kStickDeadZone ? -1 : (vertical > kStickDeadZone ? 1 : 0));
+    int horizontalDirection = horizontal < -kStickDeadZone
+        ? -1 : (horizontal > kStickDeadZone ? 1 : 0);
+    int verticalDirection = vertical < -kStickDeadZone
+        ? -1 : (vertical > kStickDeadZone ? 1 : 0);
+
+    const bool dpadLeft = SDL_GameControllerGetButton(controller,
+                                                       SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+    const bool dpadRight = SDL_GameControllerGetButton(controller,
+                                                        SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+    const bool dpadUp = SDL_GameControllerGetButton(controller,
+                                                     SDL_CONTROLLER_BUTTON_DPAD_UP);
+    const bool dpadDown = SDL_GameControllerGetButton(controller,
+                                                       SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+    if (dpadLeft != dpadRight)
+        horizontalDirection = dpadLeft ? -1 : 1;
+    if (dpadUp != dpadDown)
+        verticalDirection = dpadUp ? -1 : 1;
+
+    updateAxis(0, horizontalDirection);
+    updateAxis(1, verticalDirection);
+
+    const bool triggerPressed[2] = {
+        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT)
+            > kTriggerThreshold,
+        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
+            > kTriggerThreshold,
+    };
+    if (triggerPressed[0] && !m_triggerPressed[0])
+        emit pageUp();
+    if (triggerPressed[1] && !m_triggerPressed[1])
+        emit pageDown();
+    m_triggerPressed[0] = triggerPressed[0];
+    m_triggerPressed[1] = triggerPressed[1];
 #endif
 }

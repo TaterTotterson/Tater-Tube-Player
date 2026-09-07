@@ -31,14 +31,16 @@ with:
 
 - a couch-friendly modern home screen;
 - a Home-only navigation strip plus an edge-triggered slide-out menu for TV remotes;
-- keyboard, controller, and remote-visible focus states;
+- keyboard, controller, and remote-visible focus states, including held D-pad
+  repeat and trigger/shoulder page jumps;
 - Tater Tube Server URL and six-digit PIN pairing;
 - prototype persistence for the server address and player token;
 - live Continue Watching, Recently Added, and Tube TV home rows from
   `/api/v1/player/home`;
 - full-screen direct playback for local movies and episodes;
 - server-backed Library browsing across local collections, discovery filters,
-  folders, shows, and seasons, with incremental title rendering;
+  folders, shows, and seasons, with complete collections materialized in small
+  batches and viewport-prioritized artwork loading;
 - a refreshable Live TV lineup with channel now/next information and one-click
   tuning;
 - capability-aware playback planning for the active screen and audio output;

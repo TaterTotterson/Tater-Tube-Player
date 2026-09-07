@@ -9,6 +9,10 @@ FocusScope {
     property string badge: ""
     property color accent: "#f47a23"
     property url artSource: ""
+    property Item artworkViewport: null
+    property real artworkScrollOffset: 0
+    property real artworkPreloadMargin: 480
+    property bool artworkRequested: false
     property real progress: 0
     signal activated()
 
@@ -23,6 +27,44 @@ FocusScope {
     function activate() {
         card.forceActiveFocus()
         card.activated()
+    }
+
+    function artworkViewportY() {
+        return artworkViewport ? card.mapToItem(artworkViewport, 0, 0).y : 0
+    }
+
+    function artworkNearViewport() {
+        if (!artworkViewport)
+            return true
+        var viewportY = artworkViewportY()
+        return viewportY + card.height >= -artworkPreloadMargin
+                && viewportY <= artworkViewport.height + artworkPreloadMargin
+    }
+
+    function scheduleArtwork() {
+        if (artworkRequested || !artworkNearViewport()
+                || String(artSource || "").length === 0)
+            return
+        artworkRequestDelay.interval = Math.min(180, Math.max(0,
+                    Math.floor(Math.max(0, artworkViewportY())
+                               / Math.max(1, card.height))) * 24)
+        artworkRequestDelay.restart()
+    }
+
+    Component.onCompleted: scheduleArtwork()
+    onArtworkViewportChanged: scheduleArtwork()
+    onArtworkScrollOffsetChanged: scheduleArtwork()
+    onArtSourceChanged: {
+        artworkRequested = false
+        scheduleArtwork()
+    }
+
+    Timer {
+        id: artworkRequestDelay
+        onTriggered: {
+            if (card.artworkNearViewport())
+                card.artworkRequested = true
+        }
     }
 
     Keys.onReturnPressed: event => { activate(); event.accepted = true }
@@ -46,7 +88,9 @@ FocusScope {
         Image {
             id: artwork
             anchors.fill: parent
-            source: card.artSource
+            source: card.artworkRequested ? card.artSource : ""
+            sourceSize: Qt.size(Math.max(360, Math.ceil(card.width * 2)),
+                                Math.max(568, Math.ceil(card.height * 2)))
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
