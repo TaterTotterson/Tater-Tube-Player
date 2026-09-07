@@ -13,6 +13,7 @@ FocusScope {
     property url artSource: ""
     property url fallbackArtSource: ""
     property real artworkOpacity: 0.62
+    property bool logoArtwork: false
     property bool fallbackArtworkActive: false
     signal activated()
 
@@ -28,7 +29,6 @@ FocusScope {
     Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
 
     function activate() {
-        UiSounds.select()
         forceActiveFocus()
         activated()
     }
@@ -56,9 +56,10 @@ FocusScope {
         Image {
             id: artwork
             anchors.fill: parent
+            anchors.margins: card.logoArtwork ? 14 : 0
             source: card.fallbackArtworkActive || String(card.artSource).length === 0
                     ? card.fallbackArtSource : card.artSource
-            fillMode: Image.PreserveAspectCrop
+            fillMode: card.logoArtwork ? Image.PreserveAspectFit : Image.PreserveAspectCrop
             asynchronous: true
             cache: true
             visible: status === Image.Ready
@@ -76,9 +77,32 @@ FocusScope {
             anchors.fill: parent
             visible: artwork.visible
             gradient: Gradient {
-                GradientStop { position: 0.0; color: "#18000000" }
-                GradientStop { position: 0.48; color: "#67000000" }
-                GradientStop { position: 1.0; color: "#ea131518" }
+                GradientStop { position: 0.0; color: card.logoArtwork ? "#10000000" : "#18000000" }
+                GradientStop { position: 0.48; color: card.logoArtwork ? "#18000000" : "#67000000" }
+                GradientStop { position: 1.0; color: card.logoArtwork ? "#34131518" : "#ea131518" }
+            }
+        }
+
+        Rectangle {
+            visible: card.logoArtwork
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.margins: 10
+            width: channelBadge.implicitWidth + 16
+            height: 24
+            radius: 12
+            color: "#b8181b1f"
+            border.width: 1
+            border.color: "#67554b"
+
+            Text {
+                id: channelBadge
+                anchors.centerIn: parent
+                text: card.timeLabel
+                color: "#f4c29e"
+                font.pixelSize: 10
+                font.weight: Font.Bold
+                font.letterSpacing: 0.7
             }
         }
 
@@ -97,6 +121,7 @@ FocusScope {
         }
 
         Column {
+            visible: !card.logoArtwork
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: progressTrack.visible ? progressTrack.top : parent.bottom

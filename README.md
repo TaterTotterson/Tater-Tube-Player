@@ -62,8 +62,7 @@ Requirements:
 - Qt 6.8+ with Quick, Quick Controls, QML, Multimedia, Network, and Test
 - A C++20 compiler
 - Tater Tube Server with the `/api/v1/player/home` endpoint
-- Tater Tube Server 1.4.16+ for fast library loading and audio-only compatibility
-  transcoding
+- Tater Tube Server 1.4.33+ for the complete first Steam release feature set
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
@@ -120,8 +119,20 @@ claim encoded HDMI bitstream support. The versioned capability contract already
 supports passthrough declarations for native Apple TV and Google TV players, or
 for a future Steam playback engine selected under the project's license policy.
 
+The paired-player token is stored in the current operating-system user's Qt
+settings file. On Linux, the player forces that file to user-read/write only
+(`0600`). The token is sent only to the paired Tater Tube Server and is never
+forwarded across HTTP redirects.
+
 ## Licensing status
 
-The application license has not been selected yet. Until it is, this repository
-is not offered under an open-source license. See
-[`docs/LICENSE_POLICY.md`](docs/LICENSE_POLICY.md) before adding dependencies.
+Tater Tube Player is open-source software licensed under the
+[Apache License 2.0](LICENSE). The Tater Tube name, logo, and mascot remain
+protected brand identifiers; see [TRADEMARKS.md](TRADEMARKS.md).
+
+Release builds dynamically link Qt under LGPLv3. Qt, FFmpeg, SDL, and other
+third-party components retain their own licenses. Their notices, source and
+relinking requirements are documented in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
+[docs/SOURCE_CODE.md](docs/SOURCE_CODE.md), and
+[docs/RELINKING_QT.md](docs/RELINKING_QT.md).

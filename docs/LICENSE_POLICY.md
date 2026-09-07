@@ -18,7 +18,7 @@ than the existing GPL Tater Tube client.
 7. Do not bundle emulator cores, game engines, Moonlight, yt-dlp, or the old
    Tater Tube runtime.
 
-## Qt decision gate
+## Qt distribution decision
 
 The prototype uses Qt Quick because it provides a productive Steam desktop UI.
 Playback uses Qt Multimedia with its FFmpeg backend. Qt, Qt Multimedia, FFmpeg,
@@ -26,8 +26,23 @@ and every codec library included in a store package must be recorded in the
 SBOM and third-party notices, with their applicable source-offer and relinking
 requirements satisfied.
 
-Before release, choose and document either a commercial Qt license or a fully
-compliant dynamic-linking and redistribution plan for the applicable Qt modules.
+The Steam/Linux player uses the Qt Community Edition under LGPLv3. Store builds
+must use shared Qt libraries, must permit users to replace those libraries, and
+must not apply Steam DRM or another integrity mechanism that prevents a modified
+Qt library from loading. Every depot includes the LGPL/GPL texts, prominent Qt
+notice, relinking instructions, and a Tater-controlled copy or offer for the
+exact corresponding Qt source.
+
+The Arch/Distrobox environment on the test Steam Deck is development-only. Its
+system FFmpeg is GPL-enabled and must never be copied into a store depot. The
+release build uses the FFmpeg binaries supplied by the official Qt distribution
+or another audited shared FFmpeg build configured without GPL or nonfree parts.
+
+The application source is offered under Apache-2.0. This does not replace or
+weaken the separate LGPL obligations for Qt and FFmpeg.
+
+Apple TV is a native SwiftUI/AVKit client and does not distribute Qt. Google TV
+will receive its own distribution review before an Android build is published.
 
 ## Controller input
 

@@ -1,0 +1,29 @@
+FROM registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk@sha256:2ff6220464894964266c7dbda1b91ca24e433a58ad3edff26571a2a9e5163e00
+
+ARG QT_VERSION=6.11.2
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cmake \
+        curl \
+        file \
+        git \
+        libgl1-mesa-dev \
+        libsdl2-dev \
+        ninja-build \
+        patchelf \
+        python3 \
+        python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/aqt \
+    && /opt/aqt/bin/pip install --no-cache-dir aqtinstall==3.3.0 \
+    && /opt/aqt/bin/aqt install-qt linux desktop "${QT_VERSION}" linux_gcc_64 \
+        --outputdir /opt/Qt \
+        --modules qtmultimedia
+
+ENV PATH="/opt/Qt/${QT_VERSION}/gcc_64/bin:${PATH}"
+ENV CMAKE_PREFIX_PATH="/opt/Qt/${QT_VERSION}/gcc_64"
+
+WORKDIR /workspace

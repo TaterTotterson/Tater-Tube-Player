@@ -3,13 +3,18 @@
 #include <QObject>
 #include <QHash>
 #include <QNetworkAccessManager>
+#include <QPointer>
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QVector>
+#include <QTimer>
+#include <QUrl>
 
 class QNetworkReply;
+class QTemporaryFile;
 
 class ServerClient final : public QObject
 {
@@ -45,6 +50,12 @@ class ServerClient final : public QObject
     Q_PROPERTY(QString discoverStage READ discoverStage NOTIFY discoverChanged)
     Q_PROPERTY(bool discoverLoading READ discoverLoading NOTIFY discoverChanged)
     Q_PROPERTY(QString discoverErrorMessage READ discoverErrorMessage NOTIFY discoverChanged)
+    Q_PROPERTY(QVariantList recommendations READ recommendations NOTIFY recommendationsChanged)
+    Q_PROPERTY(QVariantMap recommendationBatch READ recommendationBatch NOTIFY recommendationsChanged)
+    Q_PROPERTY(bool recommendationsLoading READ recommendationsLoading NOTIFY recommendationsChanged)
+    Q_PROPERTY(QString recommendationsErrorMessage READ recommendationsErrorMessage NOTIFY recommendationsChanged)
+    Q_PROPERTY(bool recommendationSpeechLoading READ recommendationSpeechLoading NOTIFY recommendationSpeechChanged)
+    Q_PROPERTY(QString recommendationSpeechErrorMessage READ recommendationSpeechErrorMessage NOTIFY recommendationSpeechChanged)
     Q_PROPERTY(QVariantList liveGuideChannels READ liveGuideChannels NOTIFY liveGuideChanged)
     Q_PROPERTY(bool liveGuideLoading READ liveGuideLoading NOTIFY liveGuideChanged)
     Q_PROPERTY(bool liveGuideReady READ liveGuideReady NOTIFY liveGuideChanged)
@@ -84,6 +95,12 @@ public:
     QString discoverStage() const { return m_discoverStage; }
     bool discoverLoading() const { return m_discoverLoading; }
     QString discoverErrorMessage() const { return m_discoverErrorMessage; }
+    QVariantList recommendations() const { return m_recommendations; }
+    QVariantMap recommendationBatch() const { return m_recommendationBatch; }
+    bool recommendationsLoading() const { return m_recommendationsLoading; }
+    QString recommendationsErrorMessage() const { return m_recommendationsErrorMessage; }
+    bool recommendationSpeechLoading() const { return m_recommendationSpeechLoading; }
+    QString recommendationSpeechErrorMessage() const { return m_recommendationSpeechErrorMessage; }
     QVariantList liveGuideChannels() const { return m_liveGuideChannels; }
     bool liveGuideLoading() const { return m_liveGuideLoading; }
     bool liveGuideReady() const { return m_liveGuideReady; }
@@ -102,12 +119,20 @@ public:
     Q_INVOKABLE void browseDiscover(const QVariantMap &entry);
     Q_INVOKABLE void activateDiscoverItem(const QVariantMap &item);
     Q_INVOKABLE void browseDiscoverBack();
+    Q_INVOKABLE void refreshRecommendations();
+    Q_INVOKABLE void beginRecommendationSpeech(const QString &batchId);
+    Q_INVOKABLE void cancelRecommendationSpeech();
+    Q_INVOKABLE void reportViewingEvent(const QVariantMap &item, const QString &kind,
+                                        const QString &state, qint64 positionMs,
+                                        qint64 durationMs, const QString &sessionId,
+                                        qint64 watchedMs = 0);
     Q_INVOKABLE void refreshLiveGuide();
     Q_INVOKABLE void forgetServer();
     Q_INVOKABLE void preparePlayback(const QVariantMap &item, const QString &kind,
                                      const QVariantMap &capabilities);
     Q_INVOKABLE void savePlaybackProgress(const QVariantMap &item, qint64 positionMs,
                                           qint64 durationMs, bool completed = false);
+    Q_INVOKABLE void clearPlaybackProgress(const QVariantMap &item);
     Q_INVOKABLE QString playbackTranscodeUrl(const QString &streamUrl,
                                              const QString &profile,
                                              qint64 startMs = 0) const;
@@ -137,8 +162,13 @@ signals:
     void libraryChanged();
     void discoverChanged();
     void discoverPlaybackReady(const QVariantMap &item);
+    void recommendationsChanged();
+    void recommendationSpeechChanged();
+    void recommendationSpeechReady(const QUrl &audioUrl);
     void playbackPlanReady(const QVariantMap &plan);
     void playbackPlanFailed(const QString &message);
+    void playbackProgressCleared();
+    void playbackProgressClearFailed(const QString &message);
     void liveGuideChanged();
     void pairingCompleted();
 
@@ -209,6 +239,14 @@ private:
     void handlePlaybackPlanReply(QNetworkReply *reply, int generation);
     void restoreDiscoverPage(const DiscoverPage &page);
     void resetDiscover();
+    void resetRecommendations();
+    void handleRecommendationsReply(QNetworkReply *reply, int generation);
+    void pollRecommendationSpeech();
+    void downloadRecommendationSpeech(int generation);
+    void failRecommendationSpeech(const QString &message);
+    void cancelRemoteRecommendationSpeech(const QString &requestId,
+                                          const QString &serverUrl, const QString &token);
+    void sendNextViewingEvent();
     void handleLiveGuideReply(QNetworkReply *reply);
     QString guideArtworkUrl(const QVariantMap &program) const;
     static QVariantMap guideProgram(const QVariantList &schedule, double elapsedSeconds,
@@ -216,6 +254,7 @@ private:
     void handlePairReply(QNetworkReply *reply, const QString &baseUrl);
     void handleServerInfoReply(QNetworkReply *reply);
     void handleHomeReply(QNetworkReply *reply);
+    void clearLocalPlaybackProgress(const QVariantMap &item);
     static QString responseError(const QByteArray &body, const QString &fallback);
 
     QNetworkAccessManager m_network;
@@ -255,6 +294,24 @@ private:
     int m_discoverGeneration = 0;
     int m_playbackGeneration = 0;
     bool m_discoverLoading = false;
+    QVariantList m_recommendations;
+    QVariantMap m_recommendationBatch;
+    QString m_recommendationsErrorMessage;
+    int m_recommendationsGeneration = 0;
+    bool m_recommendationsLoading = false;
+    QTimer m_recommendationSpeechPollTimer;
+    QTimer m_recommendationSpeechDeadline;
+    QPointer<QNetworkReply> m_recommendationSpeechReply;
+    QPointer<QTemporaryFile> m_recommendationSpeechFile;
+    QString m_recommendationSpeechBatchId;
+    QString m_recommendationSpeechRequestId;
+    QString m_recommendationSpeechErrorMessage;
+    int m_recommendationSpeechGeneration = 0;
+    bool m_recommendationSpeechCreating = false;
+    bool m_recommendationSpeechLoading = false;
+    QList<QJsonObject> m_pendingViewingEvents;
+    QPointer<QNetworkReply> m_viewingEventReply;
+    int m_viewingEventGeneration = 0;
     QVariantList m_liveGuideChannels;
     QString m_liveGuideErrorMessage;
     bool m_online = false;

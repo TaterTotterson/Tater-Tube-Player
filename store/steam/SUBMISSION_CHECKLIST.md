@@ -1,0 +1,64 @@
+# First Steam submission checklist
+
+## Store presence
+
+- [x] Product name selected: Tater Tube Player
+- [x] English short description drafted
+- [x] English About This Software copy drafted
+- [x] Server requirement and no-media-included disclosure drafted
+- [x] Seven rights-safe 16:9 product screenshots captured; six selected for upload
+- [x] At least five screenshots selected for upload
+- [x] First 1080p H.264/AAC trailer cut created
+- [x] Trailer poster frame created
+- [x] Required store capsules rendered at current Valve dimensions
+- [ ] Required store capsules uploaded in Steamworks
+- [x] Website, support, and privacy links prepared for their dedicated fields
+- [ ] Developer and publisher display names confirmed
+- [x] Price chosen: free
+- [ ] Release / Coming Soon date chosen
+- [ ] Languages set accurately
+- [ ] Tags and software categories selected from Steam's available choices
+- [ ] Controller-support fields completed without claiming Valve verification
+- [ ] Content Survey completed, including pre-generated and live-generated AI
+- [ ] Final store preview checked at desktop and narrow widths
+- [ ] Store presence marked ready for review at least seven business days before its target publication
+
+## Build review gates
+
+These do not block drafting the store page, but they block submitting the build
+as release-ready.
+
+- [ ] Produce a self-contained SteamOS/Linux depot; no Distrobox dependency
+- [ ] Test on a clean Steam Deck user profile
+- [x] Choose and document the Qt LGPLv3 dynamic-linking distribution plan
+- [x] Select Apache-2.0 for the player source and reserve the Tater Tube trademarks
+- [ ] Publish the public source repository and tag the exact submitted revision
+- [ ] Confirm the Steam launch option does not use Steam DRM/CEG
+- [ ] Record Qt Multimedia, FFmpeg, codec libraries, SDL/sdl2-compat, and every shipped dependency
+- [ ] Generate the release SBOM and third-party notices
+- [ ] Confirm source-offer/relinking obligations for the exact binaries in the depot
+- [ ] Confirm mascot and other brand-asset creation/distribution records
+- [x] Restrict the Linux settings file containing the paired-player token to the current OS user
+- [ ] Verify clean install, first pairing, controller navigation, suspend/resume, output switching, and uninstall
+- [ ] Verify direct play, audio-only transcode, video-only transcode, full transcode, HDR-to-SDR, and Tube TV transitions against Tater Tube Server 1.4.33+
+- [ ] Supply Valve reviewers with a reachable test server or precise local test-server instructions and a rights-safe demo catalog
+- [ ] Confirm the build contains no private addresses, tokens, passwords, or personal media
+
+## Current Valve requirements referenced
+
+- Store screenshots: minimum five, 16:9, at least 1920 x 1080
+- Required store capsules: 920 x 430 header, 462 x 174 small,
+  1232 x 706 main, and 748 x 896 vertical
+- Trailer: up to 1920 x 1080, 30 or 60 fps, 5000+ Kbps recommended;
+  H.264 video and AAC audio preferred
+- Store-presence review usually takes 3–5 business days; Valve recommends
+  submitting at least seven business days before publication
+
+Re-check the linked Steamworks documentation immediately before upload because
+Valve can revise asset and review requirements.
+
+- https://partner.steamgames.com/doc/store/assets
+- https://partner.steamgames.com/doc/store/trailer
+- https://partner.steamgames.com/doc/store/page/description
+- https://partner.steamgames.com/doc/store/review_process
+- https://partner.steamgames.com/doc/gettingstarted/contentsurvey

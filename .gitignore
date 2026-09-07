@@ -1,6 +1,8 @@
 build/
+build-steam/
+dist/
 .DS_Store
+aqtinstall.log
 *.user
 *.qmlc
 *.jsc
-

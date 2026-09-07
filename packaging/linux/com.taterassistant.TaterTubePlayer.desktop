@@ -2,8 +2,8 @@
 Type=Application
 Name=Tater Tube Player
 Comment=Modern television player for Tater Tube Server
-Exec=/home/deck/Tater-Tube-Player/scripts/run-steam-deck-dev.sh
-Icon=/home/deck/Tater-Tube-Player/assets/mascot/tater-wave.png
+Exec=tater-tube-player
+Icon=com.taterassistant.TaterTubePlayer
 Terminal=false
 Categories=AudioVideo;Video;
 StartupWMClass=tater-tube-player

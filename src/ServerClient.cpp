@@ -1,6 +1,7 @@
 #include "ServerClient.h"
 
 #include <QDateTime>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -13,6 +14,7 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTemporaryFile>
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -27,6 +29,53 @@ constexpr qint64 kContentCacheMaxAgeMs = 30LL * 24 * 60 * 60 * 1000;
 constexpr int kContentCacheVersion = 1;
 constexpr int kMaximumCachedLibraryPages = 48;
 constexpr int kMaximumCachedDiscoverPages = 48;
+constexpr qint64 kMaximumRecommendationAudioBytes = 8 * 1024 * 1024;
+
+void restrictSettingsToCurrentUser(QSettings &settings)
+{
+#if defined(Q_OS_UNIX)
+    settings.sync();
+    const QString fileName = settings.fileName();
+    if (!fileName.isEmpty()) {
+        QFile::setPermissions(fileName,
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    }
+#else
+    Q_UNUSED(settings);
+#endif
+}
+
+QNetworkRequest taterJSONRequest(const QString &server, const QString &path,
+                                 const QString &token)
+{
+    QNetworkRequest request{QUrl(ServerClient::endpointUrl(server, path))};
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
+    request.setRawHeader("Accept", "application/json");
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    // The paired server owns these endpoints; never forward its credential to a redirect.
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::ManualRedirectPolicy);
+    request.setTransferTimeout(15000);
+    return request;
+}
+
+bool taterReplySucceeded(const QNetworkReply *reply)
+{
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    return reply->error() == QNetworkReply::NoError && status >= 200 && status < 300;
+}
+
+bool validSpeechRequestID(const QString &id)
+{
+    static const QRegularExpression safeID(QStringLiteral("^[A-Za-z0-9_-]{1,128}$"));
+    return safeID.match(id).hasMatch();
+}
+
+QString viewingIdentity(const QString &value)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(
+        value.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
 
 QVariantList discoverCategoriesFromCatalog(const QJsonArray &categories)
 {
@@ -82,11 +131,106 @@ void sortLibrarySeasons(QVariantList &items)
                    right.toMap().value(QStringLiteral("title")).toString()) < 0;
     });
 }
+
+QString normalizedPlayStateCategory(QString value)
+{
+    value = value.trimmed().toLower();
+    if (value.startsWith(QStringLiteral("local:")))
+        value.remove(0, 6);
+    return value;
+}
+
+QString normalizedPlayStatePath(QString value)
+{
+    return value.trimmed().replace('\\', '/');
+}
+
+QStringList playStateIDs(const QVariantMap &item)
+{
+    QStringList ids;
+    for (const QString &key : {QStringLiteral("seriesStateId"),
+                               QStringLiteral("playStateId")}) {
+        const QString id = item.value(key).toString().trimmed();
+        if (!id.isEmpty() && !ids.contains(id))
+            ids.append(id);
+    }
+    return ids;
+}
+
+bool playStateMatches(const QVariantMap &candidate, const QVariantMap &target)
+{
+    const QStringList targetIDs = playStateIDs(target);
+    const QStringList candidateIDs = playStateIDs(candidate);
+    for (const QString &id : targetIDs) {
+        if (candidateIDs.contains(id))
+            return true;
+    }
+
+    const QString targetPath = normalizedPlayStatePath(
+        target.value(QStringLiteral("path")).toString());
+    const QString candidatePath = normalizedPlayStatePath(
+        candidate.value(QStringLiteral("path")).toString());
+    if (targetPath.isEmpty() || targetPath != candidatePath)
+        return false;
+    return normalizedPlayStateCategory(
+               target.value(QStringLiteral("categoryId")).toString())
+            == normalizedPlayStateCategory(
+                candidate.value(QStringLiteral("categoryId")).toString())
+        && target.value(QStringLiteral("sourceIndex")).toInt()
+            == candidate.value(QStringLiteral("sourceIndex")).toInt();
+}
+
+bool scrubPlaybackProgress(QVariantMap &candidate, const QVariantMap &target)
+{
+    bool changed = false;
+    const QVariantMap resumeItem = candidate.value(QStringLiteral("resumeItem")).toMap();
+    if ((!resumeItem.isEmpty() && playStateMatches(resumeItem, target))
+        || playStateMatches(candidate, target)) {
+        for (const QString &key : {QStringLiteral("viewOffset"),
+                                   QStringLiteral("viewOffsetSeconds"),
+                                   QStringLiteral("progressPercent"),
+                                   QStringLiteral("resumeTitle"),
+                                   QStringLiteral("resumeItem")}) {
+            changed = candidate.remove(key) > 0 || changed;
+        }
+    }
+    return changed;
+}
+
+bool scrubPlaybackProgress(QVariantList &items, const QVariantMap &target,
+                           bool removeMatchingItems)
+{
+    bool changed = false;
+    for (qsizetype index = items.size(); index-- > 0;) {
+        QVariantMap candidate = items.at(index).toMap();
+        const QVariantMap resumeItem = candidate.value(QStringLiteral("resumeItem")).toMap();
+        const bool matches = playStateMatches(candidate, target)
+            || (!resumeItem.isEmpty() && playStateMatches(resumeItem, target));
+        if (removeMatchingItems && matches) {
+            items.removeAt(index);
+            changed = true;
+            continue;
+        }
+        if (scrubPlaybackProgress(candidate, target)) {
+            items[index] = candidate;
+            changed = true;
+        }
+    }
+    return changed;
+}
 }
 
 ServerClient::ServerClient(QObject *parent)
     : QObject(parent)
 {
+    m_recommendationSpeechPollTimer.setSingleShot(true);
+    connect(&m_recommendationSpeechPollTimer, &QTimer::timeout,
+            this, &ServerClient::pollRecommendationSpeech);
+    m_recommendationSpeechDeadline.setSingleShot(true);
+    m_recommendationSpeechDeadline.setInterval(90000);
+    connect(&m_recommendationSpeechDeadline, &QTimer::timeout, this, [this] {
+        failRecommendationSpeech(QStringLiteral("Tater's voice is taking a little too long. Try again."));
+    });
     loadSettings();
     loadContentCache();
     if (paired())
@@ -655,6 +799,359 @@ void ServerClient::loadLibraryLocation(const LibraryLocation &location, bool pus
             });
 }
 
+void ServerClient::refreshRecommendations()
+{
+    if (!paired() || m_recommendationsLoading)
+        return;
+    if (m_capabilities.contains(QStringLiteral("taterLink"))
+        && !m_capabilities.value(QStringLiteral("taterLink")).toBool()) {
+        resetRecommendations();
+        emit recommendationsChanged();
+        return;
+    }
+
+    const int generation = ++m_recommendationsGeneration;
+    m_recommendationsLoading = true;
+    m_recommendationsErrorMessage.clear();
+    emit recommendationsChanged();
+
+    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/tater/recommendations"))};
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(30000);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, generation] { handleRecommendationsReply(reply, generation); });
+}
+
+void ServerClient::beginRecommendationSpeech(const QString &batchId)
+{
+    const QString requestedBatch = batchId.trimmed();
+    if (!paired() || !m_capabilities.value(QStringLiteral("taterLink")).toBool()
+        || requestedBatch.isEmpty()) {
+        return;
+    }
+    if (m_recommendationSpeechBatchId == requestedBatch
+        && (m_recommendationSpeechLoading || m_recommendationSpeechFile)) {
+        return;
+    }
+
+    cancelRecommendationSpeech();
+    const int generation = m_recommendationSpeechGeneration;
+    const QString server = m_serverUrl;
+    const QString token = m_token;
+    m_recommendationSpeechBatchId = requestedBatch;
+    m_recommendationSpeechLoading = true;
+    m_recommendationSpeechCreating = true;
+    m_recommendationSpeechDeadline.start();
+    emit recommendationSpeechChanged();
+
+    const QJsonObject payload{
+        {QStringLiteral("profile_id"), QStringLiteral("household")},
+        {QStringLiteral("batch_id"), requestedBatch},
+        {QStringLiteral("briefing_kind"), QStringLiteral("recommendations")},
+        {QStringLiteral("local_hour"), QTime::currentTime().hour()},
+    };
+    QNetworkReply *reply = m_network.post(
+        taterJSONRequest(server, QStringLiteral("/api/tater/tts/requests"), token),
+        QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    m_recommendationSpeechReply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, generation, server, token] {
+        const QByteArray body = reply->readAll();
+        const bool succeeded = taterReplySucceeded(reply);
+        const QJsonObject data = QJsonDocument::fromJson(body).object()
+                                     .value(QStringLiteral("data")).toObject();
+        const QString requestId = data.value(QStringLiteral("id")).toString();
+        reply->deleteLater();
+        if (generation != m_recommendationSpeechGeneration) {
+            // A create already in flight can finish after the user leaves the page.
+            if (succeeded && validSpeechRequestID(requestId))
+                cancelRemoteRecommendationSpeech(requestId, server, token);
+            return;
+        }
+        m_recommendationSpeechReply.clear();
+        m_recommendationSpeechCreating = false;
+        if (!succeeded || !validSpeechRequestID(requestId)) {
+            failRecommendationSpeech(responseError(
+                body, QStringLiteral("Tater's voice is unavailable right now.")));
+            return;
+        }
+        m_recommendationSpeechRequestId = requestId;
+        m_recommendationSpeechPollTimer.start(100);
+    });
+}
+
+void ServerClient::cancelRemoteRecommendationSpeech(const QString &requestId,
+                                                    const QString &server,
+                                                    const QString &token)
+{
+    if (!validSpeechRequestID(requestId) || server.isEmpty() || token.isEmpty())
+        return;
+    QNetworkReply *reply = m_network.deleteResource(taterJSONRequest(
+        server, QStringLiteral("/api/tater/tts/requests/%1").arg(requestId), token));
+    connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+}
+
+void ServerClient::cancelRecommendationSpeech()
+{
+    ++m_recommendationSpeechGeneration;
+    m_recommendationSpeechPollTimer.stop();
+    m_recommendationSpeechDeadline.stop();
+    if (m_recommendationSpeechReply && !m_recommendationSpeechCreating)
+        m_recommendationSpeechReply->abort();
+    // Leave an in-flight create connected so its returned ID can be canceled.
+    m_recommendationSpeechReply.clear();
+    m_recommendationSpeechCreating = false;
+    cancelRemoteRecommendationSpeech(m_recommendationSpeechRequestId, m_serverUrl, m_token);
+    m_recommendationSpeechRequestId.clear();
+    m_recommendationSpeechBatchId.clear();
+    m_recommendationSpeechLoading = false;
+    m_recommendationSpeechErrorMessage.clear();
+    delete m_recommendationSpeechFile.data();
+    m_recommendationSpeechFile.clear();
+    emit recommendationSpeechChanged();
+}
+
+void ServerClient::failRecommendationSpeech(const QString &message)
+{
+    cancelRecommendationSpeech();
+    m_recommendationSpeechErrorMessage = message;
+    emit recommendationSpeechChanged();
+}
+
+void ServerClient::pollRecommendationSpeech()
+{
+    if (!m_recommendationSpeechLoading || m_recommendationSpeechRequestId.isEmpty())
+        return;
+    const int generation = m_recommendationSpeechGeneration;
+    QNetworkReply *reply = m_network.get(taterJSONRequest(m_serverUrl,
+        QStringLiteral("/api/tater/tts/requests/%1").arg(m_recommendationSpeechRequestId),
+        m_token));
+    m_recommendationSpeechReply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, generation] {
+        const QByteArray body = reply->readAll();
+        const bool succeeded = taterReplySucceeded(reply);
+        reply->deleteLater();
+        if (generation != m_recommendationSpeechGeneration)
+            return;
+        m_recommendationSpeechReply.clear();
+        if (!succeeded) {
+            failRecommendationSpeech(responseError(
+                body, QStringLiteral("Tater's voice could not be loaded. Try again.")));
+            return;
+        }
+        const QJsonObject data = QJsonDocument::fromJson(body).object()
+                                     .value(QStringLiteral("data")).toObject();
+        const QString status = data.value(QStringLiteral("status")).toString().toLower();
+        if (status == QStringLiteral("ready")) {
+            downloadRecommendationSpeech(generation);
+        } else if (status == QStringLiteral("pending") || status == QStringLiteral("processing")
+                   || status == QStringLiteral("claimed")) {
+            m_recommendationSpeechPollTimer.start(250);
+        } else {
+            const QString error = data.value(QStringLiteral("error")).toString().trimmed();
+            failRecommendationSpeech(error.isEmpty()
+                ? QStringLiteral("Tater's voice is unavailable right now.") : error);
+        }
+    });
+}
+
+void ServerClient::downloadRecommendationSpeech(int generation)
+{
+    // Derive the audio route from the validated request ID, not an arbitrary response URL.
+    QNetworkRequest request = taterJSONRequest(m_serverUrl,
+        QStringLiteral("/api/tater/tts/requests/%1/audio").arg(m_recommendationSpeechRequestId),
+        m_token);
+    request.setRawHeader("Accept", "audio/wav");
+    QNetworkReply *reply = m_network.get(request);
+    reply->setReadBufferSize(kMaximumRecommendationAudioBytes + 1);
+    m_recommendationSpeechReply = reply;
+    connect(reply, &QNetworkReply::readyRead, this, [this, reply, generation] {
+        if (generation == m_recommendationSpeechGeneration
+            && (reply->bytesAvailable() > kMaximumRecommendationAudioBytes
+                || reply->header(QNetworkRequest::ContentLengthHeader).toLongLong()
+                    > kMaximumRecommendationAudioBytes)) {
+            failRecommendationSpeech(QStringLiteral("Tater's voice returned an invalid audio file."));
+        }
+    });
+    connect(reply, &QNetworkReply::finished, this, [this, reply, generation] {
+        const bool succeeded = taterReplySucceeded(reply);
+        const QByteArray audio = reply->readAll();
+        reply->deleteLater();
+        if (generation != m_recommendationSpeechGeneration)
+            return;
+        m_recommendationSpeechReply.clear();
+        if (!succeeded || audio.size() < 12 || audio.size() > kMaximumRecommendationAudioBytes
+            || audio.left(4) != "RIFF" || audio.mid(8, 4) != "WAVE") {
+            failRecommendationSpeech(QStringLiteral("Tater's voice could not be played. Try again."));
+            return;
+        }
+        auto *file = new QTemporaryFile(
+            QDir::temp().filePath(QStringLiteral("tater-picks-XXXXXX.wav")), this);
+        if (!file->open() || file->write(audio) != audio.size() || !file->flush()) {
+            delete file;
+            failRecommendationSpeech(QStringLiteral("Tater's voice could not be saved for playback."));
+            return;
+        }
+        file->close();
+        m_recommendationSpeechFile = file;
+        m_recommendationSpeechDeadline.stop();
+        m_recommendationSpeechLoading = false;
+        emit recommendationSpeechChanged();
+        emit recommendationSpeechReady(QUrl::fromLocalFile(file->fileName()));
+    });
+}
+
+void ServerClient::reportViewingEvent(const QVariantMap &item, const QString &kind,
+                                      const QString &state, qint64 positionMs,
+                                      qint64 durationMs, const QString &sessionId,
+                                      qint64 watchedMs)
+{
+    if (!paired() || !m_capabilities.value(QStringLiteral("taterLink")).toBool()
+        || sessionId.trimmed().isEmpty() || watchedMs <= 0) {
+        return;
+    }
+    const QString normalizedState = state.trimmed().toLower();
+    const QStringList validStates{QStringLiteral("started"), QStringLiteral("progress"),
+        QStringLiteral("paused"), QStringLiteral("completed"), QStringLiteral("stopped")};
+    if (!validStates.contains(normalizedState))
+        return;
+    const QString normalizedKind = kind.trimmed().toLower();
+    const bool live = normalizedKind == QStringLiteral("live")
+        || normalizedKind == QStringLiteral("tube_tv")
+        || normalizedKind == QStringLiteral("tubetv")
+        || normalizedKind == QStringLiteral("channel");
+    const QVariantMap media = live ? item.value(QStringLiteral("now")).toMap() : item;
+    if (media.isEmpty())
+        return;
+    QString mediaType = media.value(QStringLiteral("mediaType")).toString().trimmed().toLower();
+    const QString programKind = media.value(QStringLiteral("kind")).toString().trimmed().toLower();
+    if (mediaType.isEmpty())
+        mediaType = programKind;
+    const QStringList breaks{QStringLiteral("commercial"), QStringLiteral("commercials"),
+        QStringLiteral("ad"), QStringLiteral("bumper"), QStringLiteral("break"),
+        QStringLiteral("spot"), QStringLiteral("tater_bumper"),
+        QStringLiteral("commercial_break")};
+    if (breaks.contains(mediaType) || breaks.contains(programKind)
+        || media.value(QStringLiteral("isBreak")).toBool()) {
+        return;
+    }
+
+    const QString title = media.value(QStringLiteral("title")).toString().trimmed().left(500);
+    if (title.isEmpty())
+        return;
+    const QString path = normalizedPlayStatePath(media.value(QStringLiteral("path")).toString());
+    const QString category = normalizedPlayStateCategory(media.value(QStringLiteral("categoryId")).toString());
+    QString seriesTitle = media.value(QStringLiteral("seriesTitle"),
+        media.value(QStringLiteral("series_title"))).toString().trimmed();
+    int season = media.value(QStringLiteral("season"), media.value(QStringLiteral("seasonNumber"))).toInt();
+    int episode = media.value(QStringLiteral("episode"), media.value(QStringLiteral("episodeNumber"))).toInt();
+    static const QRegularExpression episodePattern(QStringLiteral(R"((?:^|[ ._/-])S(\d{1,3})[ ._-]*E(\d{1,4})(?:$|[ ._/-]))"),
+        QRegularExpression::CaseInsensitiveOption);
+    QRegularExpressionMatch episodeMatch = episodePattern.match(title);
+    if (!episodeMatch.hasMatch())
+        episodeMatch = episodePattern.match(path);
+    if (episodeMatch.hasMatch()) {
+        if (season <= 0) season = episodeMatch.captured(1).toInt();
+        if (episode <= 0) episode = episodeMatch.captured(2).toInt();
+    }
+    const bool isEpisode = mediaType == QStringLiteral("episode")
+        || mediaType == QStringLiteral("tv") || mediaType == QStringLiteral("series")
+        || mediaType == QStringLiteral("show") || mediaType == QStringLiteral("tvshow")
+        || category == QStringLiteral("tv") || episode > 0;
+    if (isEpisode) {
+        mediaType = QStringLiteral("episode");
+        if (seriesTitle.isEmpty() && path.contains('/'))
+            seriesTitle = path.section('/', 0, 0);
+        if (season <= 0) {
+            static const QRegularExpression seasonPattern(QStringLiteral(R"((?:^|/)Season[ ._-]*(\d{1,3})(?:/|$))"),
+                QRegularExpression::CaseInsensitiveOption);
+            const QRegularExpressionMatch match = seasonPattern.match(path);
+            if (match.hasMatch()) season = match.captured(1).toInt();
+        }
+    } else if (mediaType.isEmpty() || mediaType == QStringLiteral("video")) {
+        mediaType = QStringLiteral("movie");
+    }
+    if (mediaType != QStringLiteral("movie") && mediaType != QStringLiteral("episode"))
+        return;
+
+    const QString source = live ? QStringLiteral("tube_tv") : QStringLiteral("local_media");
+    QString identity = media.value(QStringLiteral("playStateId")).toString();
+    if (!path.isEmpty()) {
+        identity = category + QChar('|')
+            + QString::number(media.value(QStringLiteral("sourceIndex")).toInt())
+            + QChar('|') + path;
+    }
+    if (identity.isEmpty())
+        identity = mediaType + QChar('|') + title + QChar('|') + seriesTitle;
+    const QString mediaId = QStringLiteral("local:") + viewingIdentity(identity);
+    const QString eventId = QStringLiteral("player:") + viewingIdentity(
+        sessionId + QChar('|') + source + QChar('|') + mediaId);
+    QJsonObject metadata{
+        {QStringLiteral("watched_ms"), static_cast<double>(qMax<qint64>(0, watchedMs))},
+        {QStringLiteral("action"), normalizedState},
+        {QStringLiteral("year"), media.value(QStringLiteral("date")).toString().left(40)},
+        {QStringLiteral("genres"), QJsonArray::fromVariantList(media.value(QStringLiteral("genres")).toList())},
+    };
+    if (live) {
+        metadata.insert(QStringLiteral("channel_number"), item.value(QStringLiteral("number")).toString().left(40));
+        metadata.insert(QStringLiteral("channel_name"), item.value(QStringLiteral("title")).toString().left(500));
+    }
+    const QJsonObject payload{
+        {QStringLiteral("event_id"), eventId},
+        {QStringLiteral("profile_id"), QStringLiteral("household")},
+        {QStringLiteral("source"), source},
+        {QStringLiteral("media_id"), mediaId},
+        {QStringLiteral("media_type"), mediaType},
+        {QStringLiteral("title"), title},
+        {QStringLiteral("series_title"), seriesTitle.left(500)},
+        {QStringLiteral("season"), qMax(0, season)},
+        {QStringLiteral("episode"), qMax(0, episode)},
+        {QStringLiteral("position_ms"), static_cast<double>(qMax<qint64>(0, positionMs))},
+        {QStringLiteral("duration_ms"), static_cast<double>(qMax<qint64>(0, durationMs))},
+        {QStringLiteral("state"), normalizedState},
+        {QStringLiteral("occurred_at"), QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+        {QStringLiteral("metadata"), metadata},
+    };
+    // Coalesce unsent heartbeats, and serialize updates so a late progress response
+    // cannot overwrite this viewing session's final stopped/completed state.
+    for (QJsonObject &pending : m_pendingViewingEvents) {
+        if (pending.value(QStringLiteral("event_id")).toString() == eventId) {
+            pending = payload;
+            return;
+        }
+    }
+    if (m_pendingViewingEvents.size() >= 32)
+        m_pendingViewingEvents.removeFirst();
+    m_pendingViewingEvents.append(payload);
+    sendNextViewingEvent();
+}
+
+void ServerClient::sendNextViewingEvent()
+{
+    if (!m_capabilities.value(QStringLiteral("taterLink")).toBool()) {
+        m_pendingViewingEvents.clear();
+        return;
+    }
+    if (m_viewingEventReply || m_pendingViewingEvents.isEmpty() || !paired())
+        return;
+    const int generation = m_viewingEventGeneration;
+    const QJsonObject payload = m_pendingViewingEvents.takeFirst();
+    QNetworkReply *reply = m_network.post(taterJSONRequest(m_serverUrl,
+        QStringLiteral("/api/tater/viewing/events"), m_token),
+        QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    m_viewingEventReply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, generation] {
+        reply->deleteLater();
+        if (generation != m_viewingEventGeneration)
+            return;
+        m_viewingEventReply.clear();
+        sendNextViewingEvent();
+    });
+}
+
 void ServerClient::refreshLiveGuide()
 {
     if (!paired() || m_liveGuideLoading)
@@ -676,6 +1173,13 @@ void ServerClient::refreshLiveGuide()
 
 void ServerClient::forgetServer()
 {
+    cancelRecommendationSpeech();
+    ++m_viewingEventGeneration;
+    m_pendingViewingEvents.clear();
+    if (m_viewingEventReply) {
+        m_viewingEventReply->abort();
+        m_viewingEventReply.clear();
+    }
     m_serverUrl.clear();
     m_token.clear();
     m_serverName.clear();
@@ -697,6 +1201,7 @@ void ServerClient::forgetServer()
     m_librariesLoading = false;
     resetDiscover();
     m_discoverCache.clear();
+    resetRecommendations();
     m_liveGuideChannels.clear();
     m_liveGuideErrorMessage.clear();
     m_liveGuideLoading = false;
@@ -709,6 +1214,7 @@ void ServerClient::forgetServer()
     emit homeChanged();
     emit libraryChanged();
     emit discoverChanged();
+    emit recommendationsChanged();
     emit liveGuideChanged();
 }
 
@@ -745,6 +1251,102 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
     QNetworkReply *reply = m_network.post(
         request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+}
+
+void ServerClient::clearPlaybackProgress(const QVariantMap &item)
+{
+    if (!paired()) {
+        emit playbackProgressClearFailed(
+            QStringLiteral("Pair this player before clearing watch progress."));
+        return;
+    }
+
+    const QString path = item.value(QStringLiteral("path")).toString().trimmed();
+    const QString categoryId = item.value(QStringLiteral("categoryId")).toString().trimmed();
+    const QString playStateId = item.value(QStringLiteral("playStateId")).toString().trimmed();
+    const QString seriesStateId = item.value(QStringLiteral("seriesStateId")).toString().trimmed();
+    if ((playStateId.isEmpty() && seriesStateId.isEmpty())
+        && (path.isEmpty() || categoryId.isEmpty())) {
+        emit playbackProgressClearFailed(
+            QStringLiteral("This item does not have saved watch progress."));
+        return;
+    }
+
+    const QJsonObject payload{
+        {QStringLiteral("id"), playStateId},
+        {QStringLiteral("seriesId"), seriesStateId},
+        {QStringLiteral("mediaType"), item.value(QStringLiteral("mediaType")).toString()},
+        {QStringLiteral("categoryId"), categoryId},
+        {QStringLiteral("sourceIndex"), item.value(QStringLiteral("sourceIndex")).toInt()},
+        {QStringLiteral("path"), path},
+    };
+
+    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/tater/playstate"))};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(15000);
+    QNetworkReply *reply = m_network.sendCustomRequest(
+        request, QByteArrayLiteral("DELETE"),
+        QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, item] {
+        const QByteArray body = reply->readAll();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const bool succeeded = reply->error() == QNetworkReply::NoError
+            && status >= 200 && status < 300;
+        reply->deleteLater();
+        if (!succeeded) {
+            emit playbackProgressClearFailed(responseError(
+                body, QStringLiteral("Watch progress could not be cleared.")));
+            return;
+        }
+
+        clearLocalPlaybackProgress(item);
+        emit playbackProgressCleared();
+        refreshHome();
+        refreshLibraryRows();
+        refreshLibrary();
+    });
+}
+
+void ServerClient::clearLocalPlaybackProgress(const QVariantMap &item)
+{
+    scrubPlaybackProgress(m_continueWatching, item, true);
+    scrubPlaybackProgress(m_recentlyAdded, item, false);
+    const bool browsingContinue = !m_libraryHistory.isEmpty()
+        && m_libraryHistory.constLast().continueWatching;
+    scrubPlaybackProgress(m_libraryItems, item, browsingContinue);
+    scrubPlaybackProgress(m_recommendations, item, false);
+    scrubPlaybackProgress(m_discoverItems, item, false);
+
+    for (qsizetype rowIndex = m_libraryRows.size(); rowIndex-- > 0;) {
+        QVariantMap row = m_libraryRows.at(rowIndex).toMap();
+        QVariantList items = row.value(QStringLiteral("items")).toList();
+        const bool continueRow = row.value(QStringLiteral("entry")).toMap()
+                                     .value(QStringLiteral("type")).toString()
+                                     .compare(QStringLiteral("continue"),
+                                              Qt::CaseInsensitive) == 0;
+        if (scrubPlaybackProgress(items, item, continueRow)) {
+            if (continueRow && items.isEmpty()) {
+                m_libraryRows.removeAt(rowIndex);
+                continue;
+            }
+            row.insert(QStringLiteral("items"), items);
+            m_libraryRows[rowIndex] = row;
+        }
+    }
+    for (auto it = m_libraryCache.begin(); it != m_libraryCache.end(); ++it)
+        scrubPlaybackProgress(it->items, item, it.key().endsWith(QStringLiteral("\n1")));
+    for (auto it = m_discoverCache.begin(); it != m_discoverCache.end(); ++it)
+        scrubPlaybackProgress(it->items, item, false);
+
+    saveContentCache();
+    emit homeChanged();
+    emit libraryChanged();
+    emit discoverChanged();
+    emit recommendationsChanged();
 }
 
 void ServerClient::preparePlayback(const QVariantMap &item, const QString &kind,
@@ -929,6 +1531,7 @@ void ServerClient::loadSettings()
     m_serverUrl = normalizedServerUrl(settings.value(kSettingsServerUrl).toString());
     m_token = settings.value(kSettingsToken).toString().trimmed();
     m_playerName = settings.value(kSettingsPlayerName).toString().trimmed();
+    restrictSettingsToCurrentUser(settings);
 }
 
 void ServerClient::saveSettings() const
@@ -937,6 +1540,7 @@ void ServerClient::saveSettings() const
     settings.setValue(kSettingsServerUrl, m_serverUrl);
     settings.setValue(kSettingsToken, m_token);
     settings.setValue(kSettingsPlayerName, m_playerName);
+    restrictSettingsToCurrentUser(settings);
 }
 
 QString ServerClient::contentCachePath()
@@ -1018,6 +1622,11 @@ void ServerClient::loadContentCache()
             page.value(QStringLiteral("storedAtMs")).toVariant().toLongLong(),
         });
     }
+
+    const QJsonObject recommendations = cache.value(QStringLiteral("recommendations")).toObject();
+    m_recommendations = recommendations.value(QStringLiteral("items")).toArray().toVariantList();
+    m_recommendationBatch = recommendations.value(QStringLiteral("batch"))
+                                .toObject().toVariantMap();
 
     const QJsonObject guide = cache.value(QStringLiteral("guide")).toObject();
     m_liveGuideChannels = guide.value(QStringLiteral("channels")).toArray().toVariantList();
@@ -1105,6 +1714,10 @@ void ServerClient::saveContentCache() const
         {QStringLiteral("discover"), QJsonObject{
             {QStringLiteral("categories"), QJsonArray::fromVariantList(m_discoverCategories)},
             {QStringLiteral("pages"), discoverPages},
+        }},
+        {QStringLiteral("recommendations"), QJsonObject{
+            {QStringLiteral("batch"), QJsonObject::fromVariantMap(m_recommendationBatch)},
+            {QStringLiteral("items"), QJsonArray::fromVariantList(m_recommendations)},
         }},
         {QStringLiteral("guide"), QJsonObject{
             {QStringLiteral("ready"), m_liveGuideReady},
@@ -1195,6 +1808,13 @@ void ServerClient::handlePairReply(QNetworkReply *reply, const QString &baseUrl)
         return;
     }
 
+    cancelRecommendationSpeech();
+    ++m_viewingEventGeneration;
+    m_pendingViewingEvents.clear();
+    if (m_viewingEventReply) {
+        m_viewingEventReply->abort();
+        m_viewingEventReply.clear();
+    }
     m_serverUrl = baseUrl;
     m_token = token;
     clearContentCache();
@@ -1203,6 +1823,7 @@ void ServerClient::handlePairReply(QNetworkReply *reply, const QString &baseUrl)
     m_libraryHistory.clear();
     resetDiscover();
     m_discoverCache.clear();
+    resetRecommendations();
     m_liveGuideChannels.clear();
     m_liveGuideReady = false;
     m_playerName = data.value("player_name").toString().trimmed();
@@ -1289,6 +1910,11 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
         m_discoverCache.clear();
         emit discoverChanged();
     }
+    const bool taterLinked = m_capabilities.value(QStringLiteral("taterLink")).toBool();
+    if (!taterLinked) {
+        resetRecommendations();
+        emit recommendationsChanged();
+    }
     m_homeWarnings.clear();
     for (const QJsonValue &warning : data.value("warnings").toArray()) {
         const QString message = warning.toString().trimmed();
@@ -1308,6 +1934,8 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     emit connectionChanged();
     emit homeChanged();
     loadLibraryRows(false);
+    if (taterLinked)
+        refreshRecommendations();
 }
 
 void ServerClient::handleLibraryReply(QNetworkReply *reply,
@@ -1664,6 +2292,87 @@ void ServerClient::resetDiscover()
     m_discoverPendingItem.clear();
     m_discoverHistory.clear();
     m_discoverLoading = false;
+}
+
+void ServerClient::resetRecommendations()
+{
+    cancelRecommendationSpeech();
+    ++m_recommendationsGeneration;
+    m_recommendations.clear();
+    m_recommendationBatch.clear();
+    m_recommendationsErrorMessage.clear();
+    m_recommendationsLoading = false;
+}
+
+void ServerClient::handleRecommendationsReply(QNetworkReply *reply, int generation)
+{
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool succeeded = reply->error() == QNetworkReply::NoError
+        && status >= 200 && status < 300;
+    reply->deleteLater();
+    if (generation != m_recommendationsGeneration)
+        return;
+    m_recommendationsLoading = false;
+
+    if (!succeeded) {
+        if (status == 401 || status == 403) {
+            forgetServer();
+            setErrorMessage("This player is no longer authorized. Pair it with the server again.");
+            return;
+        }
+        m_recommendationsErrorMessage = responseError(
+            body, QStringLiteral("Tater's recommendations could not be loaded."));
+        emit recommendationsChanged();
+        return;
+    }
+
+    const QJsonObject data = QJsonDocument::fromJson(body).object()
+                                 .value(QStringLiteral("data")).toObject();
+    QVariantList recommendations;
+    for (const QJsonValue &value : data.value(QStringLiteral("items")).toArray()) {
+        const QJsonObject row = value.toObject();
+        QVariantMap item = row.value(QStringLiteral("launch")).toObject().toVariantMap();
+        const bool retroModule = item.value(QStringLiteral("type")).toString()
+            .compare(QStringLiteral("module"), Qt::CaseInsensitive) == 0;
+        const bool hasStream = !item.value(QStringLiteral("streamUrl")).toString().trimmed().isEmpty();
+        const bool hasLocalTarget = item.value(QStringLiteral("categoryId")).toString()
+                .startsWith(QStringLiteral("local:"))
+            && !item.value(QStringLiteral("path")).toString().trimmed().isEmpty();
+        if (retroModule && !hasStream && !hasLocalTarget)
+            continue;
+        if (item.value(QStringLiteral("title")).toString().trimmed().isEmpty())
+            item.insert(QStringLiteral("title"), row.value(QStringLiteral("title")).toString());
+        if (item.value(QStringLiteral("mediaType")).toString().trimmed().isEmpty()) {
+            item.insert(QStringLiteral("mediaType"),
+                        row.value(QStringLiteral("media_type")).toString());
+        }
+        if (item.value(QStringLiteral("poster")).toString().trimmed().isEmpty()) {
+            const QString artwork = guideArtworkUrl(item);
+            if (!artwork.isEmpty())
+                item.insert(QStringLiteral("poster"), artwork);
+        }
+        const QString reason = row.value(QStringLiteral("reason")).toString().trimmed();
+        item.insert(QStringLiteral("recommendationId"),
+                    row.value(QStringLiteral("id")).toString());
+        item.insert(QStringLiteral("recommendationReason"), reason);
+        item.insert(QStringLiteral("recommendationRank"),
+                    row.value(QStringLiteral("rank")).toInt());
+        item.insert(QStringLiteral("recommendationSource"),
+                    row.value(QStringLiteral("source")).toString());
+        if (item.value(QStringLiteral("description")).toString().trimmed().isEmpty()
+            && !reason.isEmpty()) {
+            item.insert(QStringLiteral("description"), reason);
+        }
+        recommendations.append(item);
+    }
+
+    m_recommendations = recommendations;
+    m_recommendationBatch = data.value(QStringLiteral("batch")).toObject().toVariantMap();
+    m_recommendationsErrorMessage.clear();
+    setOnline(true);
+    saveContentCache();
+    emit recommendationsChanged();
 }
 
 QVariantMap ServerClient::guideProgram(const QVariantList &schedule,

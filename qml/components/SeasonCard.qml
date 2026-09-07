@@ -21,7 +21,6 @@ FocusScope {
     Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
     function activate() {
-        UiSounds.select()
         card.forceActiveFocus()
         card.activated()
     }

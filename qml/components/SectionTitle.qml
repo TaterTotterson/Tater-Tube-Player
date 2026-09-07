@@ -33,7 +33,6 @@ Item {
         function activate() {
             if (!enabled)
                 return
-            UiSounds.select()
             forceActiveFocus()
             root.actionActivated()
         }

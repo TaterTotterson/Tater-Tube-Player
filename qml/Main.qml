@@ -3,6 +3,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtMultimedia
 import "components"
+import "ViewingHistory.js" as ViewingHistory
 
 ApplicationWindow {
     id: root
@@ -13,7 +14,7 @@ ApplicationWindow {
     minimumHeight: 720
     visible: true
     title: "Tater Tube Player"
-    color: "#101215"
+    color: "#000000"
 
     readonly property color orange: "#ff781f"
     readonly property color orangeBright: "#ff964f"
@@ -21,10 +22,13 @@ ApplicationWindow {
     readonly property color panelSoft: "#282c31"
     readonly property color textPrimary: "#f6f6f3"
     readonly property color textSecondary: "#aaafb4"
+    readonly property int shelfPreviewLimit: 8
     property string currentPage: "home"
     property var selectedItem: ({})
     property string selectedKind: "MEDIA"
     property bool detailsOpen: false
+    property bool detailsProgressClearing: false
+    property string detailsStatusMessage: ""
     property var returnFocusItem: null
     property bool playbackOpen: false
     property var playbackItem: ({})
@@ -51,33 +55,78 @@ ApplicationWindow {
     property int discoverVisibleLimit: 60
     property bool sideMenuOpen: false
     property var sideMenuReturnFocus: null
-    property bool uiFocusSoundsArmed: false
-    property var uiLastFocusItem: null
     property double guideClockMs: Date.now()
+    property double greetingClockMs: Date.now()
+    property string viewingSessionId: ""
+    property var viewingContext: null
+    property double viewingWatchedMs: 0
+    property double viewingLastReportMs: 0
+    property double viewingSampleTimeMs: 0
+    property double viewingSamplePositionMs: 0
+    property double viewingLiveTuneTimeMs: 0
+    property bool recommendationSpeechVisitActive: false
+    property string recommendationSpokenBatchId: ""
+    property string recommendationSpeechPlaybackError: ""
+    property int focusedRecommendationIndex: 0
+    property bool componentReady: false
 
-    function hasPersonalizedHero() {
-        var heroCopy = serverClient.homeHero
-        return !demoMode && heroCopy && heroCopy.personalized === true
-                && String(heroCopy.message || "").trim().length > 0
+    onCurrentPageChanged: {
+        if (!componentReady)
+            return
+        stopRecommendationSpeech()
+        recommendationSpeechVisitActive = currentPage === "recommendations" && !demoMode
+        recommendationSpokenBatchId = ""
+        recommendationSpeechPlaybackError = ""
+        if (currentPage === "recommendations")
+            focusedRecommendationIndex = 0
+        if (recommendationSpeechVisitActive)
+            serverClient.refreshRecommendations()
     }
 
-    function personalizedHeroHeadline() {
-        var hour = (new Date()).getHours()
+    function taterRecommendationsAvailable() {
+        return !demoMode && serverClient.paired
+                && !!serverClient.capabilities.taterLink
+    }
+
+    function builtInHeroHeadline() {
+        var hour = (new Date(root.greetingClockMs)).getHours()
+        var day = Math.floor(root.greetingClockMs / 86400000)
+        var lines
+        if (hour >= 5 && hour < 12) {
+            lines = ["Start the day with something good.",
+                     "Your morning watch is ready.",
+                     "Ease into something worth watching."]
+            return "Good morning.\n" + lines[day % lines.length]
+        }
+        if (hour >= 12 && hour < 17) {
+            lines = ["Take a break with something good.",
+                     "There’s always time for one more.",
+                     "Your afternoon watch is ready."]
+            return "Good afternoon.\n" + lines[day % lines.length]
+        }
+        lines = ["Settle in and press play.",
+                 "Your next watch starts here.",
+                 "Everything good is right where you left it."]
+        return "Good evening.\n" + lines[day % lines.length]
+    }
+
+    function builtInHeroMessage() {
+        var hour = (new Date(root.greetingClockMs)).getHours()
+        var day = Math.floor(root.greetingClockMs / 86400000)
+        var messages
         if (hour >= 5 && hour < 12)
-            return "Good morning.\nSomething good is waiting."
-        if (hour >= 12 && hour < 17)
-            return "Good afternoon.\nHere’s a pick for right now."
-        if (hour >= 17 && hour < 22)
-            return "Good evening.\nYour next watch is ready."
-        return "Still up?\nTater found something good."
-    }
-
-    onActiveFocusItemChanged: {
-        var nextItem = root.activeFocusItem
-        if (root.uiFocusSoundsArmed && !root.playbackOpen
-                && nextItem && nextItem !== root.uiLastFocusItem)
-            UiSounds.navigate()
-        root.uiLastFocusItem = nextItem
+            messages = ["Live channels, familiar favorites, and your whole library are ready.",
+                        "Pick up where you left off or find a fresh favorite.",
+                        "Your own collection is ready whenever you are."]
+        else if (hour >= 12 && hour < 17)
+            messages = ["Jump back into a favorite or see what was added recently.",
+                        "Your library and live channels are ready for a quick escape.",
+                        "A good movie or show is only a button away."]
+        else
+            messages = ["Movies, shows, and live channels are ready for the night.",
+                        "Dim the lights—your library has the rest covered.",
+                        "Continue a favorite or make tonight a double feature."]
+        return messages[day % messages.length]
     }
 
     function itemTitle(item, fallback) {
@@ -112,6 +161,123 @@ ApplicationWindow {
         else if (item.sizeText)
             parts.push(item.sizeText)
         return parts.join("  •  ")
+    }
+
+    function detailsPlaybackItem(item) {
+        if (!item)
+            return ({})
+        if (item.streamUrl)
+            return item
+        if (item.resumeItem && item.resumeItem.streamUrl)
+            return item.resumeItem
+        return item
+    }
+
+    function playbackResumeOffset(item) {
+        var playable = detailsPlaybackItem(item)
+        var offset = Number(playable.viewOffset || 0)
+        if (offset <= 0 && playable.viewOffsetSeconds)
+            offset = Number(playable.viewOffsetSeconds) * 1000
+        return Math.max(0, offset)
+    }
+
+    function hasPlaybackProgress(item) {
+        var playable = detailsPlaybackItem(item)
+        var progress = Number(playable.progressPercent || 0)
+        return playbackResumeOffset(playable) >= 5000
+                || (progress > 0 && progress < 100)
+    }
+
+    function detailsArtworkSource(item) {
+        if (!item)
+            return ""
+        if (item.now)
+            return String(item.now.poster || item.now.episodeStill
+                          || item.now.backdrop || item.logoUrl || "")
+        var playable = detailsPlaybackItem(item)
+        var mediaType = String(playable.mediaType || item.mediaType || "").toLowerCase()
+        if (mediaType === "episode")
+            return String(playable.seasonPoster || playable.seriesPoster
+                          || playable.poster || playable.episodeStill || "")
+        return String(item.poster || item.seasonPoster || item.seriesPoster
+                      || playable.poster || item.episodeStill
+                      || playable.episodeStill || "")
+    }
+
+    function detailsSynopsis(item) {
+        if (!item)
+            return ""
+        var playable = detailsPlaybackItem(item)
+        var text = item.description || item.overview || item.plot || item.summary
+                || playable.description || playable.overview || playable.plot
+                || playable.summary || item.tagline || playable.tagline
+        if (text)
+            return String(text)
+        if (item.next && item.next.title)
+            return "Up next: " + item.next.title
+        return "No synopsis is available for this title yet."
+    }
+
+    function detailsMeta(item) {
+        if (!item)
+            return ""
+        var playable = detailsPlaybackItem(item)
+        var parts = []
+        var year = item.date || item.year || playable.date || playable.year
+        if (year)
+            parts.push(String(year))
+        var rating = item.contentRating || playable.contentRating
+        if (rating)
+            parts.push(String(rating))
+        var duration = item.durationDisplay || playable.durationDisplay
+        if (!duration) {
+            var seconds = Number(item.durationSeconds || playable.durationSeconds || 0)
+            if (seconds > 0)
+                duration = formatPlaybackTime(seconds * 1000)
+        }
+        if (duration)
+            parts.push(String(duration))
+        var score = Number(item.communityRating || playable.communityRating || 0)
+        if (score > 0)
+            parts.push("★ " + score.toFixed(1))
+        var genres = item.genres || playable.genres || []
+        if (genres.length > 0) {
+            var genreParts = []
+            for (var i = 0; i < Math.min(2, genres.length); ++i)
+                genreParts.push(String(genres[i]))
+            parts.push(genreParts.join(" / "))
+        } else {
+            var category = item.category || playable.category
+            if (category)
+                parts.push(String(category))
+        }
+        return parts.join("  •  ")
+    }
+
+    function selectedItemWithoutProgress() {
+        var cleared = ({})
+        for (var key in root.selectedItem) {
+            if (key !== "viewOffset" && key !== "viewOffsetSeconds"
+                    && key !== "progressPercent" && key !== "resumeTitle"
+                    && key !== "resumeItem")
+                cleared[key] = root.selectedItem[key]
+        }
+        return cleared
+    }
+
+    function clearSelectedPlaybackProgress() {
+        if (!root.hasPlaybackProgress(root.selectedItem)
+                || root.detailsProgressClearing)
+            return
+        if (demoMode) {
+            root.selectedItem = root.selectedItemWithoutProgress()
+            root.detailsStatusMessage = "Watch progress cleared."
+            Qt.callLater(function() { detailsPlay.forceActiveFocus() })
+            return
+        }
+        root.detailsProgressClearing = true
+        root.detailsStatusMessage = "Clearing watch progress…"
+        serverClient.clearPlaybackProgress(root.detailsPlaybackItem(root.selectedItem))
     }
 
     function progressValue(value) {
@@ -181,12 +347,33 @@ ApplicationWindow {
     function libraryMediaItems() {
         if (demoMode) {
             return [
-                {title: "Cosmic Drift", date: "2026", mediaType: "movie"},
-                {title: "Harbor Street", date: "2024", mediaType: "series"},
-                {title: "The Long Winter", date: "2025", mediaType: "movie"},
-                {title: "Signal Lost", date: "2023", mediaType: "series"},
-                {title: "Dust & Thunder", date: "2026", mediaType: "movie"},
-                {title: "Side Streets", date: "2022", mediaType: "movie"}
+                {title: "Cosmic Drift", date: "2026", mediaType: "movie",
+                 description: "A lone explorer follows an impossible signal beyond the mapped stars.",
+                 poster: Qt.resolvedUrl("../assets/demo/cosmic-drift-poster.png"),
+                 backdrop: Qt.resolvedUrl("../assets/demo/cosmic-drift.png"),
+                 streamUrl: "demo://cosmic-drift", durationDisplay: "1:52:00",
+                 durationSeconds: 6720, viewOffsetSeconds: 2588,
+                 progressPercent: 38.5},
+                {title: "Harbor Street", date: "2024", mediaType: "series",
+                 description: "A close-knit harbor town finds a new beginning after the storm.",
+                 poster: Qt.resolvedUrl("../assets/demo/harbor-street.png"),
+                 backdrop: Qt.resolvedUrl("../assets/demo/harbor-street.png")},
+                {title: "The Long Winter", date: "2025", mediaType: "movie",
+                 description: "A final supply run becomes a race across a frozen frontier.",
+                 poster: Qt.resolvedUrl("../assets/demo/the-long-winter.png"),
+                 backdrop: Qt.resolvedUrl("../assets/demo/the-long-winter.png")},
+                {title: "Northern Lights", date: "2024", mediaType: "series",
+                 description: "Two old friends return north and uncover what the quiet kept hidden.",
+                 poster: Qt.resolvedUrl("../assets/demo/northern-lights.png"),
+                 backdrop: Qt.resolvedUrl("../assets/demo/northern-lights.png")},
+                {title: "Orange County Skies", date: "2026", mediaType: "movie",
+                 description: "One last coastal drive changes the road ahead.",
+                 poster: Qt.resolvedUrl("../assets/demo/orange-county-skies.png"),
+                 backdrop: Qt.resolvedUrl("../assets/demo/orange-county-skies.png")},
+                {title: "After Midnight", date: "2023", mediaType: "series",
+                 description: "A late-night radio signal carries secrets from across the valley.",
+                 poster: Qt.resolvedUrl("../assets/demo/after-midnight.png"),
+                 backdrop: Qt.resolvedUrl("../assets/demo/after-midnight.png")}
             ]
         }
         return serverClient.recentlyAdded.length > 0
@@ -198,6 +385,21 @@ ApplicationWindow {
             return libraryMediaItems()
         return serverClient.libraryDepth > 0
                 ? serverClient.libraryItems : libraryMediaItems()
+    }
+
+    function openDemoDetails(title) {
+        if (!demoMode)
+            return
+        var items = libraryMediaItems()
+        var requestedTitle = String(title || "").trim().toLowerCase()
+        for (var i = 0; i < items.length; ++i) {
+            if (String(items[i].title || "").toLowerCase() === requestedTitle) {
+                openDetails(items[i], mediaLabel(items[i]))
+                return
+            }
+        }
+        if (items.length > 0)
+            openDetails(items[0], mediaLabel(items[0]))
     }
 
     function libraryPageRows() {
@@ -431,6 +633,25 @@ ApplicationWindow {
         return demoMode ? demoDiscoverCategories() : serverClient.discoverCategories
     }
 
+    function discoverCategoryArtwork(category) {
+        var categoryId = String(category && category.id ? category.id : "").toLowerCase()
+        var categoryTitle = itemTitle(category, "").toLowerCase()
+
+        if (categoryId === "movie:top" || categoryTitle === "popular movies")
+            return Qt.resolvedUrl("../assets/discovery/popular-movies.png")
+        if (categoryId === "movie:year" || categoryTitle === "new movies")
+            return Qt.resolvedUrl("../assets/discovery/new-movies.png")
+        if (categoryId === "movie:imdbrating" || categoryTitle === "featured movies")
+            return Qt.resolvedUrl("../assets/discovery/featured-movies.png")
+        if (categoryId === "series:top" || categoryTitle === "popular tv")
+            return Qt.resolvedUrl("../assets/discovery/popular-tv.png")
+        if (categoryId === "series:year" || categoryTitle === "new tv")
+            return Qt.resolvedUrl("../assets/discovery/new-tv.png")
+        if (categoryId === "series:imdbrating" || categoryTitle === "featured tv")
+            return Qt.resolvedUrl("../assets/discovery/featured-tv.png")
+        return ""
+    }
+
     function displayedDiscoverItems() {
         return demoMode ? libraryMediaItems() : serverClient.discoverItems
     }
@@ -469,23 +690,150 @@ ApplicationWindow {
         return itemMeta(item) || item.sizeText || mediaLabel(item)
     }
 
+    function recommendationSummary() {
+        var batch = serverClient.recommendationBatch
+        var summary = batch ? String(batch.summary || "").trim() : ""
+        if (summary.length === 0 && serverClient.homeHero.personalized)
+            summary = String(serverClient.homeHero.message || "").trim()
+        if (demoMode)
+            return "Settle in with Cosmic Drift, or pick up a familiar favorite. These stories bring a little adventure to your next watch."
+        return summary.length > 0
+                ? summary
+                : "Tater is learning from what you watch and preparing a fresh set of picks."
+    }
+
+    function recommendationAssistantName() {
+        var batch = serverClient.recommendationBatch
+        var name = batch ? String(batch.assistant_name || "").trim() : ""
+        return name.length > 0 ? name : "Tater"
+    }
+
+    function queueRecommendationSpeech() {
+        if (!recommendationSpeechVisitActive || currentPage !== "recommendations"
+                || playbackOpen || detailsOpen || sideMenuOpen
+                || serverClient.recommendationsLoading || !taterRecommendationsAvailable())
+            return
+        var batch = serverClient.recommendationBatch
+        var id = String(batch.id || "")
+        if (id.length === 0 || String(batch.summary || "").trim().length === 0
+                || recommendationSpokenBatchId === id)
+            return
+        var expiresAt = Date.parse(batch.expires_at || "")
+        if (isFinite(expiresAt) && expiresAt <= Date.now())
+            return
+        recommendationSpeechDelay.restart()
+    }
+
+    function startRecommendationSpeech() {
+        if (!recommendationSpeechVisitActive || currentPage !== "recommendations"
+                || playbackOpen || detailsOpen || sideMenuOpen
+                || serverClient.recommendationsLoading || !taterRecommendationsAvailable())
+            return
+        var batch = serverClient.recommendationBatch
+        var id = String(batch.id || "")
+        if (id.length === 0 || recommendationSpokenBatchId === id)
+            return
+        recommendationSpokenBatchId = id
+        recommendationSpeechPlaybackError = ""
+        serverClient.beginRecommendationSpeech(id)
+    }
+
+    function stopRecommendationSpeech() {
+        recommendationSpeechDelay.stop()
+        recommendationVoice.stop()
+        recommendationVoice.source = ""
+        serverClient.cancelRecommendationSpeech()
+    }
+
+    function displayedRecommendations() {
+        if (!demoMode)
+            return serverClient.recommendations
+        return libraryMediaItems().map(function(item, index) {
+            item.recommendationReason = index % 2 === 0
+                    ? "A little adventure for your next movie night."
+                    : "A familiar favorite to settle in with."
+            return item
+        })
+    }
+
+    function recommendationMeta(item) {
+        if (!item)
+            return ""
+        var reason = String(item.recommendationReason || "").trim()
+        return reason.length > 0 ? reason : "Picked for you by Tater."
+    }
+
+    function focusedRecommendation() {
+        var recommendations = displayedRecommendations()
+        if (recommendations.length === 0)
+            return null
+        var index = Math.max(0, Math.min(focusedRecommendationIndex,
+                                         recommendations.length - 1))
+        return recommendations[index]
+    }
+
+    function recommendationHeroEyebrow() {
+        return focusedRecommendation()
+                ? "WHY " + recommendationAssistantName().toUpperCase() + " PICKED THIS"
+                : "A NOTE FROM " + recommendationAssistantName().toUpperCase()
+    }
+
+    function recommendationHeroTitle() {
+        var item = focusedRecommendation()
+        return item ? itemTitle(item, "Tater Pick") : "Tater Picks"
+    }
+
+    function recommendationHeroMessage() {
+        var item = focusedRecommendation()
+        return item ? recommendationMeta(item) : recommendationSummary()
+    }
+
+    function activateRecommendation(item) {
+        if (!item)
+            return
+        recommendationSpeechVisitActive = false
+        stopRecommendationSpeech()
+        if (String(item.streamUrl || "").trim().length > 0) {
+            openDetails(item, mediaLabel(item))
+            return
+        }
+        if (item.categoryId || item.path) {
+            openLibraryEntry(item)
+            return
+        }
+        openDetails(item, mediaLabel(item))
+    }
+
     function demoLiveChannels() {
         return [{number: "12", title: "Saturday Cartoons",
+                 logoUrl: Qt.resolvedUrl("../assets/demo/cartoon-channel.png"),
                  streamUrl: "", guideElapsedSeconds: 45,
                  guideStartedAtMs: Date.now() - 45000,
                  schedule: [
                      {title: "Station ID", kind: "bumper", start: 30, end: 40},
                      {title: "Snack Attack", kind: "commercial", start: 40, end: 62},
                      {title: "Tater Tube", kind: "tater_bumper", start: 62, end: 72},
-                     {title: "Galaxy Rangers", kind: "episode", start: 72, end: 1872},
-                     {title: "Creature Features", kind: "movie", start: 1872, end: 7272}
+                     {title: "Galaxy Rangers", kind: "episode", start: 72, end: 1872,
+                      backdrop: Qt.resolvedUrl("../assets/demo/cosmic-drift.png")},
+                     {title: "Creature Features", kind: "movie", start: 1872, end: 7272,
+                      backdrop: Qt.resolvedUrl("../assets/demo/after-midnight.png")}
                  ]},
                 {number: "24", title: "Creature Features",
-                 streamUrl: "", now: {title: "Night Visitors", progressPercent: 38},
-                 next: {title: "Midnight Matinee"}, later: {title: "Shock Theater"}},
+                 logoUrl: Qt.resolvedUrl("../assets/demo/creature-features.png"),
+                 streamUrl: "", now: {title: "Night Visitors", progressPercent: 38,
+                                       backdrop: Qt.resolvedUrl("../assets/demo/after-midnight.png")},
+                 next: {title: "Midnight Matinee",
+                        backdrop: Qt.resolvedUrl("../assets/demo/the-long-winter.png")},
+                 later: {title: "Shock Theater",
+                         backdrop: Qt.resolvedUrl("../assets/demo/orange-county-skies.png")}},
                 {number: "88", title: "Neon Nights",
-                 streamUrl: "", now: {title: "Electric Dreams", progressPercent: 52},
-                 next: {title: "After Hours"}, later: {title: "Night Drive"}}]
+                 logoUrl: Qt.resolvedUrl("../assets/demo/neon-nights.png"),
+                 streamUrl: "", now: {title: "Electric Dreams", progressPercent: 52,
+                                       backdrop: Qt.resolvedUrl("../assets/demo/northern-lights.png")},
+                 next: {title: "After Hours",
+                        backdrop: Qt.resolvedUrl("../assets/demo/harbor-street.png")},
+                 later: {title: "Night Drive",
+                         backdrop: Qt.resolvedUrl("../assets/demo/orange-county-skies.png")}}]
     }
 
     function displayedLiveChannels() {
@@ -769,6 +1117,10 @@ ApplicationWindow {
     function openSideMenu() {
         if (sideMenuOpen || playbackOpen || detailsOpen || pairingOverlay.visible)
             return false
+        if (currentPage === "recommendations") {
+            recommendationSpeechVisitActive = false
+            stopRecommendationSpeech()
+        }
         sideMenuReturnFocus = root.activeFocusItem
         sideMenuOpen = true
         Qt.callLater(function() {
@@ -776,6 +1128,8 @@ ApplicationWindow {
                 sideLibraryNav.forceActiveFocus()
             else if (currentPage === "discover")
                 sideDiscoverNav.forceActiveFocus()
+            else if (currentPage === "recommendations")
+                sideRecommendationsNav.forceActiveFocus()
             else if (currentPage === "live")
                 sideLiveNav.forceActiveFocus()
             else if (currentPage === "search")
@@ -842,14 +1196,21 @@ ApplicationWindow {
             playbackControlsTimer.restart()
     }
 
-    function startPlayback(item, kind) {
+    function startPlayback(item, kind, resumeExisting) {
         if (!item)
             return
         var source = String(item.streamUrl || "").trim()
         if (source.length === 0)
             return
 
+        finishViewingHistory("stopped")
+        recommendationSpeechVisitActive = false
+        stopRecommendationSpeech()
         mediaPlayer.stop()
+        viewingSessionId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)
+        viewingSampleTimeMs = 0
+        viewingSamplePositionMs = 0
+        viewingLiveTuneTimeMs = Date.now()
         playbackHasVideoFrame = false
         playbackItem = item
         playbackIsLive = String(kind || "").indexOf("CHANNEL") === 0
@@ -863,8 +1224,10 @@ ApplicationWindow {
         playbackAudioCodec = ""
         playbackAudioMode = "direct"
         playbackBaseOffsetMs = 0
-        playbackPendingResumeMs = playbackIsLive ? 0 : Number(item.viewOffset || 0)
-        if (playbackPendingResumeMs <= 0 && item.viewOffsetSeconds)
+        var shouldResume = resumeExisting === undefined ? true : resumeExisting === true
+        playbackPendingResumeMs = playbackIsLive || !shouldResume
+                ? 0 : Number(item.viewOffset || 0)
+        if (shouldResume && playbackPendingResumeMs <= 0 && item.viewOffsetSeconds)
             playbackPendingResumeMs = Number(item.viewOffsetSeconds) * 1000
         playbackError = ""
         playbackStatusMessage = playbackIsLive ? "Tuning your channel…" : "Opening your media…"
@@ -874,6 +1237,8 @@ ApplicationWindow {
         detailsOpen = false
         playbackOpen = true
         if (playbackIsLive) {
+            if (!demoMode)
+                serverClient.refreshLiveGuide()
             mediaPlayer.source = source
             mediaPlayer.play()
             playbackControlsTimer.restart()
@@ -975,11 +1340,61 @@ ApplicationWindow {
                                           completed === true)
     }
 
+    function reportViewingHistory(state) {
+        if (!viewingContext || viewingWatchedMs <= 0 || demoMode)
+            return
+        serverClient.reportViewingEvent(viewingContext.item, viewingContext.kind,
+                                         state, Math.round(viewingContext.positionMs),
+                                         Math.round(viewingContext.durationMs),
+                                         viewingSessionId + ":" + viewingContext.key,
+                                         Math.round(viewingWatchedMs))
+        viewingLastReportMs = Date.now()
+    }
+
+    function sampleViewingHistory() {
+        var now = Date.now()
+        var position = playbackPositionMs()
+        var playing = playbackOpen && playbackHasVideoFrame
+                && mediaPlayer.playbackState === MediaPlayer.PlayingState
+                && playbackError.length === 0
+        var watched = ViewingHistory.observedWatchMs(viewingSampleTimeMs,
+                              viewingSamplePositionMs, now, position, playing)
+        viewingSampleTimeMs = now
+        viewingSamplePositionMs = position
+        if (watched <= 0 || demoMode || !taterRecommendationsAvailable())
+            return
+        // Live playback can be behind the broadcast clock after buffering or pausing.
+        var contentTime = playbackIsLive
+                ? viewingLiveTuneTimeMs + Math.max(0, Number(mediaPlayer.position || 0)) : now
+        var context = ViewingHistory.snapshot(playbackItem, playbackIsLive,
+                            serverClient.liveGuideChannels, contentTime, position, playbackDurationMs())
+        if (!context || (viewingContext && viewingContext.key !== context.key))
+            finishViewingHistory("stopped")
+        if (!context)
+            return
+        var first = !viewingContext
+        viewingContext = context
+        viewingWatchedMs += watched
+        if (first)
+            reportViewingHistory("started")
+        else if (now - viewingLastReportMs >= 30000)
+            reportViewingHistory("progress")
+    }
+
+    function finishViewingHistory(state) {
+        reportViewingHistory(state)
+        viewingContext = null
+        viewingWatchedMs = 0
+        viewingLastReportMs = 0
+    }
+
     function closePlayback() {
         if (!playbackOpen)
             return
         if (!playbackEnded)
             savePlaybackState(false)
+        sampleViewingHistory()
+        finishViewingHistory(playbackEnded ? "completed" : "stopped")
         mediaPlayer.stop()
         playbackOpen = false
         playbackPlanPending = false
@@ -1040,6 +1455,8 @@ ApplicationWindow {
     function seekPlayback(targetMs) {
         if (!playbackOpen || playbackIsLive)
             return
+        sampleViewingHistory()
+        viewingSampleTimeMs = 0
         var duration = playbackDurationMs()
         var target = Math.max(0, Math.min(duration > 0 ? duration - 1000 : targetMs,
                                           Number(targetMs)))
@@ -1100,12 +1517,21 @@ ApplicationWindow {
         returnFocusItem = root.activeFocusItem
         selectedItem = item
         selectedKind = kind || mediaLabel(item)
+        detailsProgressClearing = false
+        detailsStatusMessage = ""
         detailsOpen = true
-        Qt.callLater(function() { detailsPlay.forceActiveFocus() })
+        Qt.callLater(function() {
+            if (detailsResume.visible && detailsResume.enabled)
+                detailsResume.forceActiveFocus()
+            else
+                detailsPlay.forceActiveFocus()
+        })
     }
 
     function closeDetails() {
         detailsOpen = false
+        detailsProgressClearing = false
+        detailsStatusMessage = ""
         var target = returnFocusItem
         returnFocusItem = null
         if (target && target.visible)
@@ -1187,6 +1613,14 @@ ApplicationWindow {
         var scroller = currentPage === "home" ? page : sectionScroller
         if (!isDescendant(item, scroller.contentItem))
             return
+        var ancestor = item.parent
+        while (ancestor && ancestor !== root) {
+            if (typeof ancestor.revealItem === "function") {
+                ancestor.revealItem(item)
+                break
+            }
+            ancestor = ancestor.parent
+        }
         if (currentPage === "home" && isDescendant(item, hero)) {
             scroller.contentY = 0
             return
@@ -1286,7 +1720,6 @@ ApplicationWindow {
 
     function navigateRight() {
         if (sideMenuOpen) {
-            UiSounds.back()
             closeSideMenu(true)
             return
         }
@@ -1306,6 +1739,7 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        componentReady = true
         if (String(playbackPreviewUrl || "").length > 0) {
             returnFocusItem = heroWatchLive
             startPlayback({title: "Playback preview", mediaType: "video",
@@ -1317,21 +1751,18 @@ ApplicationWindow {
     }
 
     Timer {
-        interval: 450
-        running: true
-        repeat: false
-        onTriggered: {
-            root.uiLastFocusItem = root.activeFocusItem
-            root.uiFocusSoundsArmed = true
-        }
-    }
-
-    Timer {
         interval: 1000
-        running: root.currentPage === "live" && !root.playbackOpen
+        running: root.currentPage === "live" || (root.playbackOpen && root.playbackIsLive)
         repeat: true
         triggeredOnStart: true
         onTriggered: root.guideClockMs = Date.now()
+    }
+
+    Timer {
+        interval: 60000
+        running: true
+        repeat: true
+        onTriggered: root.greetingClockMs = Date.now()
     }
 
     Connections {
@@ -1357,7 +1788,6 @@ ApplicationWindow {
             else root.activateFocusedItem()
         }
         function onBack() {
-            UiSounds.back()
             root.goBack()
         }
     }
@@ -1387,6 +1817,17 @@ ApplicationWindow {
             root.startPlayback(item, root.mediaLabel(item))
         }
 
+        function onRecommendationsChanged() {
+            root.queueRecommendationSpeech()
+            var current = root.activeFocusItem
+            if (root.currentPage === "recommendations"
+                    && !serverClient.recommendationsLoading
+                    && (!current || !root.isItemShown(current)
+                        || !root.isDescendant(current, sectionScroller.contentItem))) {
+                Qt.callLater(function() { root.focusFirstSectionControl() })
+            }
+        }
+
         function onPlaybackPlanReady(plan) {
             root.applyPlaybackPlan(plan)
         }
@@ -1404,13 +1845,16 @@ ApplicationWindow {
     Shortcut {
         sequence: "Esc"
         onActivated: {
-            UiSounds.back()
             root.goBack()
         }
     }
     Shortcut { sequence: "Space"; enabled: root.playbackOpen; onActivated: root.togglePlayback() }
 
     onClosing: function(close) {
+        root.recommendationSpeechVisitActive = false
+        root.stopRecommendationSpeech()
+        root.sampleViewingHistory()
+        root.finishViewingHistory(root.playbackEnded ? "completed" : "stopped")
         if (root.playbackOpen && !root.playbackEnded)
             root.savePlaybackState(false)
     }
@@ -1418,12 +1862,6 @@ ApplicationWindow {
     Rectangle {
         anchors.fill: parent
         color: root.color
-
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#171a1e" }
-            GradientStop { position: 0.52; color: "#111316" }
-            GradientStop { position: 1.0; color: "#0c0e10" }
-        }
     }
 
     Flickable {
@@ -1531,10 +1969,7 @@ ApplicationWindow {
                         }
 
                         Text {
-                            text: root.hasPersonalizedHero()
-                                  ? String(serverClient.homeHero.eyebrow
-                                           || "TATER LINK  •  PICKED FOR YOU")
-                                  : "WELCOME TO TATER TUBE"
+                            text: "WELCOME TO TATER TUBE"
                             color: root.orangeBright
                             font.pixelSize: 12
                             font.weight: Font.Bold
@@ -1543,9 +1978,7 @@ ApplicationWindow {
                     }
 
                     Text {
-                        text: root.hasPersonalizedHero()
-                              ? root.personalizedHeroHeadline()
-                              : "Everything good,\nright where you left it."
+                        text: root.builtInHeroHeadline()
                         color: root.textPrimary
                         font.pixelSize: 38
                         font.weight: Font.Black
@@ -1554,9 +1987,7 @@ ApplicationWindow {
 
                     Text {
                         width: parent.width
-                        text: root.hasPersonalizedHero()
-                              ? String(serverClient.homeHero.message)
-                              : "Movies, shows, and your own live channels—served privately from Tater Tube Server."
+                        text: root.builtInHeroMessage()
                         color: "#c4c6c8"
                         font.pixelSize: 16
                         wrapMode: Text.WordWrap
@@ -1582,6 +2013,11 @@ ApplicationWindow {
                             visible: demoMode || !!serverClient.capabilities.newznab
                             text: "Discover"
                             onClicked: root.showPage("discover")
+                        }
+                        FocusButton {
+                            visible: root.taterRecommendationsAvailable()
+                            text: "Tater picks"
+                            onClicked: root.showPage("recommendations")
                         }
                     }
                 }
@@ -1630,6 +2066,8 @@ ApplicationWindow {
                         eyebrow: "MOVIE  •  42 MIN LEFT"
                         title: "The Last Signal"
                         subtitle: "Resume from 01:16:08"
+                        artSource: Qt.resolvedUrl("../assets/demo/cosmic-drift.png")
+                        artworkOpacity: 0.74
                         accent: "#f27822"
                         progress: 0.58
                         onActivated: root.openDetails({title: title, mediaType: "movie",
@@ -1640,6 +2078,8 @@ ApplicationWindow {
                         eyebrow: "S2  E4"
                         title: "Northern Lights"
                         subtitle: "The Long Way Home"
+                        artSource: Qt.resolvedUrl("../assets/demo/northern-lights.png")
+                        artworkOpacity: 0.74
                         accent: "#547d8b"
                         progress: 0.31
                         onActivated: root.openDetails({title: title, mediaType: "episode",
@@ -1650,6 +2090,8 @@ ApplicationWindow {
                         eyebrow: "MOVIE  •  18 MIN LEFT"
                         title: "Orange County Skies"
                         subtitle: "Resume from 01:34:22"
+                        artSource: Qt.resolvedUrl("../assets/demo/orange-county-skies.png")
+                        artworkOpacity: 0.74
                         accent: "#bd633d"
                         progress: 0.81
                         onActivated: root.openDetails({title: title, mediaType: "movie",
@@ -1660,6 +2102,8 @@ ApplicationWindow {
                         eyebrow: "S1  E7"
                         title: "After Midnight"
                         subtitle: "Static in the Valley"
+                        artSource: Qt.resolvedUrl("../assets/demo/after-midnight.png")
+                        artworkOpacity: 0.74
                         accent: "#6b5b7d"
                         progress: 0.46
                         onActivated: root.openDetails({title: title, mediaType: "episode",
@@ -1682,18 +2126,19 @@ ApplicationWindow {
                     onActionActivated: root.showPage("library")
                 }
 
-                Row {
+                HorizontalMediaRow {
+                    id: continueWatchingRow
                     width: parent.width
-                    spacing: 15
 
                     Repeater {
-                        model: Math.min(4, serverClient.continueWatching.length)
+                        model: Math.min(root.shelfPreviewLimit,
+                                        serverClient.continueWatching.length)
 
                         MediaCard {
                             required property int index
                             property var media: serverClient.continueWatching[index]
 
-                            width: (parent.width - 45) / 4
+                            width: continueWatchingRow.cardWidth
                             eyebrow: root.mediaLabel(media)
                             title: root.itemTitle(media, "Untitled")
                             subtitle: root.continueSubtitle(media)
@@ -1731,6 +2176,8 @@ ApplicationWindow {
                         title: "Saturday Cartoons"
                         subtitle: "Up next: Galaxy Rangers"
                         badge: "12"
+                        artSource: Qt.resolvedUrl("../assets/demo/cosmic-drift.png")
+                        artworkOpacity: 0.74
                         accent: "#ef7423"
                         progress: 0.67
                         onActivated: root.showPage("live")
@@ -1741,6 +2188,8 @@ ApplicationWindow {
                         title: "Creature Features"
                         subtitle: "Up next: Night Visitors"
                         badge: "24"
+                        artSource: Qt.resolvedUrl("../assets/demo/after-midnight.png")
+                        artworkOpacity: 0.74
                         accent: "#75864b"
                         progress: 0.38
                         onActivated: root.showPage("live")
@@ -1751,6 +2200,8 @@ ApplicationWindow {
                         title: "Neon Nights"
                         subtitle: "Up next: Electric Dreams"
                         badge: "88"
+                        artSource: Qt.resolvedUrl("../assets/demo/northern-lights.png")
+                        artworkOpacity: 0.74
                         accent: "#6a597d"
                         progress: 0.52
                         onActivated: root.showPage("live")
@@ -1772,19 +2223,20 @@ ApplicationWindow {
                     onActionActivated: root.showPage("live")
                 }
 
-                Row {
+                HorizontalMediaRow {
+                    id: liveChannelsRow
                     width: parent.width
-                    spacing: 15
 
                     Repeater {
-                        model: Math.min(4, serverClient.liveChannels.length)
+                        model: Math.min(root.shelfPreviewLimit,
+                                        serverClient.liveChannels.length)
 
                         MediaCard {
                             required property int index
                             property var channel: serverClient.liveChannels[index]
                             property var currentProgram: root.channelNow(channel)
 
-                            width: (parent.width - 45) / 4
+                            width: liveChannelsRow.cardWidth
                             eyebrow: "CH " + channel.number + "  •  LIVE"
                             title: root.channelTitle(channel)
                             subtitle: root.channelSubtitle(channel)
@@ -1821,24 +2273,32 @@ ApplicationWindow {
                     MediaCard {
                         width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
                         eyebrow: "MOVIE"; title: "Cosmic Drift"; subtitle: "2026  •  1h 52m"
+                        artSource: Qt.resolvedUrl("../assets/demo/cosmic-drift.png")
+                        artworkOpacity: 0.74
                         accent: "#7d4d91"
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
                     MediaCard {
                         width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
                         eyebrow: "SHOW"; title: "Harbor Street"; subtitle: "2024  •  2 seasons"
+                        artSource: Qt.resolvedUrl("../assets/demo/harbor-street.png")
+                        artworkOpacity: 0.74
                         accent: "#4d7485"
                         onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
                     }
                     MediaCard {
                         width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
                         eyebrow: "MOVIE"; title: "The Long Winter"; subtitle: "2025  •  1h 44m"
+                        artSource: Qt.resolvedUrl("../assets/demo/the-long-winter.png")
+                        artworkOpacity: 0.74
                         accent: "#506c79"
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
                     MediaCard {
                         width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
-                        eyebrow: "SHOW"; title: "Signal Lost"; subtitle: "2023  •  8 episodes"
+                        eyebrow: "SHOW"; title: "After Midnight"; subtitle: "2023  •  8 episodes"
+                        artSource: Qt.resolvedUrl("../assets/demo/after-midnight.png")
+                        artworkOpacity: 0.74
                         accent: "#9c5a39"
                         onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
                     }
@@ -1859,19 +2319,19 @@ ApplicationWindow {
                     onActionActivated: root.showPage("library")
                 }
 
-                Row {
+                HorizontalMediaRow {
                     id: recentlyAddedRow
                     width: parent.width
-                    spacing: 15
 
                     Repeater {
-                        model: Math.min(4, serverClient.recentlyAdded.length)
+                        model: Math.min(root.shelfPreviewLimit,
+                                        serverClient.recentlyAdded.length)
 
                         MediaCard {
                             required property int index
                             property var media: serverClient.recentlyAdded[index]
 
-                            width: (recentlyAddedRow.width - 3 * recentlyAddedRow.spacing) / 4
+                            width: recentlyAddedRow.cardWidth
                             eyebrow: root.mediaLabel(media)
                             title: root.itemTitle(media, "Untitled")
                             subtitle: root.itemMeta(media)
@@ -2000,11 +2460,6 @@ ApplicationWindow {
         visible: root.currentPage !== "home"
         color: root.color
         z: 40
-
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#171a1e" }
-            GradientStop { position: 1.0; color: "#0c0e10" }
-        }
 
         Item {
             id: libraryScreenBackdrop
@@ -2149,6 +2604,14 @@ ApplicationWindow {
                                 text: "Discover  ›"
                                 onClicked: root.showPage("discover")
                             }
+
+                            FocusButton {
+                                id: libraryRecommendations
+                                visible: root.taterRecommendationsAvailable()
+                                width: 210
+                                text: "Tater Picks  ›"
+                                onClicked: root.showPage("recommendations")
+                            }
                         }
                     }
 
@@ -2177,18 +2640,19 @@ ApplicationWindow {
                                     onActionActivated: root.openLibraryRow(shelf)
                                 }
 
-                                Row {
+                                HorizontalMediaRow {
+                                    id: libraryMediaRow
                                     width: parent.width
                                     visible: shelfItems.length > 0
-                                    spacing: 15
 
                                     Repeater {
-                                        model: Math.min(4, shelfColumn.shelfItems.length)
+                                        model: Math.min(root.shelfPreviewLimit,
+                                                        shelfColumn.shelfItems.length)
 
                                         MediaCard {
                                             required property int index
                                             property var media: shelfColumn.shelfItems[index]
-                                            width: (shelfColumn.width - 3 * 15) / 4
+                                            width: libraryMediaRow.cardWidth
                                             eyebrow: root.mediaLabel(media)
                                             title: root.itemTitle(media, "Untitled")
                                             subtitle: String(media && media.mediaType || "").toLowerCase() === "show"
@@ -2687,15 +3151,13 @@ ApplicationWindow {
                         Repeater {
                             model: root.displayedDiscoverCategories().length
 
-                            PosterCard {
+                            DiscoveryCategoryCard {
                                 required property int index
                                 property var category: root.displayedDiscoverCategories()[index]
                                 width: (discoverCategoryGrid.width - 2 * discoverCategoryGrid.columnSpacing) / 3
                                 height: 238
                                 title: root.itemTitle(category, "Discover")
-                                meta: String(category.detail || category.category || "DISCOVER").toUpperCase()
-                                number: index < 9 ? "0" + (index + 1) : String(index + 1)
-                                accent: index < 3 ? "#d8651c" : "#5a6067"
+                                artSource: root.discoverCategoryArtwork(category)
                                 onActivated: root.openDiscoverCategory(category)
                             }
                         }
@@ -2858,6 +3320,170 @@ ApplicationWindow {
 
                 Column {
                     width: parent.width
+                    visible: root.currentPage === "recommendations"
+                    spacing: 22
+
+                    RecommendationHero {
+                        width: parent.width
+                        height: implicitHeight
+                        assistantName: root.recommendationAssistantName()
+                        eyebrow: root.recommendationHeroEyebrow()
+                        title: root.recommendationHeroTitle()
+                        message: root.recommendationHeroMessage()
+                        pickCount: root.displayedRecommendations().length
+                        artSource: root.focusedRecommendation()
+                                   ? root.homeWideArtwork(root.focusedRecommendation()) : ""
+                        speechLoading: serverClient.recommendationSpeechLoading
+                        speaking: recommendationVoice.playbackState === MediaPlayer.PlayingState
+                        speechError: root.recommendationSpeechPlaybackError
+                                     || serverClient.recommendationSpeechErrorMessage
+                    }
+
+                    Grid {
+                        id: recommendationGrid
+                        width: parent.width
+                        visible: root.displayedRecommendations().length > 0
+                        columns: 4
+                        columnSpacing: 15
+                        rowSpacing: 18
+
+                        Repeater {
+                            model: root.displayedRecommendations().length
+
+                            MediaCard {
+                                required property int index
+                                property var media: root.displayedRecommendations()[index]
+                                width: (recommendationGrid.width
+                                        - (recommendationGrid.columns - 1)
+                                          * recommendationGrid.columnSpacing)
+                                       / recommendationGrid.columns
+                                height: 192
+                                eyebrow: "TATER PICK  •  " + root.mediaLabel(media)
+                                title: root.itemTitle(media, "Something good")
+                                subtitle: root.recommendationMeta(media)
+                                artSource: root.homeWideArtwork(media)
+                                fallbackArtSource: root.homeArtworkFallback(media)
+                                artworkOpacity: 0.68
+                                badge: index < 9 ? "0" + (index + 1) : String(index + 1)
+                                accent: root.cardAccent(index)
+                                onActiveFocusChanged: {
+                                    if (activeFocus)
+                                        root.focusedRecommendationIndex = index
+                                }
+                                onActivated: root.activateRecommendation(media)
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: serverClient.recommendationsLoading
+                                 && serverClient.recommendations.length === 0
+                        width: parent.width
+                        height: 210
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 18
+
+                            BusyIndicator {
+                                anchors.verticalCenter: parent.verticalCenter
+                                running: parent.parent.visible
+                                palette.highlight: root.orange
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Asking Tater what fits your next watch…"
+                                color: root.textPrimary
+                                font.pixelSize: 17
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !serverClient.recommendationsLoading
+                                 && serverClient.recommendationsErrorMessage.length > 0
+                        width: parent.width
+                        height: 210
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#6b4b38"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 20
+
+                            Image {
+                                width: 112
+                                height: 112
+                                source: "../assets/mascot/tater-wave.png"
+                                fillMode: Image.PreserveAspectFit
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 560
+                                spacing: 12
+
+                                Text {
+                                    width: parent.width
+                                    text: serverClient.recommendationsErrorMessage
+                                    color: root.textPrimary
+                                    wrapMode: Text.WordWrap
+                                    font.pixelSize: 17
+                                }
+
+                                FocusButton {
+                                    width: 180
+                                    text: "Try again"
+                                    primary: true
+                                    onClicked: serverClient.refreshRecommendations()
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !demoMode && !serverClient.recommendationsLoading
+                                 && serverClient.recommendationsErrorMessage.length === 0
+                                 && serverClient.recommendations.length === 0
+                        width: parent.width
+                        height: 210
+                        radius: 24
+                        color: root.panel
+                        border.width: 1
+                        border.color: "#3b4046"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 20
+
+                            Image {
+                                width: 112
+                                height: 112
+                                source: "../assets/mascot/tater-wave.png"
+                                fillMode: Image.PreserveAspectFit
+                            }
+
+                            Text {
+                                width: 610
+                                text: "Tater is connected and learning what you enjoy. Fresh recommendations will appear here when the next batch is ready."
+                                color: root.textSecondary
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 17
+                            }
+                        }
+                    }
+                }
+
+                Column {
+                    width: parent.width
                     visible: root.currentPage === "live"
                     spacing: 22
 
@@ -2884,8 +3510,6 @@ ApplicationWindow {
                                 required property int index
                                 property var channel: root.displayedLiveChannels()[index]
                                 property var programs: root.guidePrograms(channel)
-                                property var currentProgram: programs.length > 0
-                                    ? programs[0] : (channel && channel.now ? channel.now : null)
                                 width: liveGuide.width
                                 spacing: 12
 
@@ -2896,8 +3520,11 @@ ApplicationWindow {
                                     meta: "WATCH CHANNEL"
                                     isCurrent: true
                                     showProgress: false
-                                    artSource: guideRow.currentProgram && guideRow.currentProgram.poster
-                                               ? guideRow.currentProgram.poster : ""
+                                    logoArtwork: !!guideRow.channel
+                                                 && !!guideRow.channel.logoUrl
+                                                 && String(guideRow.channel.logoUrl).length > 0
+                                    artSource: logoArtwork ? guideRow.channel.logoUrl : ""
+                                    artworkOpacity: logoArtwork ? 1.0 : 0.62
                                     accent: root.cardAccent(guideRow.index)
                                     onActivated: {
                                         if (guideRow.channel && guideRow.channel.streamUrl)
@@ -3273,6 +3900,15 @@ ApplicationWindow {
             }
 
             FocusButton {
+                id: sideRecommendationsNav
+                visible: root.taterRecommendationsAvailable()
+                width: parent.width
+                text: "Tater Picks"
+                selected: root.currentPage === "recommendations"
+                onClicked: root.showPage("recommendations")
+            }
+
+            FocusButton {
                 id: sideLiveNav
                 width: parent.width
                 text: "Live TV"
@@ -3359,7 +3995,6 @@ ApplicationWindow {
         MouseArea {
             anchors.fill: parent
             onClicked: {
-                UiSounds.back()
                 root.closeDetails()
             }
         }
@@ -3367,30 +4002,36 @@ ApplicationWindow {
         Rectangle {
             id: detailsPanel
             anchors.centerIn: parent
-            width: Math.min(980, root.width - 100)
-            height: Math.min(590, root.height - 100)
+            width: Math.min(1120, root.width - 80)
+            height: Math.min(620, root.height - 80)
             radius: 30
-            color: "#202328"
+            color: "#17191d"
             border.width: 1
             border.color: "#51565c"
             clip: true
 
             Rectangle {
+                id: detailsArtworkFrame
+                readonly property real artworkAspect: {
+                    var sourceHeight = Number(detailsArtwork.sourceSize.height || 0)
+                    var sourceWidth = Number(detailsArtwork.sourceSize.width || 0)
+                    if (detailsArtwork.status === Image.Ready
+                            && sourceWidth > 0 && sourceHeight > 0) {
+                        return sourceWidth / sourceHeight
+                    }
+                    return 2 / 3
+                }
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: 300
-                color: "#17191d"
+                width: Math.round(parent.height * artworkAspect)
+                color: "#0d0f12"
 
                 Image {
                     id: detailsArtwork
                     anchors.fill: parent
-                    source: root.selectedItem && root.selectedItem.poster
-                            ? root.selectedItem.poster
-                            : (root.selectedItem && root.selectedItem.now
-                               && root.selectedItem.now.poster
-                               ? root.selectedItem.now.poster : "")
-                    fillMode: Image.PreserveAspectCrop
+                    source: root.detailsArtworkSource(root.selectedItem)
+                    fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     visible: status === Image.Ready
                 }
@@ -3405,13 +4046,25 @@ ApplicationWindow {
                 }
             }
 
-            Column {
-                anchors.left: parent.left
-                anchors.leftMargin: 344
+            Rectangle {
+                anchors.left: detailsArtworkFrame.right
                 anchors.right: parent.right
-                anchors.rightMargin: 42
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#24272c" }
+                    GradientStop { position: 1.0; color: "#191b1f" }
+                }
+            }
+
+            Column {
+                anchors.left: detailsArtworkFrame.right
+                anchors.leftMargin: 38
+                anchors.right: parent.right
+                anchors.rightMargin: 38
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 16
+                spacing: 15
 
                 Text {
                     text: root.selectedKind
@@ -3430,67 +4083,152 @@ ApplicationWindow {
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
                     elide: Text.ElideRight
-                    font.pixelSize: 34
+                    font.pixelSize: 36
                     font.weight: Font.Black
                 }
 
                 Text {
                     width: parent.width
-                    text: root.selectedItem && root.selectedItem.description
-                          ? root.selectedItem.description
-                          : (root.selectedItem && root.selectedItem.next
-                             ? "Up next: " + root.selectedItem.next.title
-                             : "Selected from your private Tater Tube Server library.")
-                    color: root.textSecondary
-                    wrapMode: Text.WordWrap
-                    maximumLineCount: 5
-                    elide: Text.ElideRight
-                    font.pixelSize: 16
-                    lineHeight: 1.2
-                }
-
-                Text {
-                    visible: root.itemMeta(root.selectedItem).length > 0
-                    text: root.itemMeta(root.selectedItem)
+                    visible: root.detailsMeta(root.selectedItem).length > 0
+                    text: root.detailsMeta(root.selectedItem)
                     color: "#d0d2d3"
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
                     font.pixelSize: 14
                     font.weight: Font.DemiBold
                 }
 
-                Rectangle {
+                Text {
                     width: parent.width
-                    height: 64
-                    radius: 15
-                    color: "#28231f"
-                    border.width: 1
-                    border.color: "#65462f"
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: root.selectedKind.indexOf("CHANNEL") === 0
-                              ? "Live playback includes your server-built channels, commercials, and spots."
-                              : "Tater Tube will direct play first and optimize automatically when needed."
-                        color: "#e4c4ab"
-                        font.pixelSize: 13
-                        font.weight: Font.DemiBold
-                    }
+                    text: root.detailsSynopsis(root.selectedItem)
+                    color: root.textSecondary
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 7
+                    elide: Text.ElideRight
+                    font.pixelSize: 16
+                    lineHeight: 1.25
                 }
 
                 Row {
                     spacing: 12
 
                     FocusButton {
-                        id: detailsPlay
-                        width: 210
-                        text: root.selectedKind.indexOf("CHANNEL") === 0
-                              ? "▶  Watch live" : "▶  Play"
+                        id: detailsResume
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 225
+                        visible: root.selectedKind.indexOf("CHANNEL") !== 0
+                                 && root.hasPlaybackProgress(root.selectedItem)
+                        text: "▶  Resume " + root.formatPlaybackTime(
+                                  root.playbackResumeOffset(root.selectedItem))
                         primary: true
-                        enabled: !!(root.selectedItem && root.selectedItem.streamUrl)
-                        onClicked: root.startPlayback(root.selectedItem, root.selectedKind)
+                        enabled: !!root.detailsPlaybackItem(root.selectedItem).streamUrl
+                                 && !root.detailsProgressClearing
+                        onClicked: root.startPlayback(
+                                       root.detailsPlaybackItem(root.selectedItem),
+                                       root.selectedKind, true)
                     }
+
+                    FocusButton {
+                        id: detailsPlay
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: root.hasPlaybackProgress(root.selectedItem) ? 190 : 220
+                        text: root.selectedKind.indexOf("CHANNEL") === 0
+                              ? "▶  Watch live"
+                              : (root.hasPlaybackProgress(root.selectedItem)
+                                 ? "▶  Play from start" : "▶  Play")
+                        primary: !detailsResume.visible
+                        enabled: !!root.detailsPlaybackItem(root.selectedItem).streamUrl
+                                 && !root.detailsProgressClearing
+                        onClicked: root.startPlayback(
+                                       root.detailsPlaybackItem(root.selectedItem),
+                                       root.selectedKind, false)
+                    }
+
+                    FocusButton {
+                        id: detailsClearProgress
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 54
+                        height: 46
+                        compact: true
+                        visible: root.selectedKind.indexOf("CHANNEL") !== 0
+                                 && root.hasPlaybackProgress(root.selectedItem)
+                        text: "↺"
+                        enabled: !root.detailsProgressClearing
+                        ToolTip.visible: activeFocus
+                        ToolTip.text: "Clear watch progress"
+                        ToolTip.delay: 400
+                        onClicked: root.clearSelectedPlaybackProgress()
+                    }
+                }
+
+                Text {
+                    visible: root.detailsStatusMessage.length > 0
+                    text: root.detailsStatusMessage
+                    color: root.detailsProgressClearing ? root.textSecondary : "#73d68a"
+                    font.pixelSize: 13
+                    font.weight: Font.DemiBold
                 }
             }
         }
+    }
+
+    Timer {
+        id: recommendationSpeechDelay
+        interval: 700
+        onTriggered: root.startRecommendationSpeech()
+    }
+
+    AudioOutput {
+        id: recommendationAudio
+        device: playbackCapabilities.defaultAudioOutput
+        volume: playerAudio.volume
+    }
+
+    MediaPlayer {
+        id: recommendationVoice
+        audioOutput: recommendationAudio
+        onMediaStatusChanged: {
+            if (mediaStatus === MediaPlayer.EndOfMedia)
+                root.stopRecommendationSpeech()
+        }
+        onErrorOccurred: function(error, errorString) {
+            root.stopRecommendationSpeech()
+            root.recommendationSpeechPlaybackError = "The voice message is unavailable. Your picks are ready below."
+        }
+    }
+
+    Connections {
+        target: serverClient
+        function onRecommendationSpeechReady(audioUrl) {
+            if (!root.recommendationSpeechVisitActive || root.currentPage !== "recommendations"
+                    || root.playbackOpen || root.detailsOpen || root.sideMenuOpen) {
+                root.stopRecommendationSpeech()
+                return
+            }
+            recommendationVoice.source = audioUrl
+            recommendationVoice.play()
+        }
+        function onHomeChanged() {
+            if (!root.taterRecommendationsAvailable()) {
+                root.recommendationSpeechVisitActive = false
+                root.stopRecommendationSpeech()
+            }
+        }
+    }
+
+    Timer {
+        interval: 1000
+        repeat: true
+        running: root.playbackOpen
+        onTriggered: root.sampleViewingHistory()
+    }
+
+    Timer {
+        interval: 60000
+        repeat: true
+        running: root.playbackOpen && root.playbackIsLive && !demoMode
+        onTriggered: serverClient.refreshLiveGuide()
     }
 
     AudioOutput {
@@ -3511,6 +4249,8 @@ ApplicationWindow {
                 root.playbackStatusMessage = ""
                 playbackControlsTimer.restart()
             } else {
+                if (playbackState === MediaPlayer.PausedState)
+                    root.reportViewingHistory("paused")
                 root.playbackControlsVisible = true
                 playbackControlsTimer.stop()
             }
@@ -3528,6 +4268,7 @@ ApplicationWindow {
                 }
             } else if (mediaStatus === MediaPlayer.EndOfMedia) {
                 root.savePlaybackState(true)
+                root.finishViewingHistory(root.playbackIsLive ? "stopped" : "completed")
                 root.playbackEnded = true
                 root.playbackControlsVisible = true
                 root.playbackStatusMessage = "Finished"
@@ -3541,11 +4282,11 @@ ApplicationWindow {
                 return
             if (root.retryWithCompatibleStream(errorString))
                 return
+            root.finishViewingHistory("stopped")
             root.playbackStatusMessage = ""
             root.playbackError = errorString && errorString.length > 0
                     ? errorString : "This video could not be played."
             root.playbackControlsVisible = true
-            UiSounds.alert()
         }
     }
 
@@ -3556,6 +4297,22 @@ ApplicationWindow {
             if (root.playbackOpen
                     && mediaPlayer.playbackState === MediaPlayer.PlayingState)
                 root.playbackHasVideoFrame = true
+        }
+    }
+
+    Connections {
+        target: serverClient
+
+        function onPlaybackProgressCleared() {
+            root.detailsProgressClearing = false
+            root.selectedItem = root.selectedItemWithoutProgress()
+            root.detailsStatusMessage = "Watch progress cleared."
+            Qt.callLater(function() { detailsPlay.forceActiveFocus() })
+        }
+
+        function onPlaybackProgressClearFailed(message) {
+            root.detailsProgressClearing = false
+            root.detailsStatusMessage = message
         }
     }
 
@@ -3767,7 +4524,6 @@ ApplicationWindow {
 
                         FocusButton {
                             text: "Back"
-                            soundRole: "back"
                             onClicked: root.closePlayback()
                         }
                     }
@@ -4003,7 +4759,6 @@ ApplicationWindow {
                         border.color: pinField.activeFocus ? root.orange : "#41464c"
                     }
                     onAccepted: {
-                        UiSounds.select()
                         serverClient.pair(serverField.text, text)
                     }
                 }
