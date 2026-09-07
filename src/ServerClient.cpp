@@ -1349,6 +1349,19 @@ void ServerClient::clearLocalPlaybackProgress(const QVariantMap &item)
     emit recommendationsChanged();
 }
 
+QString ServerClient::playbackProfile(const QVariantMap &capabilities) const
+{
+    const int width = capabilities.value(QStringLiteral("max_width")).toInt();
+    const int height = capabilities.value(QStringLiteral("max_height")).toInt();
+    const int longEdge = std::max(width, height);
+    const int shortEdge = std::min(width, height);
+    if (longEdge >= 3840 && shortEdge >= 2160)
+        return QStringLiteral("hdmi_4k");
+    if (longEdge >= 1920 && shortEdge >= 1080)
+        return QStringLiteral("hdmi_1080p");
+    return QStringLiteral("hdmi_720p");
+}
+
 void ServerClient::preparePlayback(const QVariantMap &item, const QString &kind,
                                    const QVariantMap &capabilities)
 {
@@ -1362,7 +1375,7 @@ void ServerClient::preparePlayback(const QVariantMap &item, const QString &kind,
     const QJsonObject payload{
         {QStringLiteral("stream_url"), streamUrl},
         {QStringLiteral("media_type"), kind.trimmed().toLower()},
-        {QStringLiteral("profile"), QStringLiteral("hdmi_1080p")},
+        {QStringLiteral("profile"), playbackProfile(capabilities)},
         {QStringLiteral("capabilities"), QJsonObject::fromVariantMap(capabilities)},
     };
     QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/v1/player/playback/sessions"))};

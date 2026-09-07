@@ -128,6 +128,7 @@ public:
                                         qint64 watchedMs = 0);
     Q_INVOKABLE void refreshLiveGuide();
     Q_INVOKABLE void forgetServer();
+    Q_INVOKABLE QString playbackProfile(const QVariantMap &capabilities) const;
     Q_INVOKABLE void preparePlayback(const QVariantMap &item, const QString &kind,
                                      const QVariantMap &capabilities);
     Q_INVOKABLE void savePlaybackProgress(const QVariantMap &item, qint64 positionMs,

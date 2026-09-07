@@ -111,6 +111,7 @@ private slots:
     void normalizesServerAddresses();
     void buildsEndpointUrls();
     void rejectsUnsupportedAddresses();
+    void selectsPlaybackProfileForDisplay();
     void loadsVersionedHome();
     void addsPlaybackTranscodeParameters();
     void preservesPlaybackPlanWhenSeeking();
@@ -139,6 +140,23 @@ void ServerClientTest::initTestCase()
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
                        m_settingsDirectory.path());
+}
+
+void ServerClientTest::selectsPlaybackProfileForDisplay()
+{
+    ServerClient client;
+    QCOMPARE(client.playbackProfile({
+        {QStringLiteral("max_width"), 3840},
+        {QStringLiteral("max_height"), 2160},
+    }), QStringLiteral("hdmi_4k"));
+    QCOMPARE(client.playbackProfile({
+        {QStringLiteral("max_width"), 1920},
+        {QStringLiteral("max_height"), 1080},
+    }), QStringLiteral("hdmi_1080p"));
+    QCOMPARE(client.playbackProfile({
+        {QStringLiteral("max_width"), 1280},
+        {QStringLiteral("max_height"), 800},
+    }), QStringLiteral("hdmi_720p"));
 }
 
 void ServerClientTest::normalizesServerAddresses()

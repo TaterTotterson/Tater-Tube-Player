@@ -447,6 +447,14 @@ QStringList PlaybackCapabilities::supportedVideoCodecs()
         default: break;
         }
     }
+#if defined(Q_OS_LINUX)
+    // Qt groups VC-1 with its Windows Media video support and does not expose a
+    // separate QMediaFormat enum for it. The Linux FFmpeg backend can decode
+    // VC-1 whenever it advertises WMV, so report the concrete ffprobe codec
+    // name that Tater Tube Server uses for playback planning.
+    if (result.contains(QStringLiteral("wmv")))
+        appendUnique(result, QStringLiteral("vc1"));
+#endif
     result.sort();
     return result;
 }

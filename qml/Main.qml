@@ -43,6 +43,7 @@ ApplicationWindow {
     property bool playbackPlanPending: false
     property string playbackAudioCodec: ""
     property string playbackAudioMode: "direct"
+    property string playbackProfile: "hdmi_1080p"
     property real playbackBaseOffsetMs: 0
     property real playbackPendingResumeMs: 0
     property string playbackError: ""
@@ -1252,11 +1253,13 @@ ApplicationWindow {
             mediaPlayer.play()
             playbackControlsTimer.restart()
         } else if (serverClient.paired) {
+            var capabilities = playbackCapabilities.report
+            playbackProfile = serverClient.playbackProfile(capabilities)
             playbackPlanPending = true
             playbackStatusMessage = "Matching playback to this screen…"
             playbackQuality = "Choosing best quality"
             serverClient.preparePlayback(item, kind || mediaLabel(item),
-                                         playbackCapabilities.report)
+                                         capabilities)
         } else {
             applyLegacyPlaybackPlan()
         }
@@ -1275,7 +1278,8 @@ ApplicationWindow {
             playbackStatusMessage = "Preparing compatible audio…"
             playbackQuality = "Video Direct • Audio AAC"
             mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
-                        playbackSourceUrl, "hdmi_1080p", Math.round(playbackBaseOffsetMs))
+                        playbackSourceUrl, playbackProfile,
+                        Math.round(playbackBaseOffsetMs))
         } else {
             playbackUsingAudioTranscode = false
             mediaPlayer.source = playbackSourceUrl
@@ -1438,11 +1442,11 @@ ApplicationWindow {
         if (playbackSourceVideoRange.length > 0
                 && playbackSourceVideoRange !== "sdr") {
             playbackPlanUrl = serverClient.playbackToneMappedTranscodeUrl(
-                        fallbackBase, "hdmi_1080p",
+                        fallbackBase, playbackProfile,
                         playbackSourceVideoRange, 0)
         } else {
             playbackPlanUrl = serverClient.playbackTranscodeUrl(
-                        fallbackBase, "hdmi_1080p", 0)
+                        fallbackBase, playbackProfile, 0)
         }
         mediaPlayer.source = serverClient.playbackUrlAtPosition(
                     playbackPlanUrl, Math.round(resumeAt))
@@ -1486,7 +1490,7 @@ ApplicationWindow {
             playbackHasVideoFrame = false
             mediaPlayer.stop()
             mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
-                        playbackSourceUrl, "hdmi_1080p", Math.round(target))
+                        playbackSourceUrl, playbackProfile, Math.round(target))
             Qt.callLater(function() { mediaPlayer.play() })
         } else if (playbackUsingVideoTranscode) {
             playbackBaseOffsetMs = target
@@ -1494,7 +1498,7 @@ ApplicationWindow {
             playbackHasVideoFrame = false
             mediaPlayer.stop()
             mediaPlayer.source = serverClient.playbackVideoTranscodeUrl(
-                        playbackSourceUrl, "hdmi_1080p", playbackAudioCodec,
+                        playbackSourceUrl, playbackProfile, playbackAudioCodec,
                         playbackAudioMode,
                         Math.round(target))
             Qt.callLater(function() { mediaPlayer.play() })
