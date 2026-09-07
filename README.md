@@ -33,6 +33,8 @@ with:
 - a Home-only navigation strip plus an edge-triggered slide-out menu for TV remotes;
 - keyboard, controller, and remote-visible focus states, including held D-pad
   repeat and trigger/shoulder page jumps;
+- native fullscreen rendering with resolution-aware UI scaling for the Steam
+  Deck panel and connected 1080p, 1440p, or 4K televisions;
 - Tater Tube Server URL and six-digit PIN pairing;
 - prototype persistence for the server address and player token;
 - live Continue Watching, Recently Added, and Tube TV home rows from

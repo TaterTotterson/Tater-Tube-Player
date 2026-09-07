@@ -13,6 +13,7 @@ ApplicationWindow {
     minimumWidth: 1180
     minimumHeight: 720
     visible: true
+    visibility: fullScreenMode ? Window.FullScreen : Window.Windowed
     title: "Tater Tube Player"
     color: "#000000"
 

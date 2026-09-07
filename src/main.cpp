@@ -98,6 +98,8 @@ int main(int argc, char *argv[])
                                              parser.value(QStringLiteral("play-url")));
     engine.rootContext()->setContextProperty(QStringLiteral("compatiblePlaybackMode"),
                                              parser.isSet(QStringLiteral("compatible-playback")));
+    engine.rootContext()->setContextProperty(QStringLiteral("fullScreenMode"),
+                                             !parser.isSet(QStringLiteral("screenshot")));
     engine.loadFromModule(QStringLiteral("TaterTube.Player"), QStringLiteral("Main"));
     if (engine.rootObjects().isEmpty())
         return 1;
