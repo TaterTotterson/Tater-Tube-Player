@@ -1913,7 +1913,8 @@ ApplicationWindow {
                     updateToken: page.contentY
                     cornerRadius: hero.radius
                     blurAmount: 0.82
-                    tint: "#50101418"
+                    brightness: -0.16
+                    tint: "#70101418"
                 }
 
                 Rectangle {
@@ -1922,9 +1923,9 @@ ApplicationWindow {
                     antialiasing: true
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: "#6b0c0e11" }
-                        GradientStop { position: 0.62; color: "#42121417" }
-                        GradientStop { position: 1.0; color: "#241b130e" }
+                        GradientStop { position: 0.0; color: "#780c0e11" }
+                        GradientStop { position: 0.62; color: "#58121417" }
+                        GradientStop { position: 1.0; color: "#3d1b130e" }
                     }
                 }
 
@@ -2561,7 +2562,8 @@ ApplicationWindow {
                             updateToken: sectionScroller.contentY
                             cornerRadius: libraryQuickBrowse.radius
                             blurAmount: 0.82
-                            tint: "#50101418"
+                            brightness: -0.16
+                            tint: "#70101418"
                         }
 
                         Rectangle {
@@ -2569,9 +2571,9 @@ ApplicationWindow {
                             radius: libraryQuickBrowse.radius
                             gradient: Gradient {
                                 orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: "#67101215" }
-                                GradientStop { position: 0.66; color: "#40131518" }
-                                GradientStop { position: 1.0; color: "#29201712" }
+                                GradientStop { position: 0.0; color: "#76101215" }
+                                GradientStop { position: 0.66; color: "#5b131518" }
+                                GradientStop { position: 1.0; color: "#45201712" }
                             }
                         }
 
@@ -3149,7 +3151,8 @@ ApplicationWindow {
                             updateToken: sectionScroller.contentY
                             cornerRadius: discoverHero.radius
                             blurAmount: 0.82
-                            tint: "#50101418"
+                            brightness: -0.16
+                            tint: "#70101418"
                         }
 
                         Rectangle {
@@ -3157,9 +3160,9 @@ ApplicationWindow {
                             radius: discoverHero.radius
                             gradient: Gradient {
                                 orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: "#67101215" }
-                                GradientStop { position: 0.66; color: "#40131518" }
-                                GradientStop { position: 1.0; color: "#29201712" }
+                                GradientStop { position: 0.0; color: "#76101215" }
+                                GradientStop { position: 0.66; color: "#5b131518" }
+                                GradientStop { position: 1.0; color: "#45201712" }
                             }
                         }
 
@@ -3881,18 +3884,43 @@ ApplicationWindow {
 
     Rectangle {
         id: sideMenu
+        readonly property bool glassActive:
+            root.sideMenuOpen || x > -width
         x: root.sideMenuOpen ? 0 : -width - 18
         y: 0
         width: 304
         height: root.height
         enabled: root.sideMenuOpen
         z: 180
-        color: "#f51a1d21"
-        border.width: 1
-        border.color: "#4a4f55"
+        color: "#3d111418"
+        border.width: 0
+        clip: true
 
         Behavior on x {
             NumberAnimation { duration: 190; easing.type: Easing.OutCubic }
+        }
+
+        FrostedGlass {
+            anchors.fill: parent
+            sourceItem: sideMenu.glassActive
+                        ? (root.currentPage === "home" ? page : sectionPage)
+                        : null
+            coordinateItem: sideMenu
+            cornerRadius: 0
+            blurAmount: 0.88
+            brightness: -0.22
+            tint: "#a2101418"
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: "transparent"
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "#a6090b0e" }
+                GradientStop { position: 0.72; color: "#8b0e1013" }
+                GradientStop { position: 1.0; color: "#74130e0a" }
+            }
         }
 
         Rectangle {
@@ -4008,9 +4036,8 @@ ApplicationWindow {
             anchors.bottomMargin: 12
             height: 46
             radius: 14
-            color: "#202429"
-            border.width: 1
-            border.color: "#3c4147"
+            color: "#79101418"
+            border.width: 0
 
             Row {
                 anchors.centerIn: parent
@@ -4052,7 +4079,7 @@ ApplicationWindow {
         id: detailsOverlay
         anchors.fill: parent
         visible: root.detailsOpen
-        color: "#dc08090b"
+        color: "#b806080a"
         z: 200
 
         MouseArea {
@@ -4068,7 +4095,7 @@ ApplicationWindow {
             width: Math.min(1120, root.width - 80)
             height: Math.min(620, root.height - 80)
             radius: 30
-            color: "#3d111418"
+            color: "#2806080a"
             border.width: 0
             clip: true
 
@@ -4114,7 +4141,7 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                color: "#3d111418"
+                color: "#2806080a"
 
                 FrostedGlass {
                     anchors.fill: parent
@@ -4122,7 +4149,8 @@ ApplicationWindow {
                     coordinateItem: detailsGlassPane
                     cornerRadius: 0
                     blurAmount: 0.86
-                    tint: "#58101418"
+                    brightness: -0.28
+                    tint: "#a806080a"
                 }
 
                 Rectangle {
@@ -4130,9 +4158,9 @@ ApplicationWindow {
                     color: "transparent"
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: "#66101215" }
-                        GradientStop { position: 0.68; color: "#47131518" }
-                        GradientStop { position: 1.0; color: "#35201712" }
+                        GradientStop { position: 0.0; color: "#8f050608" }
+                        GradientStop { position: 0.68; color: "#7807090b" }
+                        GradientStop { position: 1.0; color: "#650a0806" }
                     }
                 }
             }

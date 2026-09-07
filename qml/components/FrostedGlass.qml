@@ -8,6 +8,7 @@ Item {
     property Item coordinateItem: parent
     property real updateToken: 0
     property real blurAmount: 0.72
+    property real brightness: -0.08
     property real cornerRadius: 20
     property real samplingMargin: 22
     property color tint: "#42101418"
@@ -49,7 +50,7 @@ Item {
         blur: glass.blurAmount
         blurMax: 20
         blurMultiplier: 1.0
-        brightness: -0.08
+        brightness: glass.brightness
         autoPaddingEnabled: false
         maskEnabled: true
         maskSource: roundedMask

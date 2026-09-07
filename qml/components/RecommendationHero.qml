@@ -28,7 +28,8 @@ Rectangle {
         updateToken: hero.glassScrollOffset
         cornerRadius: hero.radius
         blurAmount: 0.82
-        tint: "#50101418"
+        brightness: -0.16
+        tint: "#70101418"
     }
 
     Image {
@@ -45,9 +46,9 @@ Rectangle {
         radius: parent.radius
         gradient: Gradient {
             orientation: Gradient.Horizontal
-            GradientStop { position: 0; color: "#78101215" }
-            GradientStop { position: 0.62; color: "#56131518" }
-            GradientStop { position: 1; color: "#32261a12" }
+            GradientStop { position: 0; color: "#86101215" }
+            GradientStop { position: 0.62; color: "#67131518" }
+            GradientStop { position: 1; color: "#4a20160f" }
         }
     }
 
