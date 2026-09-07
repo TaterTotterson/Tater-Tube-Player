@@ -28,21 +28,22 @@
 These do not block drafting the store page, but they block submitting the build
 as release-ready.
 
-- [ ] Produce a self-contained SteamOS/Linux depot; no Distrobox dependency
+- [x] Produce a self-contained SteamOS/Linux depot; no Distrobox dependency
 - [ ] Test on a clean Steam Deck user profile
 - [x] Choose and document the Qt LGPLv3 dynamic-linking distribution plan
 - [x] Select Apache-2.0 for the player source and reserve the Tater Tube trademarks
-- [ ] Publish the public source repository and tag the exact submitted revision
+- [x] Publish the public source repository
+- [ ] Tag the exact submitted revision
 - [ ] Confirm the Steam launch option does not use Steam DRM/CEG
-- [ ] Record Qt Multimedia, FFmpeg, codec libraries, SDL/sdl2-compat, and every shipped dependency
-- [ ] Generate the release SBOM and third-party notices
+- [x] Record Qt Multimedia, FFmpeg, codec libraries, SDL, and every shipped dependency
+- [x] Generate the release SBOM and third-party notices
 - [ ] Confirm source-offer/relinking obligations for the exact binaries in the depot
 - [ ] Confirm mascot and other brand-asset creation/distribution records
 - [x] Restrict the Linux settings file containing the paired-player token to the current OS user
 - [ ] Verify clean install, first pairing, controller navigation, suspend/resume, output switching, and uninstall
 - [ ] Verify direct play, audio-only transcode, video-only transcode, full transcode, HDR-to-SDR, and Tube TV transitions against Tater Tube Server 1.4.33+
 - [ ] Supply Valve reviewers with a reachable test server or precise local test-server instructions and a rights-safe demo catalog
-- [ ] Confirm the build contains no private addresses, tokens, passwords, or personal media
+- [x] Confirm the draft depot and store media contain no private addresses, credentials, or personal media
 
 ## Current Valve requirements referenced
 

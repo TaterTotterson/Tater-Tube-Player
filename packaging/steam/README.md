@@ -26,6 +26,19 @@ docker run --rm --platform linux/amd64 \
 The script creates `dist/steam/linux-x86_64/`. It refuses to overwrite an
 existing depot so stale libraries cannot silently survive between builds.
 
+After committing the exact release revision, prepare the retained source
+archives with:
+
+```sh
+./scripts/prepare-steam-source-offer.sh dist/steam/source-offer-release
+```
+
+Publish both generated archives with the matching GitHub release, then pass
+their public URLs and SHA-256 values as `TATER_APP_SOURCE_*`,
+`TATER_QT_SOURCE_*`, and `TATER_FFMPEG_SOURCE_*` when producing the final
+non-draft depot. The final audit rejects dirty source trees and placeholder
+source locations.
+
 ## Steamworks launch settings
 
 - Executable: `tater-tube-player`

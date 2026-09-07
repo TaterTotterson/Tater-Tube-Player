@@ -35,15 +35,18 @@ the Steam depot.
 - Project: https://ffmpeg.org/
 - License information: https://ffmpeg.org/legal.html
 
+The Qt 6.11.2 Linux package currently ships FFmpeg libraries matching FFmpeg
+7.1.5 and configured as shared libraries without GPL or nonfree components.
 The full LGPLv2.1 text is included in `packaging/licenses/` and in the Steam
-depot. The release SBOM and source manifest identify the exact FFmpeg build and
-all libraries actually shipped.
+depot. The release SBOM, embedded configuration evidence, and source manifest
+identify the exact FFmpeg build and all libraries actually shipped.
 
 ## SDL / sdl2-compat
 
-Controller discovery and input use the SDL2 API. Development systems may
-provide that API through SDL2 or sdl2-compat. Both use the permissive Zlib
-license. The final depot records which implementation and version it contains.
+Controller discovery and input use the SDL2 API. The Linux executable is built
+against SDL 2.32.70 from the pinned Steam Runtime 4 SDK and dynamically uses
+the SDL library supplied by the selected Steam Runtime; the depot does not
+bundle a second SDL copy. SDL and sdl2-compat use the permissive Zlib license.
 
 - Project: https://www.libsdl.org/
 - sdl2-compat: https://github.com/libsdl-org/sdl2-compat

@@ -3,7 +3,12 @@
 Tater Tube Player is a modern, artwork-first television and desktop player for
 [Tater Tube Server](https://github.com/TaterTotterson/tater-tube-server).
 
-This repository contains the new store player. It is intentionally independent
+This repository contains the official Tater Tube Player family. The Qt client
+at the repository root targets Steam and Steam Deck first; native `apple-tv/`
+and `google-tv/` clients will be added here as those platforms begin. Shared
+API contracts, design assets, demo content, and release policy stay together.
+
+The Player is intentionally independent
 from the GPL-licensed retro player: no source code from that client is copied
 here. Existing Tater Tube applications keep their current names and behavior.
 

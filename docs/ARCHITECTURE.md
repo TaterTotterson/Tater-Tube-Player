@@ -21,8 +21,8 @@ reimplemented against documented HTTP contracts and fixtures.
 
 ## Client responsibilities
 
-- Pair a player and retain its token; move it into platform-secure storage
-  before release.
+- Pair a player and retain its token with permissions restricted to the current
+  operating-system user.
 - Keep full navigation on Home, use the remote/controller Back action on
   secondary screens, and expose an edge-triggered side rail for navigation.
 - Render home, library, details, search, guide, and player surfaces.
@@ -120,7 +120,7 @@ container-specific decisions without changing the track-level modes.
 
 ## Platform plan
 
-- Steam/Steam Deck: this Qt Quick desktop client, built for Windows and Linux.
+- Steam/Steam Deck: this Qt Quick desktop client, initially released for Linux.
 - Apple TV: a thin SwiftUI/AVKit client using the same server contract.
 - Google TV: a thin Kotlin/Compose TV/Media3 client using the same contract.
 
@@ -129,7 +129,7 @@ tokens, copy, artwork rules, and acceptance tests are shared.
 
 ## Security note
 
-The milestone-zero desktop prototype stores its paired-player token with
-`QSettings`. Release builds must move that token to the operating system's
-credential store (Windows Credential Manager, macOS Keychain, or the equivalent
-Linux secret service) before store submission.
+The Linux client stores its paired-player token in the current user's Qt
+settings and forces that file to mode `0600`. Authenticated requests reject
+cross-origin redirects so the token cannot be forwarded to another host. Native
+platform clients may use their platform credential stores when implemented.

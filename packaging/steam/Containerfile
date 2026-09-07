@@ -25,5 +25,6 @@ RUN python3 -m venv /opt/aqt \
 
 ENV PATH="/opt/Qt/${QT_VERSION}/gcc_64/bin:${PATH}"
 ENV CMAKE_PREFIX_PATH="/opt/Qt/${QT_VERSION}/gcc_64"
+ENV TATER_STEAM_RUNTIME_IMAGE="registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk@sha256:2ff6220464894964266c7dbda1b91ca24e433a58ad3edff26571a2a9e5163e00"
 
 WORKDIR /workspace

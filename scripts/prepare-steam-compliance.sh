@@ -31,6 +31,14 @@ fi
 "${tater_qtpaths}" --qt-version > "${tater_compliance_dir}/qt-version.txt"
 tater_qt_prefix=$("${tater_qtpaths}" --query QT_INSTALL_PREFIX)
 
+{
+    echo "Builder: ${TATER_STEAM_RUNTIME_IMAGE:-unrecorded}"
+    uname -a
+    if command -v dpkg-query >/dev/null 2>&1; then
+        dpkg-query -W -f='${Package} ${Version}\n' libsdl2-2.0-0 libsdl2-dev 2>/dev/null || true
+    fi
+} > "${tater_compliance_dir}/steam-runtime.txt"
+
 for tater_sbom_root in \
     "${tater_qt_prefix}/share/qt/sbom" \
     "${tater_qt_prefix}/share/qt6/sbom" \

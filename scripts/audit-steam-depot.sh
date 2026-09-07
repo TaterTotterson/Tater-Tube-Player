@@ -33,6 +33,7 @@ for tater_required in \
     compliance/runtime-dependencies.txt \
     compliance/all-runtime-dependencies.txt \
     compliance/bundled-ffmpeg.txt \
+    compliance/steam-runtime.txt \
     compliance/SHA256SUMS; do
     tater_require_file "${tater_required}"
 done
