@@ -51,3 +51,31 @@ source locations.
 Upload the complete `linux-x86_64` directory as the Linux depot. The top-level
 launcher is required because it makes the shipped shared libraries and QML
 modules replaceable and relocatable.
+
+## SteamPipe preview
+
+After Steamworks assigns the app and Linux depot IDs, generate the build files:
+
+```sh
+./scripts/prepare-steampipe-preview.sh APP_ID DEPOT_ID
+```
+
+This re-runs the depot audit and creates the matching files under
+`dist/steam/steampipe/scripts/`. The generated app build has SteamPipe's
+`Preview` option enabled and no `SetLive` value, so the first SteamCMD run only
+validates the manifest and file mapping. It does not upload or publish the
+depot.
+
+Run that preview with the current Steamworks SDK, replacing the account name:
+
+```sh
+steamcmd +login STEAM_BUILD_ACCOUNT \
+  +run_app_build "$PWD/dist/steam/steampipe/scripts/app_build_APP_ID.vdf" \
+  +quit
+```
+
+Once the preview manifest is correct, change `"Preview" "1"` to
+`"Preview" "0"` in the generated file and run it again to upload. Leave
+`SetLive` absent for the first submission; select the uploaded build on a
+private test branch in Steamworks after upload. Never put a Steam password or
+Steam Guard code in this repository or a build script.

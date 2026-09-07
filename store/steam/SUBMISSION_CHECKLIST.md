@@ -13,6 +13,7 @@
 - [x] Required store capsules rendered at current Valve dimensions
 - [ ] Required store capsules uploaded in Steamworks
 - [x] Website, support, and privacy links prepared for their dedicated fields
+- [x] Steamworks field-by-field handoff prepared
 - [ ] Developer and publisher display names confirmed
 - [x] Price chosen: free
 - [ ] Release / Coming Soon date chosen
@@ -29,6 +30,7 @@ These do not block drafting the store page, but they block submitting the build
 as release-ready.
 
 - [x] Produce a self-contained SteamOS/Linux depot; no Distrobox dependency
+- [x] Prepare SteamPipe app/depot templates with preview mode enabled
 - [ ] Test on a clean Steam Deck user profile
 - [x] Choose and document the Qt LGPLv3 dynamic-linking distribution plan
 - [x] Select Apache-2.0 for the player source and reserve the Tater Tube trademarks

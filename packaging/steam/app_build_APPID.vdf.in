@@ -1,0 +1,13 @@
+"AppBuild"
+{
+    "AppID" "@APP_ID@"
+    "Desc" "Tater Tube Player @VERSION@ Linux x86_64"
+    "Preview" "1"
+    "ContentRoot" "../../linux-x86_64"
+    "BuildOutput" "../output"
+
+    "Depots"
+    {
+        "@DEPOT_ID@" "depot_build_@DEPOT_ID@.vdf"
+    }
+}
