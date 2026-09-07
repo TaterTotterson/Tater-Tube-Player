@@ -8,6 +8,8 @@ Rectangle {
     property string title: "Tater Picks"
     property string message: "Your next set of recommendations is on the way."
     property url artSource: ""
+    property Item glassSource: null
+    property real glassScrollOffset: 0
     property int pickCount: 0
     property bool speechLoading: false
     property bool speaking: false
@@ -15,10 +17,19 @@ Rectangle {
 
     implicitHeight: Math.max(278, messageColumn.implicitHeight + 64)
     radius: 28
-    color: "#151719"
-    border.color: "#554331"
-    border.width: 1
+    color: "#3d111418"
+    border.width: 0
     clip: true
+
+    FrostedGlass {
+        anchors.fill: parent
+        sourceItem: hero.glassSource
+        coordinateItem: hero
+        updateToken: hero.glassScrollOffset
+        cornerRadius: hero.radius
+        blurAmount: 0.82
+        tint: "#50101418"
+    }
 
     Image {
         anchors.fill: parent
@@ -26,7 +37,7 @@ Rectangle {
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         cache: true
-        opacity: 0.15
+        opacity: 0.12
     }
 
     Rectangle {
@@ -34,9 +45,9 @@ Rectangle {
         radius: parent.radius
         gradient: Gradient {
             orientation: Gradient.Horizontal
-            GradientStop { position: 0; color: "#fa141618" }
-            GradientStop { position: 0.62; color: "#e0141517" }
-            GradientStop { position: 1; color: "#902c1b10" }
+            GradientStop { position: 0; color: "#78101215" }
+            GradientStop { position: 0.62; color: "#56131518" }
+            GradientStop { position: 1; color: "#32261a12" }
         }
     }
 

@@ -1864,6 +1864,13 @@ ApplicationWindow {
         color: root.color
     }
 
+    AmbientBackdrop {
+        id: homeAmbientBackdrop
+        anchors.fill: parent
+        visible: root.currentPage === "home"
+        intensity: 0.92
+    }
+
     Flickable {
         id: page
         anchors.left: parent.left
@@ -1896,15 +1903,29 @@ ApplicationWindow {
                 height: 304
                 radius: 28
                 clip: true
-                color: root.panel
-                border.width: 1
-                border.color: "#3b3f44"
+                color: "#3d111418"
+                border.width: 0
 
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "#29190f" }
-                    GradientStop { position: 0.52; color: "#1c1f23" }
-                    GradientStop { position: 1.0; color: "#090b0d" }
+                FrostedGlass {
+                    anchors.fill: parent
+                    sourceItem: homeAmbientBackdrop
+                    coordinateItem: hero
+                    updateToken: page.contentY
+                    cornerRadius: hero.radius
+                    blurAmount: 0.82
+                    tint: "#50101418"
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: hero.radius
+                    antialiasing: true
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: "#6b0c0e11" }
+                        GradientStop { position: 0.62; color: "#42121417" }
+                        GradientStop { position: 1.0; color: "#241b130e" }
+                    }
                 }
 
                 Image {
@@ -2425,6 +2446,11 @@ ApplicationWindow {
     Rectangle {
         id: sectionPage
         property string heldLibraryArtwork: ""
+        readonly property bool showAmbientBackdrop:
+            (root.currentPage === "library"
+             && (demoMode || serverClient.libraryDepth === 0))
+            || root.currentPage === "discover"
+            || root.currentPage === "recommendations"
         readonly property bool showLibraryArtwork:
             root.currentPage === "library" && !demoMode
             && serverClient.libraryDepth > 0
@@ -2460,6 +2486,13 @@ ApplicationWindow {
         visible: root.currentPage !== "home"
         color: root.color
         z: 40
+
+        AmbientBackdrop {
+            id: sectionAmbientBackdrop
+            anchors.fill: parent
+            visible: sectionPage.showAmbientBackdrop
+            intensity: 0.88
+        }
 
         Item {
             id: libraryScreenBackdrop
@@ -2517,21 +2550,34 @@ ApplicationWindow {
                         height: 94
                         radius: 22
                         clip: true
-                        color: "#1d2024"
-                        border.width: 1
-                        border.color: "#41464c"
+                        color: "#3d111418"
+                        border.width: 0
+
+                        FrostedGlass {
+                            anchors.fill: parent
+                            sourceItem: sectionAmbientBackdrop.visible
+                                        ? sectionAmbientBackdrop : null
+                            coordinateItem: libraryQuickBrowse
+                            updateToken: sectionScroller.contentY
+                            cornerRadius: libraryQuickBrowse.radius
+                            blurAmount: 0.82
+                            tint: "#50101418"
+                        }
 
                         Rectangle {
-                            anchors.left: parent.left
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            width: 5
-                            color: root.orange
+                            anchors.fill: parent
+                            radius: libraryQuickBrowse.radius
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: "#67101215" }
+                                GradientStop { position: 0.66; color: "#40131518" }
+                                GradientStop { position: 1.0; color: "#29201712" }
+                            }
                         }
 
                         Row {
                             anchors.left: parent.left
-                            anchors.leftMargin: 22
+                            anchors.leftMargin: 24
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 14
 
@@ -3086,26 +3132,40 @@ ApplicationWindow {
                     spacing: 22
 
                     Rectangle {
+                        id: discoverHero
                         visible: demoMode || serverClient.discoverStage === "catalog"
                         width: parent.width
                         height: 94
                         radius: 22
                         clip: true
-                        color: "#1d2024"
-                        border.width: 1
-                        border.color: "#41464c"
+                        color: "#3d111418"
+                        border.width: 0
+
+                        FrostedGlass {
+                            anchors.fill: parent
+                            sourceItem: sectionAmbientBackdrop.visible
+                                        ? sectionAmbientBackdrop : null
+                            coordinateItem: discoverHero
+                            updateToken: sectionScroller.contentY
+                            cornerRadius: discoverHero.radius
+                            blurAmount: 0.82
+                            tint: "#50101418"
+                        }
 
                         Rectangle {
-                            anchors.left: parent.left
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            width: 5
-                            color: root.orange
+                            anchors.fill: parent
+                            radius: discoverHero.radius
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: "#67101215" }
+                                GradientStop { position: 0.66; color: "#40131518" }
+                                GradientStop { position: 1.0; color: "#29201712" }
+                            }
                         }
 
                         Row {
                             anchors.left: parent.left
-                            anchors.leftMargin: 22
+                            anchors.leftMargin: 24
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 14
 
@@ -3333,6 +3393,9 @@ ApplicationWindow {
                         pickCount: root.displayedRecommendations().length
                         artSource: root.focusedRecommendation()
                                    ? root.homeWideArtwork(root.focusedRecommendation()) : ""
+                        glassSource: sectionAmbientBackdrop.visible
+                                     ? sectionAmbientBackdrop : null
+                        glassScrollOffset: sectionScroller.contentY
                         speechLoading: serverClient.recommendationSpeechLoading
                         speaking: recommendationVoice.playbackState === MediaPlayer.PlayingState
                         speechError: root.recommendationSpeechPlaybackError
@@ -4005,9 +4068,8 @@ ApplicationWindow {
             width: Math.min(1120, root.width - 80)
             height: Math.min(620, root.height - 80)
             radius: 30
-            color: "#17191d"
-            border.width: 1
-            border.color: "#51565c"
+            color: "#3d111418"
+            border.width: 0
             clip: true
 
             Rectangle {
@@ -4047,14 +4109,31 @@ ApplicationWindow {
             }
 
             Rectangle {
+                id: detailsGlassPane
                 anchors.left: detailsArtworkFrame.right
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "#24272c" }
-                    GradientStop { position: 1.0; color: "#191b1f" }
+                color: "#3d111418"
+
+                FrostedGlass {
+                    anchors.fill: parent
+                    sourceItem: root.currentPage === "home" ? page : sectionPage
+                    coordinateItem: detailsGlassPane
+                    cornerRadius: 0
+                    blurAmount: 0.86
+                    tint: "#58101418"
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "transparent"
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: "#66101215" }
+                        GradientStop { position: 0.68; color: "#47131518" }
+                        GradientStop { position: 1.0; color: "#35201712" }
+                    }
                 }
             }
 

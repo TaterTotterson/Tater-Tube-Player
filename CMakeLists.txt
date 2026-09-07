@@ -63,6 +63,7 @@ qt_add_qml_module(tater-tube-player
     QML_FILES
         qml/Main.qml
         qml/ViewingHistory.js
+        qml/components/AmbientBackdrop.qml
         qml/components/FocusButton.qml
         qml/components/EpisodeCard.qml
         qml/components/DiscoveryCategoryCard.qml
@@ -97,6 +98,7 @@ qt_add_qml_module(tater-tube-player
         assets/mascot/tater-wave.png
         assets/tater-scanlines.png
         assets/tater-tube-logo-leaning-transparent.png
+        assets/ui/tater-orange-glow.svg
 )
 
 target_link_libraries(tater-tube-player PRIVATE
