@@ -2,24 +2,29 @@
 
 ## Store presence
 
+- [x] Steamworks app created: App ID `5239420`
+- [x] Linux content depot created: Depot ID `5239421`
 - [x] Product name selected: Tater Tube Player
 - [x] English short description drafted
 - [x] English About This Software copy drafted
 - [x] Server requirement and no-media-included disclosure drafted
-- [x] Seven rights-safe 16:9 product screenshots captured; six selected for upload
+- [x] Seven rights-safe 4K 16:9 product screenshots captured; six selected for upload
 - [x] At least five screenshots selected for upload
-- [x] First 1080p H.264/AAC trailer cut created
+- [x] First 1080p H.264/AAC Steam Deck screen-recorded trailer cut created
+- [x] Trailer includes genuine controller-style navigation and moving playback
 - [x] Trailer poster frame created
 - [x] Required store capsules rendered at current Valve dimensions
 - [ ] Required store capsules uploaded in Steamworks
 - [x] Website, support, and privacy links prepared for their dedicated fields
 - [x] Steamworks field-by-field handoff prepared
-- [ ] Developer and publisher display names confirmed
+- [x] Developer and publisher display names confirmed: `Tater Totterson AI LLC`
 - [x] Price chosen: free
 - [ ] Release / Coming Soon date chosen
 - [ ] Languages set accurately
 - [ ] Tags and software categories selected from Steam's available choices
 - [ ] Controller-support fields completed without claiming Valve verification
+- [ ] Verify the untouched Software-app Steam layout controls every screen on
+  Steam Deck and DualSense without user configuration
 - [ ] Content Survey completed, including pre-generated and live-generated AI
 - [ ] Final store preview checked at desktop and narrow widths
 - [ ] Store presence marked ready for review at least seven business days before its target publication
@@ -46,6 +51,9 @@ as release-ready.
 - [ ] Verify direct play, audio-only transcode, video-only transcode, full transcode, HDR-to-SDR, and Tube TV transitions against Tater Tube Server 1.4.33+
 - [ ] Supply Valve reviewers with a reachable test server or precise local test-server instructions and a rights-safe demo catalog
 - [x] Confirm the draft depot and store media contain no private addresses, credentials, or personal media
+- [x] Confirm the draft depot contains no emulator/ROM cores, game ports, Moonlight, downloader, commercial media, or Steamworks SDK binaries
+- [x] Replace the GPL mpv draft dependency with an audited LGPL-only build path
+- [ ] Complete and privately retain the brand/key-art rights attestation
 
 ## Current Valve requirements referenced
 

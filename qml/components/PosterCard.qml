@@ -19,10 +19,7 @@ FocusScope {
     implicitWidth: 178
     implicitHeight: 284
     activeFocusOnTab: true
-    scale: activeFocus ? 1.035 : (pointer.containsMouse ? 1.02 : 1.0)
     z: activeFocus ? 2 : 1
-
-    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
     function activate() {
         card.forceActiveFocus()
@@ -73,11 +70,11 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        radius: 18
+        radius: 10
         clip: true
         color: "#23272c"
-        border.width: card.activeFocus ? 3 : 1
-        border.color: card.activeFocus ? "#ff8738" : "#3a3f45"
+        border.width: 1
+        border.color: "#3a3f45"
 
         gradient: Gradient {
             GradientStop { position: 0.0; color: Qt.lighter(card.accent, 1.05) }
@@ -197,13 +194,17 @@ FocusScope {
         }
     }
 
+    // Keep the controller focus ring above asynchronously loaded artwork.
+    // A border on the clipped background is painted below its Image children
+    // and disappears as soon as a poster finishes loading.
     Rectangle {
         anchors.fill: parent
-        anchors.margins: -6
-        radius: 24
+        radius: 10
         color: "transparent"
-        border.width: card.activeFocus ? 2 : 0
-        border.color: "#55ff7a1a"
+        visible: card.activeFocus
+        border.width: 3
+        border.color: "#ff8738"
+        z: 20
     }
 
     MouseArea {

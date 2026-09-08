@@ -1,8 +1,11 @@
 # Tater Tube brand identifiers
 
-The Tater Tube name, Tater Tube logo, and Tater mascot identify the official
-Tater Tube project. They are not licensed for trademark use by the Apache
-License 2.0.
+The underlying Tater logo and wordmark are protected trademarks of Tater
+Totterson AI LLC. The `Tube` addition and combined Tater Tube presentation are
+also official company branding, but this notice does not claim that the full
+composite mark is separately registered. The Tater mascot likewise identifies
+the official Tater project. None of these brand identifiers are licensed for
+trademark use by the Apache License 2.0.
 
 The source and bundled artwork may be copied and modified under the repository's
 Apache-2.0 license, but that permission does not allow a modified build or fork

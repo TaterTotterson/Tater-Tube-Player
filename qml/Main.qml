@@ -14,8 +14,11 @@ ApplicationWindow {
     minimumHeight: 720
     visible: true
     visibility: fullScreenMode ? Window.FullScreen : Window.Windowed
+    flags: root.nativePlaybackActive
+           ? Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+           : Qt.Window
     title: "Tater Tube Player"
-    color: "#000000"
+    color: root.nativePlaybackActive ? "transparent" : "#000000"
 
     readonly property color orange: "#ff781f"
     readonly property color orangeBright: "#ff964f"
@@ -52,7 +55,29 @@ ApplicationWindow {
     property bool playbackControlsVisible: true
     property bool playbackEnded: false
     property bool playbackHasVideoFrame: false
+    property real playbackVolume: 0.85
+    property bool playbackMuted: false
+    property var playbackPlannedAudioTracks: []
+    property int playbackSelectedAudioTrack: -1
+    property bool playbackAudioControlActive: false
+    property bool playbackAudioSelectionMade: false
+    property bool playbackSubtitleControlActive: false
+    property bool playbackSubtitleSelectionMade: false
     readonly property bool compatiblePlayback: compatiblePlaybackMode === true
+    readonly property bool nativePlaybackActive: playbackOpen && mpvPlayer.available
+    readonly property bool playbackEnginePlaying:
+        mpvPlayer.available ? mpvPlayer.playing
+                            : mediaPlayer.playbackState === MediaPlayer.PlayingState
+    readonly property bool playbackEnginePaused:
+        mpvPlayer.available ? mpvPlayer.paused
+                            : mediaPlayer.playbackState === MediaPlayer.PausedState
+    readonly property bool playbackEngineLoading:
+        mpvPlayer.available ? mpvPlayer.loading :
+            (mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia
+             || mediaPlayer.mediaStatus === MediaPlayer.BufferingMedia)
+    readonly property bool playbackEngineBuffering:
+        mpvPlayer.available ? mpvPlayer.buffering
+                            : mediaPlayer.mediaStatus === MediaPlayer.StalledMedia
     readonly property int initialLibraryCardBatch: 48
     readonly property int libraryMaterializeBatch: 24
     property int libraryVisibleLimit: initialLibraryCardBatch
@@ -73,6 +98,20 @@ ApplicationWindow {
     property string recommendationSpeechPlaybackError: ""
     property int focusedRecommendationIndex: 0
     property bool componentReady: false
+    readonly property bool textEntryFocused:
+        root.activeFocusItem === serverField
+        || root.activeFocusItem === pinField
+        || root.activeFocusItem === searchField
+
+    onNativePlaybackActiveChanged: {
+        if (nativePlaybackActive) {
+            sideMenuOpen = false
+            Qt.callLater(function() {
+                root.raise()
+                root.requestActivate()
+            })
+        }
+    }
 
     onCurrentPageChanged: {
         if (!componentReady)
@@ -1182,11 +1221,43 @@ ApplicationWindow {
             seconds = Number(playbackItem.duration)
         if (seconds > 0)
             return seconds * 1000
-        return Math.max(0, Number(mediaPlayer.duration || 0) + playbackBaseOffsetMs)
+        var engineDuration = mpvPlayer.available ? mpvPlayer.duration : mediaPlayer.duration
+        return Math.max(0, Number(engineDuration || 0) + playbackBaseOffsetMs)
     }
 
     function playbackPositionMs() {
-        return Math.max(0, Number(mediaPlayer.position || 0) + playbackBaseOffsetMs)
+        var enginePosition = mpvPlayer.available ? mpvPlayer.position : mediaPlayer.position
+        return Math.max(0, Number(enginePosition || 0) + playbackBaseOffsetMs)
+    }
+
+    function setPlaybackSource(source) {
+        if (mpvPlayer.available) {
+            mpvPlayer.title = playbackTitle()
+            mpvPlayer.audioPassthrough = playbackCapabilities.report.audio_passthrough || []
+            mpvPlayer.source = String(source || "")
+        } else {
+            mediaPlayer.source = source
+        }
+    }
+
+    function playPlaybackEngine() {
+        if (mpvPlayer.available) mpvPlayer.play()
+        else mediaPlayer.play()
+    }
+
+    function pausePlaybackEngine() {
+        if (mpvPlayer.available) mpvPlayer.pause()
+        else mediaPlayer.pause()
+    }
+
+    function stopPlaybackEngine() {
+        if (mpvPlayer.available) mpvPlayer.stop()
+        else mediaPlayer.stop()
+    }
+
+    function setPlaybackEnginePosition(positionMs) {
+        if (mpvPlayer.available) mpvPlayer.setPosition(Math.round(positionMs))
+        else mediaPlayer.setPosition(Math.round(positionMs))
     }
 
     function formatPlaybackTime(milliseconds) {
@@ -1202,8 +1273,296 @@ ApplicationWindow {
 
     function showPlaybackControls() {
         playbackControlsVisible = true
-        if (mediaPlayer.playbackState === MediaPlayer.PlayingState)
+        refreshNativePlaybackOverlay()
+        if (playbackEnginePlaying)
             playbackControlsTimer.restart()
+    }
+
+    function playbackSubtitlesAvailable() {
+        return mpvPlayer.available ? mpvPlayer.subtitlesAvailable
+                                   : mediaPlayer.subtitleTracks.length > 0
+    }
+
+    function playbackSubtitlesEnabled() {
+        return mpvPlayer.available ? mpvPlayer.subtitlesEnabled
+                                   : mediaPlayer.activeSubtitleTrack >= 0
+    }
+
+    function playbackSubtitleLabel() {
+        if (!playbackSubtitlesAvailable())
+            return "CC  NONE"
+        if (!playbackSubtitlesEnabled())
+            return "CC  OFF"
+        return mpvPlayer.available && mpvPlayer.subtitleLabel.length > 0
+                ? "CC  " + mpvPlayer.subtitleLabel : "CC  ON"
+    }
+
+    function playbackAudioTracksAvailable() {
+        if (playbackPlannedAudioTracks && playbackPlannedAudioTracks.length > 0)
+            return true
+        return mpvPlayer.available ? mpvPlayer.audioTracksAvailable
+                                   : mediaPlayer.audioTracks.length > 0
+    }
+
+    function playbackMultipleAudioTracks() {
+        if (playbackPlannedAudioTracks && playbackPlannedAudioTracks.length > 0)
+            return playbackPlannedAudioTracks.length > 1
+        return mpvPlayer.available ? mpvPlayer.multipleAudioTracks
+                                   : mediaPlayer.audioTracks.length > 1
+    }
+
+    function qtAudioTrackText(index, key) {
+        if (index < 0 || index >= mediaPlayer.audioTracks.length)
+            return ""
+        try {
+            return String(mediaPlayer.audioTracks[index].stringValue(key) || "").trim()
+        } catch (error) {
+            return ""
+        }
+    }
+
+    function qtAudioTrackScore(index) {
+        var language = qtAudioTrackText(index, MediaMetaData.Language).toLowerCase()
+        var title = qtAudioTrackText(index, MediaMetaData.Title).toLowerCase()
+        var codec = qtAudioTrackText(index, MediaMetaData.AudioCodec).toLowerCase()
+        var score = 0
+        if (language === "en" || language === "eng" || language === "english"
+                || language.indexOf("en-") === 0 || language.indexOf("eng-") === 0)
+            score += 1000000
+        else if (language.length === 0)
+            score += 100000
+        if (title.indexOf("commentary") >= 0 || title.indexOf("descriptive") >= 0
+                || title.indexOf("description") >= 0)
+            score -= 200000
+        if (title.indexOf("7.1") >= 0)
+            score += 80000
+        else if (title.indexOf("5.1") >= 0)
+            score += 60000
+        else if (title.indexOf("stereo") >= 0 || title.indexOf("2.0") >= 0)
+            score += 20000
+        if (codec.indexOf("truehd") >= 0 || codec.indexOf("dts-hd") >= 0
+                || codec.indexOf("flac") >= 0 || codec.indexOf("alac") >= 0
+                || codec.indexOf("pcm") >= 0)
+            score += 9000
+        else if (codec.indexOf("eac3") >= 0 || codec.indexOf("e-ac-3") >= 0
+                 || codec.indexOf("opus") >= 0)
+            score += 7000
+        else if (codec.indexOf("dts") >= 0 || codec.indexOf("ac3") >= 0)
+            score += 6000
+        else if (codec.indexOf("aac") >= 0)
+            score += 5000
+        try {
+            score += Math.min(20000, Number(mediaPlayer.audioTracks[index].value(
+                                                MediaMetaData.AudioBitRate) || 0) / 1000)
+        } catch (error) {
+        }
+        return score
+    }
+
+    function preferredQtAudioTrack() {
+        var best = -1
+        var bestScore = -Number.MAX_VALUE
+        for (var index = 0; index < mediaPlayer.audioTracks.length; ++index) {
+            var score = qtAudioTrackScore(index)
+            if (best < 0 || score > bestScore) {
+                best = index
+                bestScore = score
+            }
+        }
+        return best
+    }
+
+    function qtAudioTrackLabel() {
+        var index = mediaPlayer.activeAudioTrack
+        if (index < 0)
+            index = preferredQtAudioTrack()
+        if (index < 0)
+            return "Audio"
+        var language = qtAudioTrackText(index, MediaMetaData.Language).toUpperCase()
+        if (language === "ENG" || language === "ENGLISH")
+            language = "EN"
+        var codec = qtAudioTrackText(index, MediaMetaData.AudioCodec).toUpperCase()
+        var title = qtAudioTrackText(index, MediaMetaData.Title)
+        var parts = []
+        if (language.length > 0)
+            parts.push(language)
+        if (codec.length > 0)
+            parts.push(codec)
+        var titleLower = title.toLowerCase()
+        if (titleLower.indexOf("atmos") >= 0)
+            parts.push("ATMOS")
+        else if (titleLower.indexOf("dts:x") >= 0)
+            parts.push("DTS:X")
+        if (titleLower.indexOf("commentary") >= 0)
+            parts.push("COMMENTARY")
+        else if (titleLower.indexOf("descriptive") >= 0
+                 || titleLower.indexOf("description") >= 0)
+            parts.push("DESCRIPTIVE")
+        if (parts.length === 0)
+            parts.push(title.length > 0 ? title : "Track " + (index + 1))
+        return parts.join(" • ")
+    }
+
+    function playbackAudioLabel() {
+        if (!playbackAudioTracksAvailable())
+            return "AUDIO  NONE"
+        if (playbackPlannedAudioTracks && playbackPlannedAudioTracks.length > 0) {
+            var selected = null
+            for (var index = 0; index < playbackPlannedAudioTracks.length; ++index) {
+                var candidate = playbackPlannedAudioTracks[index]
+                if (Number(candidate.index) === playbackSelectedAudioTrack) {
+                    selected = candidate
+                    break
+                }
+            }
+            if (!selected)
+                selected = playbackPlannedAudioTracks[0]
+            var language = String(selected.language || "").toUpperCase()
+            if (language === "ENG" || language === "ENGLISH")
+                language = "EN"
+            var codec = String(selected.codec || "").toUpperCase()
+                         .replace("DTS_HD", "DTS-HD")
+            var channels = Number(selected.channels || 0)
+            var channelLabel = channels === 8 ? "7.1" : (channels === 6 ? "5.1"
+                               : (channels === 2 ? "STEREO"
+                                  : (channels === 1 ? "MONO"
+                                     : (channels > 0 ? channels + "CH" : ""))))
+            var title = String(selected.title || "").toUpperCase()
+            var parts = []
+            if (language.length > 0)
+                parts.push(language)
+            if (codec.length > 0)
+                parts.push(codec)
+            if (channelLabel.length > 0)
+                parts.push(channelLabel)
+            if (title.indexOf("ATMOS") >= 0)
+                parts.push("ATMOS")
+            else if (title.indexOf("DTS:X") >= 0)
+                parts.push("DTS:X")
+            if (selected.commentary === true || title.indexOf("COMMENTARY") >= 0)
+                parts.push("COMMENTARY")
+            else if (selected.descriptive === true || title.indexOf("DESCRIPT") >= 0)
+                parts.push("DESCRIPTIVE")
+            if (parts.length === 0)
+                parts.push(title.length > 0 ? title : "Track " + (Number(selected.index) + 1))
+            return "AUDIO  " + parts.join(" • ")
+        }
+        return "AUDIO  " + (mpvPlayer.available && mpvPlayer.audioTrackLabel.length > 0
+                             ? mpvPlayer.audioTrackLabel : qtAudioTrackLabel())
+    }
+
+    function playbackProcessingLabel() {
+        if (playbackIsLive)
+            return "LIVE STREAM"
+        var prefix = "DIRECT PLAY"
+        if (playbackUsingFallback)
+            prefix = "SERVER TRANSCODE"
+        else if (playbackUsingVideoTranscode)
+            prefix = "VIDEO TRANSCODE"
+        else if (playbackUsingAudioTranscode)
+            prefix = "AUDIO TRANSCODE"
+        return prefix + (playbackQuality.length > 0
+                         ? "  •  " + playbackQuality : "")
+    }
+
+    function refreshNativePlaybackOverlay() {
+        if (!mpvPlayer.available || !playbackOpen || !playbackControlsVisible
+                || !mpvPlayer.hasVideo)
+            return
+        mpvPlayer.showOverlay(playbackTitle(),
+                              playbackIsLive
+                                  ? "CHANNEL " + (playbackItem.number || "")
+                                  : mediaLabel(playbackItem),
+                              playbackProcessingLabel(), playbackIsLive,
+                              playbackAudioControlActive,
+                              playbackSubtitleControlActive,
+                              Math.round(playbackBaseOffsetMs))
+    }
+
+    function activatePlaybackControl(name) {
+        playbackAudioControlActive = name === "audio"
+                && playbackMultipleAudioTracks()
+        playbackSubtitleControlActive = name === "subtitles"
+                && playbackSubtitlesAvailable()
+        showPlaybackControls()
+    }
+
+    function movePlaybackControl(direction) {
+        var controls = []
+        if (playbackMultipleAudioTracks())
+            controls.push("audio")
+        if (playbackSubtitlesAvailable())
+            controls.push("subtitles")
+        if (controls.length === 0) {
+            activatePlaybackControl("")
+            return false
+        }
+        var current = playbackAudioControlActive ? "audio"
+                    : (playbackSubtitleControlActive ? "subtitles" : "")
+        var index = controls.indexOf(current)
+        if (index < 0)
+            index = direction < 0 ? controls.length - 1 : 0
+        else
+            index = (index + direction + controls.length) % controls.length
+        activatePlaybackControl(controls[index])
+        return true
+    }
+
+    function cyclePlaybackAudioTrack() {
+        if (!playbackMultipleAudioTracks()) {
+            showPlaybackControls()
+            return
+        }
+        playbackAudioSelectionMade = true
+        if (!playbackIsLive && serverClient.paired
+                && playbackPlannedAudioTracks
+                && playbackPlannedAudioTracks.length > 1) {
+            var currentListIndex = -1
+            for (var index = 0; index < playbackPlannedAudioTracks.length; ++index) {
+                if (Number(playbackPlannedAudioTracks[index].index)
+                        === playbackSelectedAudioTrack) {
+                    currentListIndex = index
+                    break
+                }
+            }
+            var nextListIndex = (currentListIndex + 1) % playbackPlannedAudioTracks.length
+            var nextTrack = Number(playbackPlannedAudioTracks[nextListIndex].index)
+            var resumeAt = playbackPositionMs()
+            playbackSelectedAudioTrack = nextTrack
+            playbackPendingResumeMs = resumeAt
+            playbackPlanPending = true
+            playbackStatusMessage = "Switching audio…"
+            playbackQuality = "Choosing best quality"
+            playbackHasVideoFrame = false
+            stopPlaybackEngine()
+            serverClient.preparePlaybackWithAudioTrack(
+                        playbackItem, mediaLabel(playbackItem),
+                        playbackCapabilities.report, nextTrack)
+            return
+        }
+        if (mpvPlayer.available) {
+            mpvPlayer.cycleAudioTrack()
+        } else {
+            var next = Number(mediaPlayer.activeAudioTrack) + 1
+            if (next < 0 || next >= mediaPlayer.audioTracks.length)
+                next = 0
+            mediaPlayer.activeAudioTrack = next
+        }
+        showPlaybackControls()
+    }
+
+    function togglePlaybackSubtitles() {
+        if (!playbackSubtitlesAvailable()) {
+            showPlaybackControls()
+            return
+        }
+        playbackSubtitleSelectionMade = true
+        if (mpvPlayer.available) {
+            mpvPlayer.toggleSubtitles()
+        } else {
+            mediaPlayer.activeSubtitleTrack = mediaPlayer.activeSubtitleTrack >= 0 ? -1 : 0
+        }
+        showPlaybackControls()
     }
 
     function startPlayback(item, kind, resumeExisting) {
@@ -1216,12 +1575,24 @@ ApplicationWindow {
         finishViewingHistory("stopped")
         recommendationSpeechVisitActive = false
         stopRecommendationSpeech()
-        mediaPlayer.stop()
+        stopPlaybackEngine()
         viewingSessionId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)
         viewingSampleTimeMs = 0
         viewingSamplePositionMs = 0
         viewingLiveTuneTimeMs = Date.now()
         playbackHasVideoFrame = false
+        playbackAudioControlActive = false
+        playbackAudioSelectionMade = false
+        playbackPlannedAudioTracks = []
+        playbackSelectedAudioTrack = -1
+        if (mpvPlayer.available)
+            mpvPlayer.setPreferredAudioTrackIndex(-1)
+        playbackSubtitleControlActive = false
+        playbackSubtitleSelectionMade = false
+        if (!mpvPlayer.available) {
+            mediaPlayer.activeAudioTrack = -1
+            mediaPlayer.activeSubtitleTrack = -1
+        }
         playbackItem = item
         playbackIsLive = String(kind || "").indexOf("CHANNEL") === 0
         playbackSourceUrl = source
@@ -1249,8 +1620,8 @@ ApplicationWindow {
         if (playbackIsLive) {
             if (!demoMode)
                 serverClient.refreshLiveGuide()
-            mediaPlayer.source = source
-            mediaPlayer.play()
+            setPlaybackSource(source)
+            playPlaybackEngine()
             playbackControlsTimer.restart()
         } else if (serverClient.paired) {
             var capabilities = playbackCapabilities.report
@@ -1277,14 +1648,14 @@ ApplicationWindow {
             playbackPendingResumeMs = 0
             playbackStatusMessage = "Preparing compatible audio…"
             playbackQuality = "Video Direct • Audio AAC"
-            mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
+            setPlaybackSource(serverClient.playbackAudioTranscodeUrl(
                         playbackSourceUrl, playbackProfile,
-                        Math.round(playbackBaseOffsetMs))
+                        Math.round(playbackBaseOffsetMs)))
         } else {
             playbackUsingAudioTranscode = false
-            mediaPlayer.source = playbackSourceUrl
+            setPlaybackSource(playbackSourceUrl)
         }
-        mediaPlayer.play()
+        playPlaybackEngine()
         playbackControlsTimer.restart()
     }
 
@@ -1299,6 +1670,14 @@ ApplicationWindow {
 
         var mode = String(plan.mode || "direct")
         var resumeAt = Math.max(0, playbackPendingResumeMs)
+        playbackPlannedAudioTracks = plan.source && plan.source.audio_tracks
+                ? plan.source.audio_tracks : []
+        playbackSelectedAudioTrack = plan.selected_audio_track === undefined
+                || plan.selected_audio_track === null
+                ? -1 : Number(plan.selected_audio_track)
+        if (mpvPlayer.available)
+            mpvPlayer.setPreferredAudioTrackIndex(
+                        mode === "direct" ? playbackSelectedAudioTrack : 0)
         playbackPlanPending = false
         playbackUsingFallback = mode === "full_transcode"
         playbackUsingAudioTranscode = mode === "audio_transcode"
@@ -1319,28 +1698,28 @@ ApplicationWindow {
             playbackBaseOffsetMs = resumeAt
             playbackPendingResumeMs = 0
             playbackStatusMessage = "Optimizing video and audio…"
-            mediaPlayer.source = serverClient.playbackUrlAtPosition(
-                        playbackPlanUrl, Math.round(resumeAt))
+            setPlaybackSource(serverClient.playbackUrlAtPosition(
+                        playbackPlanUrl, Math.round(resumeAt)))
         } else if (playbackUsingAudioTranscode) {
             playbackBaseOffsetMs = resumeAt
             playbackPendingResumeMs = 0
             playbackStatusMessage = "Preparing compatible audio…"
-            mediaPlayer.source = serverClient.playbackUrlAtPosition(
-                        playbackPlanUrl, Math.round(resumeAt))
+            setPlaybackSource(serverClient.playbackUrlAtPosition(
+                        playbackPlanUrl, Math.round(resumeAt)))
         } else if (playbackUsingVideoTranscode) {
             playbackBaseOffsetMs = resumeAt
             playbackPendingResumeMs = 0
             playbackStatusMessage = "Optimizing video and preserving audio…"
-            mediaPlayer.source = serverClient.playbackUrlAtPosition(
-                        playbackPlanUrl, Math.round(resumeAt))
+            setPlaybackSource(serverClient.playbackUrlAtPosition(
+                        playbackPlanUrl, Math.round(resumeAt)))
         } else {
             playbackBaseOffsetMs = 0
             playbackStatusMessage = String(plan.audio_mode || "") === "bitstream"
                     ? "Sending original audio to your sound system…"
                     : "Opening your media…"
-            mediaPlayer.source = plannedUrl
+            setPlaybackSource(plannedUrl)
         }
-        mediaPlayer.play()
+        playPlaybackEngine()
         playbackControlsTimer.restart()
     }
 
@@ -1368,7 +1747,7 @@ ApplicationWindow {
         var now = Date.now()
         var position = playbackPositionMs()
         var playing = playbackOpen && playbackHasVideoFrame
-                && mediaPlayer.playbackState === MediaPlayer.PlayingState
+                && playbackEnginePlaying
                 && playbackError.length === 0
         var watched = ViewingHistory.observedWatchMs(viewingSampleTimeMs,
                               viewingSamplePositionMs, now, position, playing)
@@ -1378,7 +1757,8 @@ ApplicationWindow {
             return
         // Live playback can be behind the broadcast clock after buffering or pausing.
         var contentTime = playbackIsLive
-                ? viewingLiveTuneTimeMs + Math.max(0, Number(mediaPlayer.position || 0)) : now
+                ? viewingLiveTuneTimeMs + Math.max(0, Number(
+                    mpvPlayer.available ? mpvPlayer.position : mediaPlayer.position)) : now
         var context = ViewingHistory.snapshot(playbackItem, playbackIsLive,
                             serverClient.liveGuideChannels, contentTime, position, playbackDurationMs())
         if (!context || (viewingContext && viewingContext.key !== context.key))
@@ -1408,10 +1788,16 @@ ApplicationWindow {
             savePlaybackState(false)
         sampleViewingHistory()
         finishViewingHistory(playbackEnded ? "completed" : "stopped")
-        mediaPlayer.stop()
+        stopPlaybackEngine()
         playbackOpen = false
         playbackPlanPending = false
         playbackHasVideoFrame = false
+        playbackAudioControlActive = false
+        playbackPlannedAudioTracks = []
+        playbackSelectedAudioTrack = -1
+        if (mpvPlayer.available)
+            mpvPlayer.setPreferredAudioTrackIndex(-1)
+        playbackSubtitleControlActive = false
         playbackError = ""
         playbackStatusMessage = ""
         var target = returnFocusItem
@@ -1436,7 +1822,7 @@ ApplicationWindow {
         playbackStatusMessage = "Optimizing video and audio for your Steam Deck…"
         playbackQuality = "Video H.264 • Audio AAC"
         playbackHasVideoFrame = false
-        mediaPlayer.stop()
+        stopPlaybackEngine()
         var fallbackBase = playbackPlanUrl.length > 0
                 ? playbackPlanUrl : playbackSourceUrl
         if (playbackSourceVideoRange.length > 0
@@ -1448,9 +1834,9 @@ ApplicationWindow {
             playbackPlanUrl = serverClient.playbackTranscodeUrl(
                         fallbackBase, playbackProfile, 0)
         }
-        mediaPlayer.source = serverClient.playbackUrlAtPosition(
-                    playbackPlanUrl, Math.round(resumeAt))
-        Qt.callLater(function() { mediaPlayer.play() })
+        setPlaybackSource(serverClient.playbackUrlAtPosition(
+                    playbackPlanUrl, Math.round(resumeAt)))
+        Qt.callLater(function() { root.playPlaybackEngine() })
         return true
     }
 
@@ -1458,10 +1844,10 @@ ApplicationWindow {
         if (!playbackOpen || playbackError.length > 0)
             return
         playbackEnded = false
-        if (mediaPlayer.playbackState === MediaPlayer.PlayingState)
-            mediaPlayer.pause()
+        if (playbackEnginePlaying)
+            pausePlaybackEngine()
         else
-            mediaPlayer.play()
+            playPlaybackEngine()
         showPlaybackControls()
     }
 
@@ -1480,30 +1866,30 @@ ApplicationWindow {
             playbackBaseOffsetMs = target
             playbackStatusMessage = "Seeking…"
             playbackHasVideoFrame = false
-            mediaPlayer.stop()
-            mediaPlayer.source = serverClient.playbackUrlAtPosition(
-                        playbackPlanUrl, Math.round(target))
-            Qt.callLater(function() { mediaPlayer.play() })
+            stopPlaybackEngine()
+            setPlaybackSource(serverClient.playbackUrlAtPosition(
+                        playbackPlanUrl, Math.round(target)))
+            Qt.callLater(function() { root.playPlaybackEngine() })
         } else if (playbackUsingAudioTranscode) {
             playbackBaseOffsetMs = target
             playbackStatusMessage = "Seeking…"
             playbackHasVideoFrame = false
-            mediaPlayer.stop()
-            mediaPlayer.source = serverClient.playbackAudioTranscodeUrl(
-                        playbackSourceUrl, playbackProfile, Math.round(target))
-            Qt.callLater(function() { mediaPlayer.play() })
+            stopPlaybackEngine()
+            setPlaybackSource(serverClient.playbackAudioTranscodeUrl(
+                        playbackSourceUrl, playbackProfile, Math.round(target)))
+            Qt.callLater(function() { root.playPlaybackEngine() })
         } else if (playbackUsingVideoTranscode) {
             playbackBaseOffsetMs = target
             playbackStatusMessage = "Seeking…"
             playbackHasVideoFrame = false
-            mediaPlayer.stop()
-            mediaPlayer.source = serverClient.playbackVideoTranscodeUrl(
+            stopPlaybackEngine()
+            setPlaybackSource(serverClient.playbackVideoTranscodeUrl(
                         playbackSourceUrl, playbackProfile, playbackAudioCodec,
                         playbackAudioMode,
-                        Math.round(target))
-            Qt.callLater(function() { mediaPlayer.play() })
+                        Math.round(target)))
+            Qt.callLater(function() { root.playPlaybackEngine() })
         } else {
-            mediaPlayer.setPosition(Math.round(target))
+            setPlaybackEnginePosition(target)
         }
         showPlaybackControls()
     }
@@ -1513,15 +1899,65 @@ ApplicationWindow {
     }
 
     function changePlaybackVolume(delta) {
-        playerAudio.volume = Math.max(0, Math.min(1, playerAudio.volume + delta))
-        playerAudio.muted = false
+        playbackVolume = Math.max(0, Math.min(1, playbackVolume + delta))
+        playbackMuted = false
+        if (mpvPlayer.available) {
+            mpvPlayer.volume = playbackVolume
+            mpvPlayer.muted = false
+        }
         showPlaybackControls()
     }
 
     function selectPlaybackAudioTrack() {
-        if (mediaPlayer.audioTracks.length > 0 && mediaPlayer.activeAudioTrack < 0)
-            mediaPlayer.activeAudioTrack = 0
-        playerAudio.muted = false
+        if (mpvPlayer.available)
+            return
+        if (mediaPlayer.audioTracks.length > 0) {
+            var directPlan = !playbackUsingFallback
+                    && !playbackUsingAudioTranscode
+                    && !playbackUsingVideoTranscode
+            var serverSelected = directPlan && playbackSelectedAudioTrack >= 0
+                    && playbackSelectedAudioTrack < mediaPlayer.audioTracks.length
+            var preferred = serverSelected ? playbackSelectedAudioTrack
+                    : (!playbackAudioSelectionMade ? preferredQtAudioTrack() : -1)
+            if (preferred >= 0)
+                mediaPlayer.activeAudioTrack = preferred
+        }
+        if (!playbackSubtitleSelectionMade && mediaPlayer.subtitleTracks.length > 0)
+            mediaPlayer.activeSubtitleTrack = -1
+        playbackMuted = false
+    }
+
+    function handlePlaybackLoaded() {
+        selectPlaybackAudioTrack()
+        playbackStatusMessage = ""
+        if (!mpvPlayer.available || mpvPlayer.hasVideo)
+            playbackHasVideoFrame = true
+        showPlaybackControls()
+        if (!playbackUsingFallback && playbackPendingResumeMs > 0) {
+            var resumeAt = playbackPendingResumeMs
+            playbackPendingResumeMs = 0
+            setPlaybackEnginePosition(resumeAt)
+        }
+    }
+
+    function handlePlaybackEnd() {
+        savePlaybackState(true)
+        finishViewingHistory(playbackIsLive ? "stopped" : "completed")
+        playbackEnded = true
+        playbackControlsVisible = true
+        playbackStatusMessage = "Finished"
+    }
+
+    function handlePlaybackError(errorString) {
+        if (!playbackOpen)
+            return
+        if (retryWithCompatibleStream(errorString))
+            return
+        finishViewingHistory("stopped")
+        playbackStatusMessage = ""
+        playbackError = errorString && errorString.length > 0
+                ? errorString : "This video could not be played."
+        playbackControlsVisible = true
     }
 
     function openDetails(item, kind) {
@@ -1867,6 +2303,62 @@ ApplicationWindow {
         }
     }
 
+    function acceptCurrentControl() {
+        if (root.playbackOpen) {
+            if (root.playbackAudioControlActive)
+                root.cyclePlaybackAudioTrack()
+            else if (root.playbackSubtitleControlActive)
+                root.togglePlaybackSubtitles()
+            else
+                root.togglePlayback()
+        } else {
+            root.activateFocusedItem()
+        }
+    }
+
+    function handleNavigateLeft() {
+        if (root.playbackOpen && (root.playbackAudioControlActive
+                                  || root.playbackSubtitleControlActive))
+            root.movePlaybackControl(-1)
+        else if (root.playbackOpen)
+            root.seekPlaybackBy(-10000)
+        else
+            root.navigateLeft()
+    }
+
+    function handleNavigateRight() {
+        if (root.playbackOpen && (root.playbackAudioControlActive
+                                  || root.playbackSubtitleControlActive))
+            root.movePlaybackControl(1)
+        else if (root.playbackOpen)
+            root.seekPlaybackBy(10000)
+        else
+            root.navigateRight()
+    }
+
+    function handleNavigateUp() {
+        if (root.playbackOpen)
+            root.activatePlaybackControl("")
+        else
+            root.moveFocus(0, -1)
+    }
+
+    function handleNavigateDown() {
+        if (root.playbackOpen)
+            root.movePlaybackControl(1)
+        else
+            root.moveFocus(0, 1)
+    }
+
+    function toggleSideMenuFromInput() {
+        if (root.playbackOpen || root.detailsOpen)
+            return
+        if (root.sideMenuOpen)
+            root.closeSideMenu(true)
+        else
+            root.openSideMenu()
+    }
+
     Component.onCompleted: {
         componentReady = true
         if (String(playbackPreviewUrl || "").length > 0) {
@@ -1910,20 +2402,16 @@ ApplicationWindow {
     Connections {
         target: gamepadInput
         function onNavigateLeft() {
-            if (root.playbackOpen) root.seekPlaybackBy(-10000)
-            else root.navigateLeft()
+            root.handleNavigateLeft()
         }
         function onNavigateRight() {
-            if (root.playbackOpen) root.seekPlaybackBy(10000)
-            else root.navigateRight()
+            root.handleNavigateRight()
         }
         function onNavigateUp() {
-            if (root.playbackOpen) root.changePlaybackVolume(0.05)
-            else root.moveFocus(0, -1)
+            root.handleNavigateUp()
         }
         function onNavigateDown() {
-            if (root.playbackOpen) root.changePlaybackVolume(-0.05)
-            else root.moveFocus(0, 1)
+            root.handleNavigateDown()
         }
         function onPageUp() {
             root.jumpPage(-1)
@@ -1932,11 +2420,18 @@ ApplicationWindow {
             root.jumpPage(1)
         }
         function onAccept() {
-            if (root.playbackOpen) root.togglePlayback()
-            else root.activateFocusedItem()
+            root.acceptCurrentControl()
         }
         function onBack() {
             root.goBack()
+        }
+        function onSubtitles() {
+            if (root.playbackOpen)
+                root.togglePlaybackSubtitles()
+        }
+        function onAudioTracks() {
+            if (root.playbackOpen)
+                root.cyclePlaybackAudioTrack()
         }
     }
 
@@ -1989,19 +2484,38 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Left"; onActivated: root.playbackOpen ? root.seekPlaybackBy(-10000) : root.navigateLeft() }
-    Shortcut { sequence: "Right"; onActivated: root.playbackOpen ? root.seekPlaybackBy(10000) : root.navigateRight() }
-    Shortcut { sequence: "Up"; onActivated: root.playbackOpen ? root.changePlaybackVolume(0.05) : root.moveFocus(0, -1) }
-    Shortcut { sequence: "Down"; onActivated: root.playbackOpen ? root.changePlaybackVolume(-0.05) : root.moveFocus(0, 1) }
-    Shortcut { sequence: "PgUp"; onActivated: root.jumpPage(-1) }
-    Shortcut { sequence: "PgDown"; onActivated: root.jumpPage(1) }
+    Shortcut { sequence: "Left"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateLeft() }
+    Shortcut { sequence: "Right"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateRight() }
+    Shortcut { sequence: "Up"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateUp() }
+    Shortcut { sequence: "Down"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateDown() }
+
+    // Steam classifies this release as Software and supplies its untouched
+    // Keyboard (WASD) and Mouse controller template. These bindings mirror
+    // that template so Deck and PlayStation controls work without setup:
+    // stick=WASD, D-pad=1/3/2/4, A/Cross=Space, B/Circle=E.
+    Shortcut { sequence: "W"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateUp() }
+    Shortcut { sequence: "S"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateDown() }
+    Shortcut { sequence: "A"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateLeft() }
+    Shortcut { sequence: "D"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateRight() }
+    Shortcut { sequence: "1"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateUp() }
+    Shortcut { sequence: "3"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateDown() }
+    Shortcut { sequence: "4"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateLeft() }
+    Shortcut { sequence: "2"; enabled: !root.textEntryFocused; onActivated: root.handleNavigateRight() }
+    Shortcut { sequence: "PgUp"; enabled: !root.textEntryFocused; onActivated: root.jumpPage(-1) }
+    Shortcut { sequence: "PgDown"; enabled: !root.textEntryFocused; onActivated: root.jumpPage(1) }
+    Shortcut { sequence: "Return"; enabled: !root.textEntryFocused; onActivated: root.acceptCurrentControl() }
+    Shortcut { sequence: "Enter"; enabled: !root.textEntryFocused; onActivated: root.acceptCurrentControl() }
+    Shortcut { sequence: "Space"; enabled: !root.textEntryFocused; onActivated: root.acceptCurrentControl() }
+    Shortcut { sequence: "E"; enabled: !root.textEntryFocused; onActivated: root.goBack() }
+    Shortcut { sequence: "Tab"; enabled: !root.textEntryFocused; onActivated: root.toggleSideMenuFromInput() }
     Shortcut {
         sequence: "Esc"
         onActivated: {
             root.goBack()
         }
     }
-    Shortcut { sequence: "Space"; enabled: root.playbackOpen; onActivated: root.togglePlayback() }
+    Shortcut { sequence: "R"; enabled: root.playbackOpen && !root.textEntryFocused; onActivated: root.togglePlaybackSubtitles() }
+    Shortcut { sequence: "F"; enabled: root.playbackOpen && !root.textEntryFocused; onActivated: root.cyclePlaybackAudioTrack() }
 
     onClosing: function(close) {
         root.recommendationSpeechVisitActive = false
@@ -2010,22 +2524,25 @@ ApplicationWindow {
         root.finishViewingHistory(root.playbackEnded ? "completed" : "stopped")
         if (root.playbackOpen && !root.playbackEnded)
             root.savePlaybackState(false)
+        root.stopPlaybackEngine()
     }
 
     Rectangle {
         anchors.fill: parent
         color: root.color
+        visible: !root.nativePlaybackActive
     }
 
     AmbientBackdrop {
         id: homeAmbientBackdrop
         anchors.fill: parent
-        visible: root.currentPage === "home"
+        visible: !root.nativePlaybackActive && root.currentPage === "home"
         intensity: 0.92
     }
 
     Flickable {
         id: page
+        visible: !root.nativePlaybackActive
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
@@ -2056,7 +2573,7 @@ ApplicationWindow {
                 height: 304
                 radius: 28
                 clip: true
-                color: "#3d111418"
+                color: "#3d16191d"
                 border.width: 0
 
                 FrostedGlass {
@@ -2076,17 +2593,10 @@ ApplicationWindow {
                     antialiasing: true
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: "#780c0e11" }
-                        GradientStop { position: 0.62; color: "#58121417" }
-                        GradientStop { position: 1.0; color: "#3d1b130e" }
+                        GradientStop { position: 0.0; color: "#660b0d10" }
+                        GradientStop { position: 0.62; color: "#46101418" }
+                        GradientStop { position: 1.0; color: "#32191512" }
                     }
-                }
-
-                Image {
-                    anchors.fill: parent
-                    source: "../assets/tater-scanlines.png"
-                    fillMode: Image.Tile
-                    opacity: 0.3
                 }
 
                 Rectangle {
@@ -2096,21 +2606,9 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.rightMargin: -95
                     anchors.verticalCenter: parent.verticalCenter
-                    color: "#12ff781f"
-                    border.width: 74
-                    border.color: "#13ff8a3d"
-                }
-
-                Rectangle {
-                    width: 280
-                    height: 280
-                    radius: 140
-                    anchors.right: parent.right
-                    anchors.rightMargin: 120
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: "#1617191d"
-                    border.width: 1
-                    border.color: "#3aff9a58"
+                    color: "#0dff781f"
+                    border.width: 82
+                    border.color: "#0fff8a3d"
                 }
 
                 Image {
@@ -2637,7 +3135,7 @@ ApplicationWindow {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        visible: root.currentPage !== "home"
+        visible: !root.nativePlaybackActive && root.currentPage !== "home"
         color: root.color
         z: 40
 
@@ -3300,7 +3798,7 @@ ApplicationWindow {
                                 }
 
                                 Text {
-                                    text: "Find something great, then stream it through your own server."
+                                    text: "From Usenet to your screen—pick a movie or show and your server handles the rest."
                                     color: root.textPrimary
                                     font.pixelSize: 16
                                     font.weight: Font.DemiBold
@@ -4218,7 +4716,7 @@ ApplicationWindow {
             id: sideServerStatus
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: sideExitNav.top
+            anchors.bottom: sideLegalNotice.top
             anchors.leftMargin: 26
             anchors.rightMargin: 26
             anchors.bottomMargin: 12
@@ -4248,6 +4746,24 @@ ApplicationWindow {
                     font.letterSpacing: 0.8
                 }
             }
+        }
+
+        Text {
+            id: sideLegalNotice
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: sideExitNav.top
+            anchors.leftMargin: 26
+            anchors.rightMargin: 26
+            anchors.bottomMargin: 10
+            height: 30
+            text: "Uses Qt, FFmpeg & mpv under LGPL\nNotices and source information included"
+            color: "#858b91"
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            font.pixelSize: 9
+            font.weight: Font.Medium
+            lineHeight: 1.08
         }
 
         FocusButton {
@@ -4477,7 +4993,7 @@ ApplicationWindow {
     AudioOutput {
         id: recommendationAudio
         device: playbackCapabilities.defaultAudioOutput
-        volume: playerAudio.volume
+        volume: root.playbackVolume
     }
 
     MediaPlayer {
@@ -4529,8 +5045,8 @@ ApplicationWindow {
     AudioOutput {
         id: playerAudio
         device: playbackCapabilities.defaultAudioOutput
-        volume: 0.85
-        muted: false
+        volume: root.playbackVolume
+        muted: root.playbackMuted
     }
 
     MediaPlayer {
@@ -4554,34 +5070,69 @@ ApplicationWindow {
         onMediaStatusChanged: {
             if (mediaStatus === MediaPlayer.LoadedMedia
                     || mediaStatus === MediaPlayer.BufferedMedia) {
-                root.selectPlaybackAudioTrack()
-                root.playbackStatusMessage = ""
-                if (!root.playbackUsingFallback && root.playbackPendingResumeMs > 0) {
-                    var resumeAt = root.playbackPendingResumeMs
-                    root.playbackPendingResumeMs = 0
-                    mediaPlayer.setPosition(Math.round(resumeAt))
-                }
+                root.handlePlaybackLoaded()
             } else if (mediaStatus === MediaPlayer.EndOfMedia) {
-                root.savePlaybackState(true)
-                root.finishViewingHistory(root.playbackIsLive ? "stopped" : "completed")
-                root.playbackEnded = true
-                root.playbackControlsVisible = true
-                root.playbackStatusMessage = "Finished"
+                root.handlePlaybackEnd()
             }
         }
 
         onTracksChanged: root.selectPlaybackAudioTrack()
 
         onErrorOccurred: function(error, errorString) {
-            if (!root.playbackOpen)
-                return
-            if (root.retryWithCompatibleStream(errorString))
-                return
-            root.finishViewingHistory("stopped")
-            root.playbackStatusMessage = ""
-            root.playbackError = errorString && errorString.length > 0
-                    ? errorString : "This video could not be played."
-            root.playbackControlsVisible = true
+            root.handlePlaybackError(errorString)
+        }
+    }
+
+    Connections {
+        target: mpvPlayer
+        enabled: mpvPlayer.available
+
+        function onLoaded() {
+            root.handlePlaybackLoaded()
+            Qt.callLater(function() {
+                root.raise()
+                root.requestActivate()
+            })
+        }
+
+        function onPlaybackStateChanged() {
+            if (mpvPlayer.playing) {
+                root.playbackStatusMessage = ""
+                root.showPlaybackControls()
+            } else {
+                if (mpvPlayer.paused)
+                    root.reportViewingHistory("paused")
+                playbackControlsTimer.stop()
+                root.showPlaybackControls()
+            }
+        }
+
+        function onHasVideoChanged() {
+            if (mpvPlayer.hasVideo) {
+                root.playbackHasVideoFrame = true
+                root.showPlaybackControls()
+            }
+        }
+
+        function onSubtitlesChanged() {
+            root.refreshNativePlaybackOverlay()
+        }
+
+        function onAudioTracksChanged() {
+            root.refreshNativePlaybackOverlay()
+        }
+
+        function onEndOfMedia() {
+            root.handlePlaybackEnd()
+        }
+
+        function onClosed() {
+            if (root.playbackOpen && !root.playbackEnded)
+                root.closePlayback()
+        }
+
+        function onErrorOccurred(message) {
+            root.handlePlaybackError(message)
         }
     }
 
@@ -4589,8 +5140,8 @@ ApplicationWindow {
         target: playerVideo.videoSink
 
         function onVideoFrameChanged(frame) {
-            if (root.playbackOpen
-                    && mediaPlayer.playbackState === MediaPlayer.PlayingState)
+            if (!mpvPlayer.available && root.playbackOpen
+                    && root.playbackEnginePlaying)
                 root.playbackHasVideoFrame = true
         }
     }
@@ -4616,7 +5167,7 @@ ApplicationWindow {
         interval: 15000
         repeat: true
         running: root.playbackOpen && !root.playbackIsLive
-                 && mediaPlayer.playbackState === MediaPlayer.PlayingState
+                 && root.playbackEnginePlaying
         onTriggered: root.savePlaybackState(false)
     }
 
@@ -4626,8 +5177,13 @@ ApplicationWindow {
         repeat: false
         onTriggered: {
             if (root.playbackOpen && root.playbackError.length === 0
-                    && mediaPlayer.playbackState === MediaPlayer.PlayingState)
+                    && root.playbackEnginePlaying) {
                 root.playbackControlsVisible = false
+                root.playbackAudioControlActive = false
+                root.playbackSubtitleControlActive = false
+                if (mpvPlayer.available)
+                    mpvPlayer.hideOverlay()
+            }
         }
     }
 
@@ -4635,12 +5191,13 @@ ApplicationWindow {
         id: playbackOverlay
         anchors.fill: parent
         visible: root.playbackOpen
-        color: "#050607"
+        color: root.nativePlaybackActive ? "transparent" : "#050607"
         z: 300
 
         VideoOutput {
             id: playerVideo
             anchors.fill: parent
+            visible: !mpvPlayer.available
             fillMode: VideoOutput.PreserveAspectFit
         }
 
@@ -4649,7 +5206,7 @@ ApplicationWindow {
             z: 1
             onClicked: {
                 if (root.playbackControlsVisible
-                        && mediaPlayer.playbackState === MediaPlayer.PlayingState) {
+                        && root.playbackEnginePlaying) {
                     root.playbackControlsVisible = false
                     playbackControlsTimer.stop()
                 } else {
@@ -4658,81 +5215,13 @@ ApplicationWindow {
             }
         }
 
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            height: 142
-            visible: root.playbackControlsVisible || root.playbackError.length > 0
-            z: 4
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#e6050607" }
-                GradientStop { position: 1.0; color: "#00050607" }
-            }
-
-            Row {
-                anchors.left: parent.left
-                anchors.leftMargin: 30
-                anchors.right: parent.right
-                anchors.rightMargin: 30
-                anchors.top: parent.top
-                anchors.topMargin: 24
-                spacing: 18
-
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Math.max(200, parent.width - qualityPill.width - parent.spacing)
-                    spacing: 4
-
-                    Text {
-                        width: parent.width
-                        text: root.playbackTitle()
-                        color: root.textPrimary
-                        elide: Text.ElideRight
-                        font.pixelSize: 24
-                        font.weight: Font.Bold
-                    }
-
-                    Text {
-                        text: root.playbackIsLive
-                              ? "CHANNEL " + (root.playbackItem.number || "")
-                              : root.mediaLabel(root.playbackItem)
-                        color: root.orangeBright
-                        font.pixelSize: 11
-                        font.weight: Font.Bold
-                        font.letterSpacing: 1.3
-                    }
-                }
-
-                Rectangle {
-                    id: qualityPill
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: qualityLabel.implicitWidth + 24
-                    height: 34
-                    radius: 11
-                    color: "#272b30"
-                    border.width: 1
-                    border.color: "#4a5057"
-
-                    Text {
-                        id: qualityLabel
-                        anchors.centerIn: parent
-                        text: root.playbackQuality
-                        color: "#d7d9da"
-                        font.pixelSize: 11
-                        font.weight: Font.DemiBold
-                    }
-                }
-            }
-        }
-
         Column {
             anchors.centerIn: parent
             visible: root.playbackError.length === 0
-                     && (mediaPlayer.mediaStatus === MediaPlayer.StalledMedia
+                     && (root.playbackPlanPending
+                         || root.playbackEngineBuffering
                          || (!root.playbackHasVideoFrame
-                             && (mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia
-                                 || mediaPlayer.mediaStatus === MediaPlayer.BufferingMedia)))
+                             && root.playbackEngineLoading))
             z: 5
             spacing: 14
 
@@ -4830,12 +5319,13 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 190
-            visible: root.playbackControlsVisible || root.playbackError.length > 0
+            height: 224
+            visible: !root.nativePlaybackActive
+                     && (root.playbackControlsVisible || root.playbackError.length > 0)
             z: 4
             gradient: Gradient {
                 GradientStop { position: 0.0; color: "#00050607" }
-                GradientStop { position: 1.0; color: "#ed050607" }
+                GradientStop { position: 1.0; color: "#f2050607" }
             }
 
             Column {
@@ -4845,7 +5335,65 @@ ApplicationWindow {
                 anchors.leftMargin: 34
                 anchors.rightMargin: 34
                 anchors.bottomMargin: 24
-                spacing: 12
+                spacing: 10
+
+                Row {
+                    width: parent.width
+                    spacing: 18
+
+                    Column {
+                        width: Math.max(200, parent.width - audioButton.width
+                                        - subtitleButton.width - parent.spacing * 2)
+                        spacing: 3
+
+                        Text {
+                            width: parent.width
+                            text: root.playbackTitle()
+                            color: root.textPrimary
+                            elide: Text.ElideRight
+                            font.pixelSize: 24
+                            font.weight: Font.Bold
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: (root.playbackIsLive
+                                   ? "CHANNEL " + (root.playbackItem.number || "")
+                                   : root.mediaLabel(root.playbackItem))
+                                  + "  •  " + root.playbackProcessingLabel()
+                                  + (root.playbackEnginePaused ? "  •  PAUSED" : "")
+                            color: root.orangeBright
+                            elide: Text.ElideRight
+                            font.pixelSize: 12
+                            font.weight: Font.Bold
+                            font.letterSpacing: 0.7
+                        }
+                    }
+
+                    FocusButton {
+                        id: audioButton
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 250
+                        compact: true
+                        opacity: 0.82
+                        text: root.playbackAudioLabel()
+                        enabled: root.playbackMultipleAudioTracks()
+                        primary: root.playbackAudioControlActive
+                        onClicked: root.cyclePlaybackAudioTrack()
+                    }
+
+                    FocusButton {
+                        id: subtitleButton
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 142
+                        compact: true
+                        opacity: 0.82
+                        text: root.playbackSubtitleLabel()
+                        enabled: root.playbackSubtitlesAvailable()
+                        primary: root.playbackSubtitleControlActive
+                        onClicked: root.togglePlaybackSubtitles()
+                    }
+                }
 
                 Row {
                     width: parent.width
@@ -4906,62 +5454,13 @@ ApplicationWindow {
                         font.pixelSize: 13
                     }
                 }
-
-                Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 12
-
-                    FocusButton {
-                        width: 128
-                        compact: true
-                        text: "−10 sec"
-                        enabled: !root.playbackIsLive
-                        onClicked: root.seekPlaybackBy(-10000)
-                    }
-
-                    FocusButton {
-                        width: 154
-                        text: mediaPlayer.playbackState === MediaPlayer.PlayingState
-                              ? "❚❚  Pause" : "▶  Play"
-                        primary: true
-                        onClicked: root.togglePlayback()
-                    }
-
-                    FocusButton {
-                        width: 128
-                        compact: true
-                        text: "+10 sec"
-                        enabled: !root.playbackIsLive
-                        onClicked: root.seekPlaybackBy(10000)
-                    }
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        leftPadding: 12
-                        text: "VOLUME  " + Math.round(playerAudio.volume * 100) + "%"
-                        color: root.textSecondary
-                        font.pixelSize: 11
-                        font.weight: Font.Bold
-                        font.letterSpacing: 0.8
-                    }
-                }
-
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: root.playbackIsLive
-                          ? "A  Play/Pause    B  Back    ↑↓  Volume"
-                          : "A  Play/Pause    B  Back    ←→  Seek 10 sec    ↑↓  Volume"
-                    color: "#8f9499"
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                }
             }
         }
     }
 
     Rectangle {
         id: pairingOverlay
-        visible: !demoMode && !serverClient.paired
+        visible: !root.nativePlaybackActive && !demoMode && !serverClient.paired
         anchors.fill: parent
         color: "#e608090b"
         z: 100

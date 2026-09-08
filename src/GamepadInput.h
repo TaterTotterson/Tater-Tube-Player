@@ -25,6 +25,8 @@ signals:
     void pageDown();
     void accept();
     void back();
+    void subtitles();
+    void audioTracks();
 
 private:
     void poll();

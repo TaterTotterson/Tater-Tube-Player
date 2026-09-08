@@ -1,7 +1,6 @@
 "DepotBuild"
 {
     "DepotID" "@DEPOT_ID@"
-    "ContentRoot" "../../linux-x86_64"
 
     "FileMapping"
     {

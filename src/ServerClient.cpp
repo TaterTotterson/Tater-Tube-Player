@@ -1365,6 +1365,14 @@ QString ServerClient::playbackProfile(const QVariantMap &capabilities) const
 void ServerClient::preparePlayback(const QVariantMap &item, const QString &kind,
                                    const QVariantMap &capabilities)
 {
+    preparePlaybackWithAudioTrack(item, kind, capabilities, -1);
+}
+
+void ServerClient::preparePlaybackWithAudioTrack(const QVariantMap &item,
+                                                 const QString &kind,
+                                                 const QVariantMap &capabilities,
+                                                 int audioTrack)
+{
     const QString streamUrl = item.value(QStringLiteral("streamUrl")).toString().trimmed();
     if (!paired() || streamUrl.isEmpty()) {
         emit playbackPlanFailed(QStringLiteral("Playback details are unavailable."));
@@ -1372,12 +1380,14 @@ void ServerClient::preparePlayback(const QVariantMap &item, const QString &kind,
     }
 
     const int generation = ++m_playbackGeneration;
-    const QJsonObject payload{
+    QJsonObject payload{
         {QStringLiteral("stream_url"), streamUrl},
         {QStringLiteral("media_type"), kind.trimmed().toLower()},
         {QStringLiteral("profile"), playbackProfile(capabilities)},
         {QStringLiteral("capabilities"), QJsonObject::fromVariantMap(capabilities)},
     };
+    if (audioTrack >= 0)
+        payload.insert(QStringLiteral("audio_track"), audioTrack);
     QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/v1/player/playback/sessions"))};
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     request.setRawHeader("Accept", "application/json");

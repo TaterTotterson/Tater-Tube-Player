@@ -18,6 +18,9 @@ mkdir -p "${tater_compliance_dir}/qt-sbom"
 
 LD_LIBRARY_PATH="${tater_depot_dir}/lib" \
     "${tater_binary}" --version > "${tater_compliance_dir}/player-version.txt"
+LD_LIBRARY_PATH="${tater_depot_dir}/lib" \
+    "${tater_depot_dir}/bin/tater-mpv" --no-config --version \
+    > "${tater_compliance_dir}/mpv-version.txt"
 
 if command -v qtpaths6 >/dev/null 2>&1; then
     tater_qtpaths=qtpaths6
@@ -35,7 +38,8 @@ tater_qt_prefix=$("${tater_qtpaths}" --query QT_INSTALL_PREFIX)
     echo "Builder: ${TATER_STEAM_RUNTIME_IMAGE:-unrecorded}"
     uname -a
     if command -v dpkg-query >/dev/null 2>&1; then
-        dpkg-query -W -f='${Package} ${Version}\n' libsdl2-2.0-0 libsdl2-dev 2>/dev/null || true
+        dpkg-query -W -f='${Package} ${Version}\n' \
+            libsdl2-2.0-0 libsdl2-dev libass9 libplacebo349 2>/dev/null || true
     fi
 } > "${tater_compliance_dir}/steam-runtime.txt"
 
@@ -68,6 +72,9 @@ done
 
 LD_LIBRARY_PATH="${tater_depot_dir}/lib" \
     ldd "${tater_binary}" > "${tater_compliance_dir}/runtime-dependencies.txt"
+LD_LIBRARY_PATH="${tater_depot_dir}/lib" \
+    ldd "${tater_depot_dir}/bin/tater-mpv" \
+    > "${tater_compliance_dir}/mpv-runtime-dependencies.txt"
 
 : > "${tater_compliance_dir}/all-runtime-dependencies.txt"
 find "${tater_depot_dir}" -type f | while IFS= read -r tater_candidate; do
@@ -80,14 +87,21 @@ find "${tater_depot_dir}" -type f | while IFS= read -r tater_candidate; do
 done
 
 find "${tater_depot_dir}" -type f \
-    \( -name 'libavcodec.so*' -o -name 'libavformat.so*' \
+    \( -name 'libavcodec.so*' -o -name 'libavfilter.so*' \
+       -o -name 'libavformat.so*' \
        -o -name 'libavutil.so*' -o -name 'libswresample.so*' \
        -o -name 'libswscale.so*' \) \
     -print | sort > "${tater_compliance_dir}/bundled-media-libraries.txt"
 
 tater_ffmpeg_sbom="${tater_compliance_dir}/qt-sbom/qtmultimedia-$(cat "${tater_compliance_dir}/qt-version.txt").spdx"
 {
-    echo "Bundled FFmpeg evidence"
+    echo "Bundled FFmpeg 7.1.5 evidence"
+    echo "Built from the pinned upstream archive in packaging/steam/Containerfile."
+    echo
+    echo "Exact configure invocation"
+    cat "${tater_compliance_dir}/ffmpeg-build-config.txt"
+    echo
+    echo "Qt Multimedia SPDX reference"
     if [ -f "${tater_ffmpeg_sbom}" ]; then
         sed -n '/^PackageName: FFmpeg$/,/^Relationship:/p' "${tater_ffmpeg_sbom}"
     fi
@@ -111,6 +125,10 @@ tater_qt_source_url=${TATER_QT_SOURCE_URL:-"attach before Steam submission"}
 tater_qt_source_sha256=${TATER_QT_SOURCE_SHA256:-"attach before Steam submission"}
 tater_ffmpeg_source_url=${TATER_FFMPEG_SOURCE_URL:-"attach before Steam submission"}
 tater_ffmpeg_source_sha256=${TATER_FFMPEG_SOURCE_SHA256:-"attach before Steam submission"}
+tater_icu_source_url=${TATER_ICU_SOURCE_URL:-"attach before Steam submission"}
+tater_icu_source_sha256=${TATER_ICU_SOURCE_SHA256:-"attach before Steam submission"}
+tater_mpv_source_url=${TATER_MPV_SOURCE_URL:-"attach before Steam submission"}
+tater_mpv_source_sha256=${TATER_MPV_SOURCE_SHA256:-"attach before Steam submission"}
 
 cat > "${tater_license_dir}/source-manifest.txt" <<EOF
 Tater Tube Player source
@@ -128,6 +146,16 @@ FFmpeg corresponding source
   Version and configuration: compliance/bundled-ffmpeg.txt
   Archive: ${tater_ffmpeg_source_url}
   SHA-256: ${tater_ffmpeg_source_sha256}
+
+ICU source and notices
+  Version: 73.2
+  Archive: ${tater_icu_source_url}
+  SHA-256: ${tater_icu_source_sha256}
+
+mpv corresponding source
+  Version and LGPL-only build options: compliance/mpv-version.txt and compliance/mpv-build-options.txt
+  Archive: ${tater_mpv_source_url}
+  SHA-256: ${tater_mpv_source_sha256}
 EOF
 
 if grep -q 'attach before Steam submission' "${tater_license_dir}/source-manifest.txt"; then

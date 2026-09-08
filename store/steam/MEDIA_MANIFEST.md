@@ -18,8 +18,8 @@ viewing history, or commercial entertainment artwork are present.
 the first Steam submission. The first store page should establish Tater Tube
 Player primarily as a self-hosted personal-library and Tube TV client.
 
-Every screenshot is 3200 x 1800 PNG at 16:9, exceeding Steam's 1920 x 1080
-minimum.
+Every screenshot is a native 3840 x 2160 PNG at 16:9, exceeding Steam's
+1920 x 1080 minimum.
 
 ## Trailer
 
@@ -28,14 +28,22 @@ minimum.
 - Suggested Steam category: `Gameplay` (the footage shows the actual product UI)
 - Video: H.264, 1920 x 1080, 30 fps
 - Audio: AAC, 48 kHz stereo silence
-- Duration: approximately 26 seconds
-- Average bitrate: approximately 9 Mbps
+- Duration: approximately 48 seconds
+- Average bitrate: approximately 8.1 Mbps
 - Poster: `trailer/trailer-poster-1920x1080.png`
 
-The first cut intentionally works without sound and uses only real product
-screens. A later cut may add controller navigation and rights-cleared demo
-playback footage, but this cut is suitable for assembling the initial store
-page.
+This cut is a genuine screen recording of the current Linux build running on a
+Steam Deck. It shows live controller-style navigation through Home, Library,
+Discover, Live TV, Tater Picks, and the title-details dialog, followed by real
+moving playback inside the player. It is not assembled from moving still
+images.
+
+The playback excerpt uses Borys Zaitsev's Pexels video “Stunning abstract
+animation of galaxy and stars in deep space,” downloaded from
+<https://www.pexels.com/video/stars-in-space-12275372/>. Pexels permits free
+commercial use and modification under <https://www.pexels.com/license/>.
+Source-file SHA-256:
+`1e4f7dd3580cf4bc13e5db65c0b1785308f1d762747b9f0b1190554681e1a267`.
 
 ## Store graphics
 
@@ -54,9 +62,15 @@ page.
 - `graphics/client/shortcut-icon-256.png`
 - `graphics/client/app-icon-184.jpg`
 
-The store and library capsules contain only product artwork, the Tater Tube
-wordmark, and the official `PLAYER` subtitle. The Library Hero contains artwork
-only, and the Library Logo has a transparent background.
+The Header, Small, Main, and Vertical Store Capsules use the Tater Tube wordmark
+with the leaning mascot and intentionally omit `PLAYER`. They share the orange
+CRT-room artwork used by the Library graphics. The Page Background uses a
+darkened, softened version of the room without a logo so it remains ambient
+behind Steam's store-page content. The Library Capsule, Library Header Capsule,
+and transparent Library Logo also use only the Tater Tube wordmark with the
+leaning mascot. The Library Hero contains only the supplied orange CRT-room
+artwork. The portrait room adaptation used by the vertical capsules is retained
+at `graphics/source/library-room-vertical-1024x1536.png`.
 
 ## Generated demo artwork prompts
 

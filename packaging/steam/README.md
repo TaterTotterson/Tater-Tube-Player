@@ -3,10 +3,15 @@
 The production depot targets 64-bit Linux under Steam Linux Runtime 4.0. Valve
 recommends compiling native Linux applications in the matching runtime SDK; the
 Containerfile supplies that environment and installs the official shared Qt
-distribution.
+distribution. The release container builds FFmpeg 7.1.5 with GPL, version-3,
+and nonfree components disabled, then builds mpv 0.40.0 with `-Dgpl=false`.
+The depot carries that LGPL-only build as `bin/tater-mpv`, a separate native
+playback process so SteamOS can use Gamescope's Wayland/Vulkan HDR path and
+send HDMI bitstream audio formats accepted by the connected display. The Qt
+Multimedia player remains the fallback outside the Linux Steam build.
 
 The Steam Deck Arch/Distrobox build is only for fast hardware development. Its
-GPL-enabled system FFmpeg must not be redistributed.
+system FFmpeg and mpv packages must not be redistributed.
 
 ## Build
 
@@ -24,7 +29,9 @@ docker run --rm --platform linux/amd64 \
 ```
 
 The script creates `dist/steam/linux-x86_64/`. It refuses to overwrite an
-existing depot so stale libraries cannot silently survive between builds.
+existing depot so stale libraries cannot silently survive between builds. It
+also materializes Linux library links as regular files because SteamPipe
+uploads made from macOS do not retain symbolic-link entries.
 
 After committing the exact release revision, prepare the retained source
 archives with:
@@ -35,9 +42,9 @@ archives with:
 
 Publish both generated archives with the matching GitHub release, then pass
 their public URLs and SHA-256 values as `TATER_APP_SOURCE_*`,
-`TATER_QT_SOURCE_*`, and `TATER_FFMPEG_SOURCE_*` when producing the final
-non-draft depot. The final audit rejects dirty source trees and placeholder
-source locations.
+`TATER_QT_SOURCE_*`, `TATER_FFMPEG_SOURCE_*`, `TATER_ICU_SOURCE_*`, and
+`TATER_MPV_SOURCE_*` when producing the final non-draft depot. The final audit
+rejects dirty source trees and placeholder source locations.
 
 ## Steamworks launch settings
 
@@ -58,6 +65,18 @@ After Steamworks assigns the app and Linux depot IDs, generate the build files:
 
 ```sh
 ./scripts/prepare-steampipe-preview.sh APP_ID DEPOT_ID
+```
+
+To validate a named release-candidate depot without replacing the normal
+`linux-x86_64` directory, select both its depot directory and an isolated
+SteamPipe output directory:
+
+```sh
+TATER_STEAM_DRAFT=1 \
+TATER_STEAM_DEPOT_NAME=lgpl-release-candidate \
+TATER_STEAMPIPE_NAME=steampipe-lgpl-rc \
+TATER_STEAM_BUILDER_IMAGE=tater-tube-player-steam-builder:lgpl-rc \
+  ./scripts/prepare-steampipe-preview.sh APP_ID DEPOT_ID
 ```
 
 This re-runs the depot audit and creates the matching files under

@@ -41,6 +41,29 @@ if(TATER_STEAM_RELEASE)
         message(FATAL_ERROR
             "The Steam release must use dynamically linked Qt libraries for LGPLv3 compliance")
     endif()
+    find_program(TATER_MPV_EXECUTABLE mpv REQUIRED)
+    set(TATER_MPV_RELEASE_ROOT "/opt/tater-mpv" CACHE PATH
+        "Root of the audited LGPL-only mpv release")
+    set(TATER_MEDIA_RELEASE_ROOT "/opt/tater-media" CACHE PATH
+        "Root of the audited LGPL-only FFmpeg release")
+    set(TATER_MPV_BUILD_OPTIONS
+        "${TATER_MPV_RELEASE_ROOT}/share/tater/mpv-build-options.txt")
+    set(TATER_MPV_COPYRIGHT
+        "${TATER_MPV_RELEASE_ROOT}/share/licenses/mpv/Copyright")
+    set(TATER_MPV_LICENSE
+        "${TATER_MPV_RELEASE_ROOT}/share/licenses/mpv/LICENSE.LGPL")
+    foreach(tater_required_release_file IN ITEMS
+            "${TATER_MPV_BUILD_OPTIONS}" "${TATER_MPV_COPYRIGHT}"
+            "${TATER_MPV_LICENSE}" "${TATER_MEDIA_RELEASE_ROOT}/ffmpeg-build-config.txt")
+        if(NOT EXISTS "${tater_required_release_file}")
+            message(FATAL_ERROR
+                "The audited LGPL playback release file is missing: ${tater_required_release_file}")
+        endif()
+    endforeach()
+    file(READ "${TATER_MPV_BUILD_OPTIONS}" tater_mpv_build_options_text)
+    if(NOT tater_mpv_build_options_text MATCHES "gpl[ ]+false")
+        message(FATAL_ERROR "The bundled mpv executable was not built with -Dgpl=false")
+    endif()
 endif()
 
 qt_standard_project_setup(REQUIRES 6.8)
@@ -48,6 +71,8 @@ qt_standard_project_setup(REQUIRES 6.8)
 qt_add_executable(tater-tube-player
     src/ArtworkNetworkAccessManagerFactory.cpp
     src/ArtworkNetworkAccessManagerFactory.h
+    src/MpvProcessPlayer.cpp
+    src/MpvProcessPlayer.h
     src/main.cpp
     src/GamepadInput.cpp
     src/GamepadInput.h
@@ -133,6 +158,27 @@ install(TARGETS tater-tube-player
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+if(TATER_STEAM_RELEASE)
+    # Keep the audited LGPL-only mpv build as a separate, replaceable program.
+    install(PROGRAMS "${TATER_MPV_EXECUTABLE}"
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        RENAME tater-mpv
+    )
+    install(FILES "${TATER_MPV_COPYRIGHT}"
+        DESTINATION licenses
+        RENAME mpv-Copyright.txt
+    )
+    install(FILES "${TATER_MPV_LICENSE}"
+        DESTINATION licenses
+        RENAME mpv-LGPL-2.1-or-later.txt
+    )
+    install(FILES
+        "${TATER_MPV_BUILD_OPTIONS}"
+        "${TATER_MEDIA_RELEASE_ROOT}/ffmpeg-build-config.txt"
+        DESTINATION compliance
+    )
+endif()
+
 install(FILES
     LICENSE
     NOTICE
@@ -174,6 +220,21 @@ if(TATER_DEPLOY_QT_RUNTIME)
     install(SCRIPT ${tater_deploy_qt_script})
 endif()
 
+if(TATER_STEAM_RELEASE)
+    # Replace Qt's smaller FFmpeg runtime with the single audited LGPL-only
+    # FFmpeg build used by both Qt Multimedia and mpv, and add libavfilter.
+    install(DIRECTORY "${TATER_MEDIA_RELEASE_ROOT}/lib/"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        FILES_MATCHING
+            PATTERN "libavcodec.so*"
+            PATTERN "libavfilter.so*"
+            PATTERN "libavformat.so*"
+            PATTERN "libavutil.so*"
+            PATTERN "libswresample.so*"
+            PATTERN "libswscale.so*"
+    )
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
     find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
@@ -196,6 +257,17 @@ if(BUILD_TESTING)
         Qt6::Core Qt6::Gui Qt6::Multimedia Qt6::Test
     )
     add_test(NAME playback-capabilities-test COMMAND playback-capabilities-test)
+
+    qt_add_executable(mpv-process-player-test
+        tests/MpvProcessPlayerTest.cpp
+        src/MpvProcessPlayer.cpp
+        src/MpvProcessPlayer.h
+    )
+    target_include_directories(mpv-process-player-test PRIVATE src)
+    target_link_libraries(mpv-process-player-test PRIVATE
+        Qt6::Core Qt6::Network Qt6::Test
+    )
+    add_test(NAME mpv-process-player-test COMMAND mpv-process-player-test)
 
     qt_add_executable(artwork-network-cache-test
         tests/ArtworkNetworkCacheTest.cpp

@@ -12,34 +12,33 @@ Quick Controls. These modules are used under the GNU Lesser General Public
 License version 3. Qt remains copyright its respective contributors and The Qt
 Company.
 
-The full LGPLv3 and GPLv3 texts are included in `packaging/licenses/` and in the
-`licenses/` directory of the Steam depot. Instructions for replacing the shared
-Qt libraries are in `docs/RELINKING_QT.md`.
+The full LGPLv3 and incorporated GPLv3 texts are included in
+`packaging/licenses/` and in the `licenses/` directory of the Steam depot.
+Including the GPLv3 text does not mean the Player ships a GPL-only Qt module;
+the Steam release excludes Qt's GPL-only runtime modules. Instructions for
+replacing the shared Qt libraries are in `docs/RELINKING_QT.md`.
 
 - Project: https://www.qt.io/
 - Source: https://code.qt.io/
 - License information: https://doc.qt.io/qt-6/licensing.html
 
-## FFmpeg used by Qt Multimedia
+## FFmpeg used by Qt Multimedia and mpv
 
 Qt Multimedia uses FFmpeg for media playback in the Linux release. FFmpeg is a
 separate work and is distributed as shared libraries under its applicable LGPL
 terms and other permissive component licenses.
 
-The Steam release must use the audited FFmpeg build supplied by the official Qt
-distribution, or an equivalently audited build configured without
-`--enable-gpl` and without `--enable-nonfree`. Development-distribution FFmpeg
-packages that enable GPL components such as x264 or x265 must not be copied into
-the Steam depot.
+The Steam release builds FFmpeg 7.1.5 from its pinned upstream source archive
+with `--disable-gpl`, `--disable-version3`, and `--disable-nonfree`. It is built
+as shared libraries and is used by both Qt Multimedia and mpv. No x264, x265,
+or other GPL/nonfree external codec library is included.
 
 - Project: https://ffmpeg.org/
 - License information: https://ffmpeg.org/legal.html
 
-The Qt 6.11.2 Linux package currently ships FFmpeg libraries matching FFmpeg
-7.1.5 and configured as shared libraries without GPL or nonfree components.
 The full LGPLv2.1 text is included in `packaging/licenses/` and in the Steam
-depot. The release SBOM, embedded configuration evidence, and source manifest
-identify the exact FFmpeg build and all libraries actually shipped.
+depot. The exact configure invocation, release SBOM, binary evidence, and
+source manifest identify the build and all libraries actually shipped.
 
 ## SDL / sdl2-compat
 
@@ -52,6 +51,39 @@ bundle a second SDL copy. SDL and sdl2-compat use the permissive Zlib license.
 - sdl2-compat: https://github.com/libsdl-org/sdl2-compat
 
 The applicable Zlib license text is included in `packaging/licenses/Zlib-SDL.txt`.
+
+## ICU
+
+The Linux depot includes ICU 73.2 shared libraries from the official Qt 6.11.2
+Linux distribution. Qt Core uses these libraries for Unicode, locale, and text
+handling. ICU is permissively licensed under the Unicode License and includes
+third-party data notices.
+
+The complete ICU 73.2 license and bundled-data notices are included as
+`licenses/Unicode-3.0-ICU-73.2.txt`. The release source archive retains the
+matching `icu4c-73_2-src.tgz` upstream source archive.
+
+- Project: https://icu.unicode.org/
+- Source: https://github.com/unicode-org/icu/releases/tag/release-73-2
+- License information: https://github.com/unicode-org/icu/blob/release-73-2/icu4c/LICENSE
+
+## mpv
+
+The Steam/Linux release launches mpv as a separate program for native Vulkan
+video output, hardware decoding, HDR presentation through Gamescope, and HDMI
+audio passthrough. It is not linked into the Apache-licensed Tater Tube Player
+executable.
+
+The release builds mpv 0.40.0 from its pinned upstream source archive with
+Meson's `-Dgpl=false` option. GPL-only paths, including mpv's X11 video output,
+are disabled; the Steam/Gamescope path uses Wayland and Vulkan. This build is
+distributed under LGPLv2.1-or-later. Its complete copyright file, LGPL text,
+exact Meson option record, and corresponding source are included with the
+release records.
+
+- Project: https://mpv.io/
+- Source: https://github.com/mpv-player/mpv
+- License information: https://github.com/mpv-player/mpv/blob/master/Copyright
 
 ## Transitive components
 

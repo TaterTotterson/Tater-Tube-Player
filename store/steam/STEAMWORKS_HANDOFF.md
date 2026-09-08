@@ -1,7 +1,12 @@
 # Steamworks handoff
 
 Use this order for the first Tater Tube Player submission. Nothing in this file
-contains Steam account credentials, an App ID, or a Depot ID.
+contains Steam account credentials.
+
+Confirmed Steamworks identifiers:
+
+- App ID: `5239420`
+- Linux content Depot ID: `5239421`
 
 ## 1. Create or select the Steamworks app
 
@@ -11,18 +16,24 @@ contains Steam account credentials, an App ID, or a Depot ID.
 - First platform: SteamOS / Linux, 64-bit
 - Do not enable Steam DRM/CEG for the executable
 
-Record the assigned App ID and Linux Depot ID. Generate the preview-only
-SteamPipe files with:
+The app and Linux depot are now created. Generate the preview-only SteamPipe
+files with:
 
 ```sh
-./scripts/prepare-steampipe-preview.sh APP_ID DEPOT_ID
+TATER_STEAM_DRAFT=1 ./scripts/prepare-steampipe-preview.sh 5239420 5239421
 ```
+
+`TATER_STEAM_DRAFT=1` is appropriate only while validating an uncommitted test
+build. The final upload must be rebuilt from the clean, tagged release tree.
 
 ## 2. Enter the store copy
 
 Use `STORE_PAGE.md` for the short description, About This Software text,
-feature list, disclosures, system requirements, and dedicated URLs. Confirm the
-developer and publisher display names before saving them in Steamworks.
+feature list, disclosures, system requirements, and dedicated URLs. Set both
+the developer and publisher display names to `Tater Totterson AI LLC`.
+Paste the About copy as plain text, then use Steamworks' visual editor to style
+the standalone headings and bold the server-requirement paragraph. Do not paste
+`[h2]` or `[b]` tags because the current editor renders them as text.
 
 ## 3. Upload store graphics
 
@@ -50,7 +61,9 @@ Upload these screenshots in order:
 6. `screenshots/06-search.png`
 
 Upload `trailer/tater-tube-player-store-trailer-v1.mp4` as a Gameplay trailer
-named `Tater Tube Player — Product Tour`. The AAC silence is intentional.
+named `Tater Tube Player — Product Tour`. It is a genuine Steam Deck capture
+with controller-style menu navigation and real moving demo playback. The AAC
+silence is intentional.
 
 ## 5. Complete declarations
 
@@ -71,6 +84,17 @@ General Installation launch option:
 - Architecture: 64-bit
 - Arguments: none
 - Runtime: Steam Linux Runtime 4.0
+
+Steam Input configuration:
+
+- Keep the Steam Input API integration survey set to `No`.
+- The Software app type currently receives Steam's standard `Keyboard (WASD)
+  and Mouse` controller template. The player intentionally maps its Deck and
+  DualSense outputs—WASD, 1/2/3/4, Space, E, R, F, Escape, and Tab—to the same
+  navigation and playback actions as a native SDL gamepad.
+- Do not require customers to select a different controller template.
+- Test the untouched Steam default on both the built-in Deck controls and a
+  DualSense before marking controller-support fields complete.
 
 Run the generated SteamPipe file once while `Preview` remains `1`. After its
 manifest is correct, set `Preview` to `0`, upload it without `SetLive`, and put

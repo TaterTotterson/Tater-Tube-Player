@@ -367,6 +367,15 @@ void ServerClientTest::loadsVersionedHome()
     QVERIFY(requests.contains("POST /api/v1/player/playback/sessions "));
     QVERIFY(requests.contains("Living Room TV"));
 
+    client.preparePlaybackWithAudioTrack({
+        {QStringLiteral("streamUrl"), QStringLiteral("http://tube.test/movie")},
+    }, QStringLiteral("movie"), {
+        {QStringLiteral("video_codecs"), QStringList{QStringLiteral("h264")}},
+        {QStringLiteral("audio_codecs"), QStringList{QStringLiteral("eac3")}},
+    }, 2);
+    QTRY_COMPARE_WITH_TIMEOUT(planSpy.count(), 2, 3000);
+    QVERIFY(requests.contains("\"audio_track\":2"));
+
     client.browseDiscoverBack();
     QCOMPARE(client.discoverStage(), QStringLiteral("titles"));
     QCOMPARE(client.discoverItems().size(), 1);

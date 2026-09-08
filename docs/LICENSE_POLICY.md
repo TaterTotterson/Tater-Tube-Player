@@ -34,12 +34,14 @@ notice, relinking instructions, and a Tater-controlled copy or offer for the
 exact corresponding Qt source.
 
 The Arch/Distrobox environment on the test Steam Deck is development-only. Its
-system FFmpeg is GPL-enabled and must never be copied into a store depot. The
-release build uses the FFmpeg binaries supplied by the official Qt distribution
-or another audited shared FFmpeg build configured without GPL or nonfree parts.
+system FFmpeg and mpv packages must never be copied into a store depot. The
+Steam release builds a shared FFmpeg 7.1.5 with GPL, version-3, and nonfree
+parts disabled. Both Qt Multimedia and an mpv 0.40.0 build configured with
+`-Dgpl=false` use that audited FFmpeg build. mpv's GPL-only X11 output is
+disabled; Gamescope playback uses Wayland and Vulkan.
 
 The application source is offered under Apache-2.0. This does not replace or
-weaken the separate LGPL obligations for Qt and FFmpeg.
+weaken the separate LGPL obligations for Qt, FFmpeg, or mpv.
 
 Apple TV is a native SwiftUI/AVKit client and does not distribute Qt. Google TV
 will receive its own distribution review before an Android build is published.

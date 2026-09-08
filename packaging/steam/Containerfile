@@ -1,6 +1,12 @@
 FROM registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk@sha256:2ff6220464894964266c7dbda1b91ca24e433a58ad3edff26571a2a9e5163e00
 
 ARG QT_VERSION=6.11.2
+ARG FFMPEG_VERSION=7.1.5
+ARG FFMPEG_SHA256=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
+ARG MPV_VERSION=0.40.0
+ARG MPV_SHA256=10a0f4654f62140a6dd4d380dcf0bbdbdcf6e697556863dc499c296182f081a3
+ARG LIBASS_DEV_SHA256=5d4790d49f79a8facd5bab9f3e856b8563a8003e917c857a3428ac8f94d887d8
+ARG LIBPLACEBO_DEV_SHA256=cdeea54b80f4b0bfde39ef36a038eef3a8962acfee4164f895a8096032a7409a
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -10,12 +16,145 @@ RUN apt-get update \
         file \
         git \
         libgl1-mesa-dev \
+        libgnutls28-dev \
         libsdl2-dev \
+        meson \
+        nasm \
         ninja-build \
         patchelf \
+        pkg-config \
         python3 \
         python3-venv \
+        xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# Steam Runtime 4 supplies the matching shared libass and libplacebo runtime
+# libraries but omits their development packages. Extract only their headers,
+# pkg-config records, and copyright files from pinned Debian packages. The
+# runtime libraries themselves remain Valve-supplied and are not copied into
+# the Tater depot.
+RUN set -eux; \
+    mkdir -p /tmp/tater-dev /opt/tater-mpv/share/licenses/runtime; \
+    curl -fsSL -o /tmp/libass-dev.deb \
+        https://deb.debian.org/debian/pool/main/liba/libass/libass-dev_0.17.3-1+deb13u1_amd64.deb; \
+    echo "${LIBASS_DEV_SHA256}  /tmp/libass-dev.deb" | sha256sum -c -; \
+    curl -fsSL -o /tmp/libplacebo-dev.deb \
+        https://deb.debian.org/debian/pool/main/libp/libplacebo/libplacebo-dev_7.349.0-3_amd64.deb; \
+    echo "${LIBPLACEBO_DEV_SHA256}  /tmp/libplacebo-dev.deb" | sha256sum -c -; \
+    dpkg-deb -x /tmp/libass-dev.deb /tmp/tater-dev/libass; \
+    dpkg-deb -x /tmp/libplacebo-dev.deb /tmp/tater-dev/libplacebo; \
+    cp -a /tmp/tater-dev/libass/usr/include/ass /usr/include/; \
+    cp /tmp/tater-dev/libass/usr/lib/x86_64-linux-gnu/pkgconfig/libass.pc \
+        /usr/lib/x86_64-linux-gnu/pkgconfig/; \
+    cp -a /tmp/tater-dev/libplacebo/usr/include/libplacebo /usr/include/; \
+    cp /tmp/tater-dev/libplacebo/usr/lib/x86_64-linux-gnu/pkgconfig/libplacebo.pc \
+        /usr/lib/x86_64-linux-gnu/pkgconfig/; \
+    cp /tmp/tater-dev/libass/usr/share/doc/libass-dev/copyright \
+        /opt/tater-mpv/share/licenses/runtime/libass-copyright; \
+    cp /tmp/tater-dev/libplacebo/usr/share/doc/libplacebo-dev/copyright \
+        /opt/tater-mpv/share/licenses/runtime/libplacebo-copyright; \
+    rm -rf /tmp/tater-dev /tmp/libass-dev.deb /tmp/libplacebo-dev.deb
+
+# Build one shared LGPL-only FFmpeg stack for both Qt Multimedia and mpv. No
+# GPL, nonfree, x264, or x265 component is enabled.
+RUN set -eux; \
+    curl -fsSL -o /tmp/ffmpeg.tar.xz \
+        "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"; \
+    echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; \
+    mkdir -p /tmp/ffmpeg-src; \
+    tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg-src --strip-components=1; \
+    cd /tmp/ffmpeg-src; \
+    ./configure \
+        --prefix=/opt/tater-media \
+        --disable-static \
+        --enable-shared \
+        --disable-programs \
+        --disable-doc \
+        --disable-debug \
+        --disable-autodetect \
+        --disable-gpl \
+        --disable-version3 \
+        --disable-nonfree \
+        --disable-postproc \
+        --enable-network \
+        --enable-pic \
+        --enable-gnutls \
+        --enable-libdrm \
+        --enable-vaapi \
+        --enable-vulkan; \
+    make -j"$(nproc)"; \
+    make install; \
+    cp ./ffbuild/config.sh /opt/tater-media/ffmpeg-build-config.txt; \
+    rm -rf /tmp/ffmpeg-src /tmp/ffmpeg.tar.xz
+
+# mpv's own licensing file supports an LGPLv2.1+ build when GPL-only sources are
+# disabled. The Steam build is Wayland/Vulkan-only; X11 output is one of mpv's
+# remaining GPL-only areas and is deliberately excluded.
+RUN set -eux; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libass9 liblcms2-dev libplacebo349 libunibreak-dev wayland-protocols; \
+    ln -s libass.so.9 /usr/lib/x86_64-linux-gnu/libass.so; \
+    ln -s libplacebo.so.349 /usr/lib/x86_64-linux-gnu/libplacebo.so; \
+    rm -rf /var/lib/apt/lists/*; \
+    curl -fsSL -o /tmp/mpv.tar.gz \
+        "https://deb.debian.org/debian/pool/main/m/mpv/mpv_${MPV_VERSION}.orig.tar.gz"; \
+    echo "${MPV_SHA256}  /tmp/mpv.tar.gz" | sha256sum -c -; \
+    mkdir -p /tmp/mpv-src; \
+    tar -xzf /tmp/mpv.tar.gz -C /tmp/mpv-src --strip-components=1; \
+    cd /tmp/mpv-src; \
+    PKG_CONFIG_PATH=/opt/tater-media/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig \
+    meson setup build \
+        --prefix=/opt/tater-mpv \
+        -Dgpl=false \
+        -Dcplayer=true \
+        -Dlibmpv=false \
+        -Dbuild-date=false \
+        -Dx11=disabled \
+        -Dgl-x11=disabled \
+        -Degl-x11=disabled \
+        -Dxv=disabled \
+        -Dvdpau=disabled \
+        -Dvdpau-gl-x11=disabled \
+        -Dwayland=enabled \
+        -Dvulkan=enabled \
+        -Ddmabuf-wayland=disabled \
+        -Dvaapi=enabled \
+        -Dvaapi-drm=disabled \
+        -Dvaapi-wayland=enabled \
+        -Dvaapi-x11=disabled \
+        -Dalsa=enabled \
+        -Dpipewire=enabled \
+        -Dpulse=enabled \
+        -Djack=disabled \
+        -Doss-audio=disabled \
+        -Dsdl2=disabled \
+        -Dsdl2-audio=disabled \
+        -Dsdl2-gamepad=disabled \
+        -Dsdl2-video=disabled \
+        -Dcaca=disabled \
+        -Dcdda=disabled \
+        -Ddvbin=disabled \
+        -Ddvdnav=disabled \
+        -Djavascript=disabled \
+        -Dlibarchive=disabled \
+        -Dlibavdevice=disabled \
+        -Dlibbluray=disabled \
+        -Dlua=disabled \
+        -Drubberband=disabled \
+        -Duchardet=disabled \
+        -Dvapoursynth=disabled \
+        -Dzimg=disabled \
+        -Dhtml-build=disabled \
+        -Dmanpage-build=disabled \
+        -Dpdf-build=disabled; \
+    meson compile -C build; \
+    meson install -C build; \
+    mkdir -p /opt/tater-mpv/share/tater /opt/tater-mpv/share/licenses/mpv; \
+    meson configure build > /opt/tater-mpv/share/tater/mpv-build-options.txt; \
+    cp Copyright /opt/tater-mpv/share/licenses/mpv/Copyright; \
+    cp LICENSE.LGPL /opt/tater-mpv/share/licenses/mpv/LICENSE.LGPL; \
+    rm -rf /tmp/mpv-src /tmp/mpv.tar.gz
 
 RUN python3 -m venv /opt/aqt \
     && /opt/aqt/bin/pip install --no-cache-dir aqtinstall==3.3.0 \
@@ -23,8 +162,17 @@ RUN python3 -m venv /opt/aqt \
         --outputdir /opt/Qt \
         --modules qtmultimedia
 
-ENV PATH="/opt/Qt/${QT_VERSION}/gcc_64/bin:${PATH}"
+# Retain the exact, human-readable FFmpeg configure invocation beside the
+# binary-generated evidence. The earlier generated config.sh is useful to the
+# build itself but does not retain the original option list.
+RUN printf '%s\n' \
+    'FFmpeg 7.1.5 configure options:' \
+    '--prefix=/opt/tater-media --disable-static --enable-shared --disable-programs --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-version3 --disable-nonfree --disable-postproc --enable-network --enable-pic --enable-gnutls --enable-libdrm --enable-vaapi --enable-vulkan' \
+    > /opt/tater-media/ffmpeg-build-config.txt
+
+ENV PATH="/opt/tater-mpv/bin:/opt/Qt/${QT_VERSION}/gcc_64/bin:${PATH}"
 ENV CMAKE_PREFIX_PATH="/opt/Qt/${QT_VERSION}/gcc_64"
+ENV PKG_CONFIG_PATH="/opt/tater-media/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig"
 ENV TATER_STEAM_RUNTIME_IMAGE="registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk@sha256:2ff6220464894964266c7dbda1b91ca24e433a58ad3edff26571a2a9e5163e00"
 
 WORKDIR /workspace

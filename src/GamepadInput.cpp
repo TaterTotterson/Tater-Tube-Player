@@ -137,6 +137,12 @@ void GamepadInput::poll()
             case SDL_CONTROLLER_BUTTON_B:
                 emit back();
                 break;
+            case SDL_CONTROLLER_BUTTON_X:
+                emit subtitles();
+                break;
+            case SDL_CONTROLLER_BUTTON_Y:
+                emit audioTracks();
+                break;
             default:
                 break;
             }

@@ -8,8 +8,8 @@ dedicated Steamworks link fields for the website and support URLs.
 
 - Product name: `Tater Tube Player`
 - App type: `Software`
-- Developer: `Tater` (confirm this exactly matches the Steamworks partner name)
-- Publisher: `Tater` (confirm this exactly matches the Steamworks partner name)
+- Developer: `Tater Totterson AI LLC`
+- Publisher: `Tater Totterson AI LLC`
 - Website: `https://tatertube.tv/player/`
 - Support: `https://github.com/TaterTotterson/Tater-Tube-Player/issues`
 - Privacy policy: `https://github.com/TaterTotterson/Tater-Tube-Player/blob/main/PRIVACY.md`
@@ -25,29 +25,36 @@ Bring your self-hosted Tater Tube Server to Steam and Steam Deck with an artwork
 
 ## About this software
 
-[h2]Your media. Your server. Your screen.[/h2]
+Paste the copy below as plain text. In Steamworks, select each standalone
+heading and apply the editor's heading style. Select the server-requirement
+paragraph and apply bold. Do not paste BBCode tags such as `[h2]` or `[b]`;
+the current visual editor displays them literally.
+
+Your media. Your server. Your screen.
 
 Tater Tube Player is a modern, couch-friendly client for Tater Tube Server. Pair it with a simple code, settle in with a controller, and enjoy the movies, shows, and personal channels served from your own collection.
 
-[b]A Tater Tube Server is required and is not included. Tater Tube Player does not include movies, television shows, or live channels.[/b]
+A Tater Tube Server is required and is not included. Tater Tube Player does not include movies, television shows, or live channels.
 
-[h2]Made for the couch[/h2]
+Made for the couch
 
 Move naturally between Home, Library, Search, Tater Picks, and a full channel guide using a controller or Steam Deck controls. Resume a half-watched title, clear its progress, or begin again from the details screen.
 
-[h2]Turn your collection into television[/h2]
+Turn your collection into television
 
 Watch the Tube TV channels configured on your server in a familiar guide. Your own station IDs, bumpers, break content, channel artwork, and schedule remain part of the experience.
 
-[h2]Play the best version for the screen[/h2]
+Play the best version for the screen
 
 The player reports its display, decoder, and audio capabilities to your server. Tater Tube Server can direct play compatible media, convert only the audio or video track that needs it, or create a fully compatible stream when required. HDR content is preserved when the playback path supports it and converted for SDR displays when it does not.
 
-[h2]Everything good, right where you left it[/h2]
+When media includes alternate audio or subtitle tracks, compact overlay controls let you cycle them without leaving playback. The player prefers the best available non-commentary English audio track by default.
+
+Everything good, right where you left it
 
 Artwork-rich shelves make Continue Watching, Recently Added, movies, and television easy to browse. Viewing progress stays with your Tater Tube Server so another paired player can pick up from the same place.
 
-[h2]Optional Tater Picks[/h2]
+Optional Tater Picks
 
 When Tater Link is configured on your server, Tater can prepare a short collection of recommendations from titles already available in your library and explain why they fit your recent viewing. This feature is optional and only appears when configured.
 
@@ -111,12 +118,13 @@ least one non-Deck Linux machine before entering them in Steamworks.
 - No media is supplied with the Player.
 - Network access to the user's server is required.
 - The player is open-source software licensed under Apache-2.0.
+- Open-source library notices and corresponding-source information are included
+  with the installation.
 - Optional Tater Picks requires Tater Link to be configured separately.
 - Media compatibility can depend on the client hardware and the server's
   transcoding hardware.
 
 ## Fields still needing an owner decision
 
-- Exact developer and publisher display names
 - Release date / Coming Soon date
 - Whether the first release supports SteamOS only or also a packaged Windows build

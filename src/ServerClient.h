@@ -131,6 +131,10 @@ public:
     Q_INVOKABLE QString playbackProfile(const QVariantMap &capabilities) const;
     Q_INVOKABLE void preparePlayback(const QVariantMap &item, const QString &kind,
                                      const QVariantMap &capabilities);
+    Q_INVOKABLE void preparePlaybackWithAudioTrack(const QVariantMap &item,
+                                                   const QString &kind,
+                                                   const QVariantMap &capabilities,
+                                                   int audioTrack);
     Q_INVOKABLE void savePlaybackProgress(const QVariantMap &item, qint64 positionMs,
                                           qint64 durationMs, bool completed = false);
     Q_INVOKABLE void clearPlaybackProgress(const QVariantMap &item);

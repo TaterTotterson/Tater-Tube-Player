@@ -3,7 +3,7 @@
     "AppID" "@APP_ID@"
     "Desc" "Tater Tube Player @VERSION@ Linux x86_64"
     "Preview" "1"
-    "ContentRoot" "../../linux-x86_64"
+    "ContentRoot" "@CONTENT_ROOT@"
     "BuildOutput" "../output"
 
     "Depots"

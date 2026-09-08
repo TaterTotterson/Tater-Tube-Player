@@ -1,6 +1,7 @@
 #include "ArtworkNetworkAccessManagerFactory.h"
 #include "ServerClient.h"
 #include "GamepadInput.h"
+#include "MpvProcessPlayer.h"
 #include "PlaybackCapabilities.h"
 
 #include <QCommandLineOption>
@@ -12,6 +13,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QStandardPaths>
 #include <QTimer>
 
@@ -64,12 +66,25 @@ int main(int argc, char *argv[])
                       QStringLiteral("Use server-provided H.264/AAC playback for on-demand video.")});
     parser.addOption({QStringLiteral("print-capabilities"),
                       QStringLiteral("Print detected playback capabilities and exit.")});
+    parser.addOption({QStringLiteral("print-screen-size"),
+                      QStringLiteral("Print the primary screen size and exit.")});
     parser.process(app);
+
+    if (parser.isSet(QStringLiteral("print-screen-size"))) {
+        const QScreen *screen = QGuiApplication::primaryScreen();
+        if (!screen)
+            return 4;
+        const QSize size = screen->geometry().size();
+        std::printf("%d %d\n", size.width(), size.height());
+        return 0;
+    }
 
     ServerClient serverClient;
     GamepadInput gamepadInput;
+    MpvProcessPlayer mpvPlayer;
     PlaybackCapabilities playbackCapabilities(
-        parser.isSet(QStringLiteral("compatible-playback")));
+        parser.isSet(QStringLiteral("compatible-playback")) && !mpvPlayer.available(),
+        mpvPlayer.available());
     if (parser.isSet(QStringLiteral("print-capabilities"))) {
         QTimer::singleShot(750, &app, [&app, &playbackCapabilities] {
             const QByteArray output = QJsonDocument(
@@ -90,6 +105,7 @@ int main(int argc, char *argv[])
     engine.setNetworkAccessManagerFactory(&artworkNetworkFactory);
     engine.rootContext()->setContextProperty(QStringLiteral("serverClient"), &serverClient);
     engine.rootContext()->setContextProperty(QStringLiteral("gamepadInput"), &gamepadInput);
+    engine.rootContext()->setContextProperty(QStringLiteral("mpvPlayer"), &mpvPlayer);
     engine.rootContext()->setContextProperty(QStringLiteral("playbackCapabilities"),
                                              &playbackCapabilities);
     engine.rootContext()->setContextProperty(QStringLiteral("demoMode"),
@@ -97,7 +113,8 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("playbackPreviewUrl"),
                                              parser.value(QStringLiteral("play-url")));
     engine.rootContext()->setContextProperty(QStringLiteral("compatiblePlaybackMode"),
-                                             parser.isSet(QStringLiteral("compatible-playback")));
+                                             parser.isSet(QStringLiteral("compatible-playback"))
+                                                 && !mpvPlayer.available());
     engine.rootContext()->setContextProperty(QStringLiteral("fullScreenMode"),
                                              !parser.isSet(QStringLiteral("screenshot")));
     engine.loadFromModule(QStringLiteral("TaterTube.Player"), QStringLiteral("Main"));

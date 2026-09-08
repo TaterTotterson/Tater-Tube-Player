@@ -82,8 +82,19 @@ QVariantList environmentIntegerList(const char *name)
 struct ConnectedDisplayReport {
     QString name;
     QStringList hdrFormats;
+    QStringList audioPassthrough;
+    int maxAudioChannels = 2;
     QString source;
 };
+
+void applyEdidCapabilities(ConnectedDisplayReport &report, const QByteArray &edid)
+{
+    report.hdrFormats = PlaybackCapabilities::hdrFormatsFromEdid(edid);
+    const QVariantMap audio = PlaybackCapabilities::audioCapabilitiesFromEdid(edid);
+    report.audioPassthrough = audio.value(QStringLiteral("passthrough")).toStringList();
+    report.maxAudioChannels = std::max(
+        2, audio.value(QStringLiteral("max_channels"), 2).toInt());
+}
 
 ConnectedDisplayReport connectedDisplayReport(const QString &outputConnection)
 {
@@ -108,8 +119,7 @@ ConnectedDisplayReport connectedDisplayReport(const QString &outputConnection)
             report.name = qEnvironmentVariable("TATER_DISPLAY_NAME").trimmed();
             if (report.name.isEmpty())
                 report.name = QStringLiteral("Gamescope display");
-            report.hdrFormats =
-                PlaybackCapabilities::hdrFormatsFromEdid(gamescopeEdid.readAll());
+            applyEdidCapabilities(report, gamescopeEdid.readAll());
             report.source = QStringLiteral("gamescope_edid");
             return report;
         }
@@ -133,11 +143,12 @@ ConnectedDisplayReport connectedDisplayReport(const QString &outputConnection)
         QFile edid(drm.filePath(connector + QStringLiteral("/edid")));
         if (!edid.open(QIODevice::ReadOnly))
             continue;
-        const QStringList formats = PlaybackCapabilities::hdrFormatsFromEdid(edid.readAll());
+        const QByteArray bytes = edid.readAll();
+        const QStringList formats = PlaybackCapabilities::hdrFormatsFromEdid(bytes);
         if (formats.isEmpty() && !report.name.isEmpty())
             continue;
         report.name = connector.section(QLatin1Char('-'), 1, -1);
-        report.hdrFormats = formats;
+        applyEdidCapabilities(report, bytes);
         report.source = QStringLiteral("edid");
         if (!formats.isEmpty())
             break;
@@ -149,9 +160,11 @@ ConnectedDisplayReport connectedDisplayReport(const QString &outputConnection)
 }
 }
 
-PlaybackCapabilities::PlaybackCapabilities(bool compatibilityMode, QObject *parent)
+PlaybackCapabilities::PlaybackCapabilities(bool compatibilityMode, bool nativePlayback,
+                                           QObject *parent)
     : QObject(parent)
     , m_compatibilityMode(compatibilityMode)
+    , m_nativePlayback(nativePlayback)
 {
     connect(&m_mediaDevices, &QMediaDevices::audioOutputsChanged,
             this, &PlaybackCapabilities::refresh);
@@ -193,21 +206,34 @@ QVariantMap PlaybackCapabilities::report() const
         }
     }
 
+    QStringList videoCodecs = supportedVideoCodecs();
+    QStringList audioCodecs = supportedAudioCodecs();
+    if (m_nativePlayback) {
+        appendUnique(videoCodecs, QStringLiteral("vc1"));
+        appendUnique(videoCodecs, QStringLiteral("prores"));
+        appendUnique(audioCodecs, QStringLiteral("dts"));
+        appendUnique(audioCodecs, QStringLiteral("dts_hd"));
+        appendUnique(audioCodecs, QStringLiteral("truehd"));
+        videoCodecs.sort();
+        audioCodecs.sort();
+    }
+    const QStringList passthrough = m_nativePlayback && m_outputConnection == QStringLiteral("hdmi")
+        ? display.audioPassthrough : QStringList{};
+
     return {
-        {QStringLiteral("capability_version"), 2},
+        {QStringLiteral("capability_version"), 3},
         {QStringLiteral("platform"), QSysInfo::productType()},
-        {QStringLiteral("engine"), QStringLiteral("qt_multimedia")},
+        {QStringLiteral("engine"), m_nativePlayback
+            ? QStringLiteral("mpv") : QStringLiteral("qt_multimedia")},
         {QStringLiteral("output_name"), m_outputName},
         {QStringLiteral("output_connection"), m_outputConnection},
         {QStringLiteral("containers"), supportedContainers()},
-        {QStringLiteral("video_codecs"), supportedVideoCodecs()},
-        {QStringLiteral("audio_codecs"), supportedAudioCodecs()},
-        // Qt Multimedia decodes to PCM. Keep sink passthrough formats separate so
-        // the shared server contract is ready for native Apple TV/Google TV and
-        // a future Steam playback engine that can send encoded audio unchanged.
-        {QStringLiteral("audio_passthrough"), QStringList{}},
+        {QStringLiteral("video_codecs"), videoCodecs},
+        {QStringLiteral("audio_codecs"), audioCodecs},
+        {QStringLiteral("audio_passthrough"), passthrough},
         {QStringLiteral("sink_passthrough_codecs"), m_sinkPassthroughCodecs},
-        {QStringLiteral("passthrough_available"), false},
+        {QStringLiteral("passthrough_available"), !passthrough.isEmpty()},
+        {QStringLiteral("audio_downmix"), m_nativePlayback},
         {QStringLiteral("video_hdr_formats"), videoHDRFormats},
         {QStringLiteral("display_hdr_formats"), display.hdrFormats},
         {QStringLiteral("display_hdr_enabled"), hdrEnabled},
@@ -217,8 +243,8 @@ QVariantMap PlaybackCapabilities::report() const
         {QStringLiteral("dolby_vision_profiles"), environmentIntegerList("TATER_DOLBY_VISION_PROFILES")},
         {QStringLiteral("max_width"), maxWidth},
         {QStringLiteral("max_height"), maxHeight},
-        {QStringLiteral("max_audio_channels"),
-         std::max(2, m_defaultAudioOutput.maximumChannelCount())},
+        {QStringLiteral("max_audio_channels"), std::max(
+             {2, m_defaultAudioOutput.maximumChannelCount(), display.maxAudioChannels})},
         {QStringLiteral("compatibility_mode"), m_compatibilityMode},
     };
 }
@@ -267,6 +293,55 @@ QStringList PlaybackCapabilities::hdrFormatsFromEdid(const QByteArray &edid)
     }
     result.sort();
     return result;
+}
+
+QVariantMap PlaybackCapabilities::audioCapabilitiesFromEdid(const QByteArray &edid)
+{
+    QStringList passthrough;
+    int maxChannels = 2;
+    if (edid.size() < 128) {
+        return {{QStringLiteral("passthrough"), passthrough},
+                {QStringLiteral("max_channels"), maxChannels}};
+    }
+
+    const int availableExtensions = static_cast<int>(edid.size() / 128) - 1;
+    const int extensionCount = std::min(
+        static_cast<int>(static_cast<unsigned char>(edid[126])), availableExtensions);
+    for (int extension = 0; extension < extensionCount; ++extension) {
+        const int base = 128 * (extension + 1);
+        if (static_cast<unsigned char>(edid[base]) != 0x02)
+            continue;
+        int end = static_cast<unsigned char>(edid[base + 2]);
+        if (end == 0 || end > 127)
+            end = 127;
+        for (int offset = 4; offset < end;) {
+            const unsigned char header = static_cast<unsigned char>(edid[base + offset]);
+            const int tag = header >> 5;
+            const int length = header & 0x1f;
+            if (length == 0 || offset + length >= end)
+                break;
+            if (tag == 1) {
+                for (int index = 0; index + 2 < length; index += 3) {
+                    const unsigned char descriptor = static_cast<unsigned char>(
+                        edid[base + offset + 1 + index]);
+                    const int format = (descriptor >> 3) & 0x0f;
+                    maxChannels = std::max(maxChannels, static_cast<int>(descriptor & 0x07) + 1);
+                    switch (format) {
+                    case 2: appendUnique(passthrough, QStringLiteral("ac3")); break;
+                    case 7: appendUnique(passthrough, QStringLiteral("dts")); break;
+                    case 10: appendUnique(passthrough, QStringLiteral("eac3")); break;
+                    case 11: appendUnique(passthrough, QStringLiteral("dts_hd")); break;
+                    case 12: appendUnique(passthrough, QStringLiteral("truehd")); break;
+                    default: break;
+                    }
+                }
+            }
+            offset += length + 1;
+        }
+    }
+    passthrough.sort();
+    return {{QStringLiteral("passthrough"), passthrough},
+            {QStringLiteral("max_channels"), maxChannels}};
 }
 
 void PlaybackCapabilities::refresh()

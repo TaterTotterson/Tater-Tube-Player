@@ -32,7 +32,8 @@ with:
 - a couch-friendly modern home screen;
 - a Home-only navigation strip plus an edge-triggered slide-out menu for TV remotes;
 - keyboard, controller, and remote-visible focus states, including held D-pad
-  repeat and trigger/shoulder page jumps;
+  repeat and trigger/shoulder page jumps; the Steam Software app's automatic
+  WASD controller layout is also understood without user configuration;
 - native fullscreen rendering with resolution-aware UI scaling for the Steam
   Deck panel and connected 1080p, 1440p, or 4K televisions;
 - Tater Tube Server URL and six-digit PIN pairing;
@@ -52,6 +53,8 @@ with:
   bumpers, and station IDs;
 - play/pause, 10-second seeking, volume, back, and auto-hiding playback controls
   for Steam Input, keyboard, and touch;
+- compact playback-overlay controls that cycle subtitle and alternate audio
+  tracks, with the best non-commentary English audio selected by default;
 - resume-position loading and periodic playback progress updates;
 - local poster discovery for media-adjacent `poster`, `folder`, `cover`, and
   title-matched JPG, PNG, or WebP files;
@@ -123,10 +126,12 @@ it. Otherwise the server tone-maps HDR video to SDR while preserving compatible
 audio. This avoids washed-out HDR on SDR outputs and gives native Apple TV and
 Google TV clients the same display-aware contract.
 
-The current Qt Multimedia engine decodes supported audio to PCM; it does not
-claim encoded HDMI bitstream support. The versioned capability contract already
-supports passthrough declarations for native Apple TV and Google TV players, or
-for a future Steam playback engine selected under the project's license policy.
+The Steam release uses the separately replaceable LGPL-only mpv playback
+engine. It decodes supported audio to PCM when needed and advertises encoded
+HDMI bitstream formats only when the connected display reports them. The Qt
+Multimedia fallback decodes supported audio to PCM and does not claim encoded
+passthrough. The same versioned capability contract can be implemented by the
+future native Apple TV and Google TV players.
 
 The paired-player token is stored in the current operating-system user's Qt
 settings file. On Linux, the player forces that file to user-read/write only

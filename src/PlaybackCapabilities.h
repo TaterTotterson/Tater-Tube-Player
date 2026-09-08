@@ -17,7 +17,8 @@ class PlaybackCapabilities final : public QObject
     Q_PROPERTY(bool hdmiConnected READ hdmiConnected NOTIFY capabilitiesChanged)
 
 public:
-    explicit PlaybackCapabilities(bool compatibilityMode, QObject *parent = nullptr);
+    explicit PlaybackCapabilities(bool compatibilityMode, bool nativePlayback = false,
+                                  QObject *parent = nullptr);
 
     QVariantMap report() const;
     QAudioDevice defaultAudioOutput() const { return m_defaultAudioOutput; }
@@ -30,6 +31,7 @@ public:
     // Public so the platform-neutral EDID parser can be covered by a small
     // synthetic-display test without requiring physical HDR hardware.
     static QStringList hdrFormatsFromEdid(const QByteArray &edid);
+    static QVariantMap audioCapabilitiesFromEdid(const QByteArray &edid);
 
 signals:
     void capabilitiesChanged();
@@ -50,5 +52,6 @@ private:
     QString m_outputConnection = QStringLiteral("unknown");
     QStringList m_sinkPassthroughCodecs;
     bool m_compatibilityMode = false;
+    bool m_nativePlayback = false;
     int m_probeGeneration = 0;
 };

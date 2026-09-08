@@ -7,11 +7,13 @@ Flickable {
     default property alias shelfData: shelfRow.data
     property int visibleCardCount: 4
     property real cardSpacing: 15
+    property real edgePadding: 10
     readonly property real cardWidth:
-        (width - Math.max(0, visibleCardCount - 1) * cardSpacing) / visibleCardCount
+        (width - edgePadding * 2
+         - Math.max(0, visibleCardCount - 1) * cardSpacing) / visibleCardCount
 
     implicitHeight: 188
-    contentWidth: Math.max(width, shelfRow.implicitWidth)
+    contentWidth: Math.max(width, shelfRow.implicitWidth + edgePadding * 2)
     contentHeight: height
     clip: true
     interactive: contentWidth > width
@@ -23,7 +25,7 @@ Flickable {
         if (!item || shelf.contentWidth <= shelf.width)
             return
         var point = item.mapToItem(shelf.contentItem, 0, 0)
-        var padding = 5
+        var padding = shelf.edgePadding
         var target = shelf.contentX
         if (point.x < shelf.contentX + padding)
             target = point.x - padding
@@ -36,6 +38,7 @@ Flickable {
 
     Row {
         id: shelfRow
+        x: shelf.edgePadding
         y: 5
         spacing: shelf.cardSpacing
     }
