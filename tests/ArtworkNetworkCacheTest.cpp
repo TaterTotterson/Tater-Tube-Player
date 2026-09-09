@@ -3,6 +3,8 @@
 #include <QDir>
 #include <QNetworkAccessManager>
 #include <QNetworkDiskCache>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -31,6 +33,13 @@ void ArtworkNetworkCacheTest::createsBoundedPersistentDiskCache()
     QCOMPARE(QDir::cleanPath(cache->cacheDirectory()), QDir::cleanPath(cacheDirectory));
     QCOMPARE(cache->maximumCacheSize(), maximumSize);
     QVERIFY(QDir(cacheDirectory).exists());
+
+    QNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:9/poster.jpg")));
+    std::unique_ptr<QNetworkReply> reply(manager->get(request));
+    QCOMPARE(reply->request().attribute(QNetworkRequest::CacheLoadControlAttribute).toInt(),
+             static_cast<int>(QNetworkRequest::PreferCache));
+    QVERIFY(reply->request().attribute(QNetworkRequest::CacheSaveControlAttribute).toBool());
+    reply->abort();
 }
 
 QTEST_GUILESS_MAIN(ArtworkNetworkCacheTest)

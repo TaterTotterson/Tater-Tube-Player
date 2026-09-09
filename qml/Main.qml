@@ -360,9 +360,17 @@ ApplicationWindow {
         var poster = String(item.poster)
         if (poster.indexOf("/api/v1/player/artwork/local") < 0)
             return ""
+        var result = poster
         if (poster.match(/[?&]kind=[^&]*/))
-            return poster.replace(/([?&])kind=[^&]*/, "$1kind=" + kind)
-        return poster + (poster.indexOf("?") >= 0 ? "&" : "?") + "kind=" + kind
+            result = poster.replace(/([?&])kind=[^&]*/, "$1kind=" + kind)
+        else
+            result = poster + (poster.indexOf("?") >= 0 ? "&" : "?") + "kind=" + kind
+
+        var thumbnail = kind === "backdrop" || kind === "episode-still"
+                ? "wide" : "poster"
+        if (result.match(/[?&]thumbnail=[^&]*/))
+            return result.replace(/([?&])thumbnail=[^&]*/, "$1thumbnail=" + thumbnail)
+        return result + "&thumbnail=" + thumbnail
     }
 
     function homeWideArtwork(item) {
@@ -451,13 +459,15 @@ ApplicationWindow {
             openDetails(items[0], mediaLabel(items[0]))
     }
 
-    function libraryPageRows() {
+    function librarySourceRows() {
         if (demoMode) {
             var demoItems = libraryMediaItems()
             return [
-                {title: "Movies", entry: {id: "demo:movies", title: "Movies"},
+                {title: "Recently Added", entry: {id: "demo:recent", title: "Recently Added"},
+                 items: demoItems},
+                {title: "Movies", entry: {id: "local-discover:movies", title: "Movies"},
                  items: demoItems.filter(function(item) { return item.mediaType === "movie" })},
-                {title: "TV Shows", entry: {id: "demo:tv", title: "TV Shows"},
+                {title: "TV Shows", entry: {id: "local-discover:series", title: "TV Shows"},
                  items: demoItems.filter(function(item) { return item.mediaType === "series" })}
             ]
         }
@@ -469,12 +479,23 @@ ApplicationWindow {
                 : []
     }
 
+    function libraryPageRows() {
+        return librarySourceRows().filter(function(row) {
+            var entry = row && row.entry ? row.entry : ({})
+            var id = String(entry.id || "").toLowerCase()
+            var type = String(entry.type || "").toLowerCase()
+            return type !== "local"
+                    && id !== "local-discover:movies"
+                    && id !== "local-discover:series"
+        })
+    }
+
     function libraryRowItems(row) {
         return row && row.items ? row.items : []
     }
 
     function libraryCollectionRow(kind) {
-        var rows = libraryPageRows()
+        var rows = librarySourceRows()
         var targetId = kind === "movies" ? "local-discover:movies"
                                           : "local-discover:series"
         var fallbackTitles = kind === "movies" ? ["movies"]
