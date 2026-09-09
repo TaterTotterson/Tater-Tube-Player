@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(TaterTubePlayer
-    VERSION 0.3.5
+    VERSION 0.3.6
     DESCRIPTION "A modern player for Tater Tube Server"
     LANGUAGES CXX
 )
@@ -41,9 +41,10 @@ if(TATER_STEAM_RELEASE)
         message(FATAL_ERROR
             "The Steam release must use dynamically linked Qt libraries for LGPLv3 compliance")
     endif()
-    find_program(TATER_MPV_EXECUTABLE mpv REQUIRED)
     set(TATER_MPV_RELEASE_ROOT "/opt/tater-mpv" CACHE PATH
         "Root of the audited LGPL-only mpv release")
+    set(TATER_MPV_EXECUTABLE "${TATER_MPV_RELEASE_ROOT}/bin/mpv" CACHE FILEPATH
+        "Audited LGPL-only mpv executable")
     set(TATER_MEDIA_RELEASE_ROOT "/opt/tater-media" CACHE PATH
         "Root of the audited LGPL-only FFmpeg release")
     set(TATER_MPV_BUILD_OPTIONS
@@ -65,7 +66,7 @@ if(TATER_STEAM_RELEASE)
     set(TATER_MPV_LIBJPEG_COPYRIGHT
         "${TATER_MPV_RELEASE_ROOT}/share/licenses/runtime/libjpeg-turbo-copyright")
     foreach(tater_required_release_file IN ITEMS
-            "${TATER_MPV_BUILD_OPTIONS}" "${TATER_MPV_COPYRIGHT}"
+            "${TATER_MPV_EXECUTABLE}" "${TATER_MPV_BUILD_OPTIONS}" "${TATER_MPV_COPYRIGHT}"
             "${TATER_MPV_LICENSE}" "${TATER_MPV_LIBASS}"
             "${TATER_MPV_LIBPLACEBO}" "${TATER_MPV_LIBJPEG}"
             "${TATER_MPV_LIBASS_COPYRIGHT}"

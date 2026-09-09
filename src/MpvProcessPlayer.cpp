@@ -105,15 +105,12 @@ MpvProcessPlayer::MpvProcessPlayer(QObject *parent)
     : QObject(parent)
 {
 #if defined(Q_OS_LINUX)
-    const QString bundled = QDir(QCoreApplication::applicationDirPath())
-                                .filePath(QStringLiteral("tater-mpv"));
     const bool waylandOutputAvailable =
         qEnvironmentVariableIsSet("GAMESCOPE_WAYLAND_DISPLAY")
         || qEnvironmentVariableIsSet("WAYLAND_DISPLAY");
-    if (waylandOutputAvailable && QFileInfo(bundled).isExecutable()
-        && playbackEngineStarts(bundled))
-        m_executable = bundled;
-    else {
+    m_executable = bundledPlaybackEngine(QCoreApplication::applicationDirPath(),
+                                         waylandOutputAvailable);
+    if (m_executable.isEmpty()) {
         const QString system = QStandardPaths::findExecutable(QStringLiteral("mpv"));
         if (playbackEngineStarts(system))
             m_executable = system;
@@ -411,6 +408,16 @@ void MpvProcessPlayer::startProcess()
         QStringLiteral("GAMESCOPE_WAYLAND_DISPLAY")).trimmed();
     if (!gamescopeWayland.isEmpty())
         environment.insert(QStringLiteral("WAYLAND_DISPLAY"), gamescopeWayland);
+    if (QFileInfo(m_executable).fileName() == QStringLiteral("tater-mpv")) {
+        const QString libraryDirectory = QDir(QFileInfo(m_executable).absolutePath())
+                                             .absoluteFilePath(QStringLiteral("../lib"));
+        const QString existingLibraryPath = environment.value(
+            QStringLiteral("LD_LIBRARY_PATH"));
+        environment.insert(QStringLiteral("LD_LIBRARY_PATH"),
+                           existingLibraryPath.isEmpty()
+                               ? libraryDirectory
+                               : libraryDirectory + QLatin1Char(':') + existingLibraryPath);
+    }
     m_process.setProcessEnvironment(environment);
     m_process.setProgram(m_executable);
     m_process.setArguments(mpvArguments());
@@ -920,6 +927,12 @@ QStringList MpvProcessPlayer::mpvArguments() const
 {
     QStringList arguments{
         QStringLiteral("--no-config"),
+        QStringLiteral("--cache=yes"),
+        QStringLiteral("--cache-pause=yes"),
+        QStringLiteral("--cache-pause-initial=yes"),
+        QStringLiteral("--cache-pause-wait=1"),
+        QStringLiteral("--demuxer-readahead-secs=20"),
+        QStringLiteral("--demuxer-max-bytes=256MiB"),
         QStringLiteral("--fullscreen=yes"),
         QStringLiteral("--force-window=yes"),
         QStringLiteral("--keep-open=no"),
@@ -961,6 +974,16 @@ QStringList MpvProcessPlayer::mpvArguments() const
     arguments.append(QStringLiteral("--"));
     arguments.append(m_source);
     return arguments;
+}
+
+QString MpvProcessPlayer::bundledPlaybackEngine(const QString &applicationDirectory,
+                                                bool waylandOutputAvailable)
+{
+    if (!waylandOutputAvailable)
+        return {};
+    const QString bundled = QDir(applicationDirectory).filePath(
+        QStringLiteral("tater-mpv"));
+    return QFileInfo(bundled).isExecutable() ? bundled : QString{};
 }
 
 QString MpvProcessPlayer::mpvPassthroughName(const QString &codec)

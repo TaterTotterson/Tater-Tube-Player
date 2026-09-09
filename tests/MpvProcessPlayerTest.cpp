@@ -2,6 +2,8 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QFile>
+#include <QTemporaryDir>
 #include <QtTest>
 
 class MpvProcessPlayerTest final : public QObject
@@ -13,6 +15,8 @@ private slots:
     void honorsServerSelectedAudioTrack();
     void fallsBackToBestUnlabeledAudioTrack();
     void exposesCompactAudioLabels();
+    void selectsBundledEngineWithoutColdStartProbe();
+    void configuresNetworkReadAhead();
 };
 
 void MpvProcessPlayerTest::prefersBestEnglishAudioTrack()
@@ -78,6 +82,32 @@ void MpvProcessPlayerTest::exposesCompactAudioLabels()
     QVERIFY(player.audioTracksAvailable());
     QVERIFY(!player.multipleAudioTracks());
     QVERIFY(player.subtitlesAvailable());
+}
+
+void MpvProcessPlayerTest::selectsBundledEngineWithoutColdStartProbe()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString executable = directory.filePath(QStringLiteral("tater-mpv"));
+    QFile file(executable);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("not a real executable\n");
+    file.close();
+    QVERIFY(QFile::setPermissions(executable, QFileDevice::ReadOwner
+                                 | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+
+    QCOMPARE(MpvProcessPlayer::bundledPlaybackEngine(directory.path(), true), executable);
+    QVERIFY(MpvProcessPlayer::bundledPlaybackEngine(directory.path(), false).isEmpty());
+}
+
+void MpvProcessPlayerTest::configuresNetworkReadAhead()
+{
+    MpvProcessPlayer player;
+    const QStringList arguments = player.mpvArguments();
+    QVERIFY(arguments.contains(QStringLiteral("--cache=yes")));
+    QVERIFY(arguments.contains(QStringLiteral("--cache-pause-initial=yes")));
+    QVERIFY(arguments.contains(QStringLiteral("--demuxer-readahead-secs=20")));
+    QVERIFY(arguments.contains(QStringLiteral("--demuxer-max-bytes=256MiB")));
 }
 
 QTEST_GUILESS_MAIN(MpvProcessPlayerTest)

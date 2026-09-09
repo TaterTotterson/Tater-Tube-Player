@@ -115,6 +115,8 @@ private:
     void renderOverlay();
     QString inputConfigPath() const;
     QStringList mpvArguments() const;
+    static QString bundledPlaybackEngine(const QString &applicationDirectory,
+                                         bool waylandOutputAvailable);
     static QString mpvPassthroughName(const QString &codec);
     static QString assEscape(const QString &text);
     static QString formatTime(qint64 milliseconds);
