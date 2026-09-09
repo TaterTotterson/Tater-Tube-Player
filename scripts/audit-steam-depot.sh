@@ -93,12 +93,35 @@ if grep -E -i -q 'gpl[[:space:]]+true' \
     tater_failed=1
 fi
 for tater_mpv_disabled in \
-    x11 gl-x11 egl-x11 vdpau dmabuf-wayland vaapi-drm; do
+    x11 gl-x11 egl-x11 vdpau dmabuf-wayland vaapi-drm lcms2; do
     tater_require_mpv_option "${tater_mpv_disabled}" disabled
 done
 for tater_mpv_enabled in wayland vulkan vaapi vaapi-wayland; do
     tater_require_mpv_option "${tater_mpv_enabled}" enabled
 done
+
+# The build SDK can contain libraries that Valve's pressure-vessel runtime does
+# not. Audit mpv's direct dependency surface explicitly instead of trusting an
+# ldd run made only inside the SDK container.
+if command -v readelf >/dev/null 2>&1 && [ -f "${tater_mpv_binary}" ]; then
+    for tater_mpv_needed in $(readelf -d "${tater_mpv_binary}" 2>/dev/null \
+        | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p'); do
+        case "${tater_mpv_needed}" in
+            libass.so.9|libavcodec.so.61|libavfilter.so.10|libavformat.so.61|\
+            libavutil.so.59|libplacebo.so.349|libswresample.so.5|libswscale.so.8|\
+            libjpeg.so.62|libm.so.6|libz.so.1|libasound.so.2|\
+            libpipewire-0.3.so.0|libpulse.so.0|libwayland-client.so.0|\
+            libwayland-cursor.so.0|libxkbcommon.so.0|libEGL.so.1|\
+            libwayland-egl.so.1|libvulkan.so.1|libva-wayland.so.2|libva.so.2|\
+            libc.so.6)
+                ;;
+            *)
+                echo "The native playback engine has an unapproved Steam runtime dependency: ${tater_mpv_needed}" >&2
+                tater_failed=1
+                ;;
+        esac
+    done
+fi
 if grep -q 'not found' "${tater_depot_dir}/compliance/all-runtime-dependencies.txt" 2>/dev/null; then
     echo "At least one shipped ELF or Qt plugin has an unresolved dependency:" >&2
     grep -B 1 'not found' "${tater_depot_dir}/compliance/all-runtime-dependencies.txt" >&2

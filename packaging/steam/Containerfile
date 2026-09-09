@@ -141,6 +141,7 @@ RUN set -eux; \
         -Dlibarchive=disabled \
         -Dlibavdevice=disabled \
         -Dlibbluray=disabled \
+        -Dlcms2=disabled \
         -Dlua=disabled \
         -Drubberband=disabled \
         -Duchardet=disabled \
