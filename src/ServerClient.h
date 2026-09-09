@@ -118,6 +118,7 @@ public:
     Q_INVOKABLE void refreshDiscover();
     Q_INVOKABLE void browseDiscover(const QVariantMap &entry);
     Q_INVOKABLE void activateDiscoverItem(const QVariantMap &item);
+    Q_INVOKABLE void prepareDiscoverPlayback(const QVariantMap &item);
     Q_INVOKABLE void browseDiscoverBack();
     Q_INVOKABLE void refreshRecommendations();
     Q_INVOKABLE void beginRecommendationSpeech(const QString &batchId);
@@ -167,6 +168,7 @@ signals:
     void libraryChanged();
     void discoverChanged();
     void discoverPlaybackReady(const QVariantMap &item);
+    void discoverPlaybackFailed(const QString &message);
     void recommendationsChanged();
     void recommendationSpeechChanged();
     void recommendationSpeechReady(const QUrl &audioUrl);
@@ -239,8 +241,11 @@ private:
                                    const QString &mediaType,
                                    const QString &fallbackTitle,
                                    const QString &cacheKey);
+    void requestDiscoverPlayback(const QVariantMap &item, int generation,
+                                 bool updateDiscoverPage);
     void handleDiscoverPlayReply(QNetworkReply *reply, int generation,
-                                 const QVariantMap &sourceItem);
+                                 const QVariantMap &sourceItem,
+                                 bool updateDiscoverPage);
     void handlePlaybackPlanReply(QNetworkReply *reply, int generation);
     void restoreDiscoverPage(const DiscoverPage &page);
     void resetDiscover();

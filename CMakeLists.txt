@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(TaterTubePlayer
-    VERSION 0.3.2
+    VERSION 0.3.3
     DESCRIPTION "A modern player for Tater Tube Server"
     LANGUAGES CXX
 )

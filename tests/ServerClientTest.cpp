@@ -220,7 +220,7 @@ void ServerClientTest::loadsVersionedHome()
                 } else if (request.startsWith("GET /api/tater/usenet/search?")) {
                     body = R"({"success":true,"data":{"title":"Search: Discover Me 2026","items":[{"title":"Discover.Me.2026.1080p","type":"nzb","mediaType":"nzb","nzbUrl":"http://indexer.test/get/one","sizeText":"8.2 GB"},{"title":"Discover.Me.2026.720p","type":"nzb","nzbUrl":"http://indexer.test/get/two","sizeText":"4.1 GB"}]}})";
                 } else if (request.startsWith("POST /api/tater/usenet/play ")) {
-                    body = R"({"streams":[{"title":"Discover Me 2026","url":"http://tube.test/api/files/stream?player_token=test-token"}],"queue_status":"streamable"})";
+                    body = R"({"streams":[{"title":"Discover Me 2026","url":"http://tube.test/api/files/stream?player_token=test-token"}],"_queue_status":"streamable","_tater_play_state_id":"nzb:discover-me","_tater_nzb_url":"http://indexer.test/get/one"})";
                 } else if (request.startsWith("POST /api/v1/player/playback/sessions ")) {
                     body = R"({"success":true,"data":{"stream_url":"http://tube.test/movie?transcode=video","mode":"video_transcode","video_mode":"transcode","audio_mode":"direct","video_codec":"h264","audio_codec":"eac3","quality_label":"Video H.264 • Audio Direct — Dolby Digital Plus","source":{"video_codec":"hevc","audio_codec":"eac3"}}})";
                 } else if (request.startsWith("GET /api/tater/tv/lineup ")) {
@@ -350,7 +350,28 @@ void ServerClientTest::loadsVersionedHome()
     const QVariantMap preparedItem = playbackSpy.first().first().toMap();
     QCOMPARE(preparedItem.value("streamUrl").toString(),
              QStringLiteral("http://tube.test/api/files/stream?player_token=test-token"));
+    QCOMPARE(preparedItem.value("playStateId").toString(),
+             QStringLiteral("nzb:discover-me"));
+    QCOMPARE(preparedItem.value("categoryId").toString(), QStringLiteral("discover"));
+    QCOMPARE(preparedItem.value("nzbUrl").toString(),
+             QStringLiteral("http://indexer.test/get/one"));
+    QCOMPARE(preparedItem.value("title").toString(), QStringLiteral("Discover Me"));
+    QCOMPARE(preparedItem.value("poster").toString(),
+             QStringLiteral("http://tube.test/discover.jpg"));
     QVERIFY(requests.contains("POST /api/tater/usenet/play "));
+
+    client.savePlaybackProgress(preparedItem, 90000, 600000, false);
+    QCOMPARE(client.continueWatching().size(), 2);
+    QCOMPARE(client.continueWatching().first().toMap().value("playStateId").toString(),
+             QStringLiteral("nzb:discover-me"));
+    QTRY_VERIFY_WITH_TIMEOUT(requests.contains("POST /api/tater/playstate "), 3000);
+    QVERIFY(requests.contains("\"nzbUrl\":\"http://indexer.test/get/one\""));
+
+    QSignalSpy resumedDiscoverSpy(&client, &ServerClient::discoverPlaybackReady);
+    client.prepareDiscoverPlayback(client.continueWatching().first().toMap());
+    QTRY_COMPARE_WITH_TIMEOUT(resumedDiscoverSpy.count(), 1, 3000);
+    QCOMPARE(resumedDiscoverSpy.first().first().toMap().value("viewOffset").toLongLong(),
+             90000);
 
     QSignalSpy planSpy(&client, &ServerClient::playbackPlanReady);
     client.preparePlayback({
@@ -411,7 +432,9 @@ void ServerClientTest::loadsVersionedHome()
         "GET /api/tater/usenet/discover?");
     ServerClient cachedClient;
     QVERIFY(cachedClient.homeReady());
-    QCOMPARE(cachedClient.continueWatching().size(), 1);
+    QCOMPARE(cachedClient.continueWatching().size(), 2);
+    QCOMPARE(cachedClient.continueWatching().first().toMap()
+                 .value("playStateId").toString(), QStringLiteral("nzb:discover-me"));
     QCOMPARE(cachedClient.libraryRows().size(), 2);
     QCOMPARE(cachedClient.discoverCategories().size(), 6);
     QCOMPARE(cachedClient.recommendations().size(), 1);

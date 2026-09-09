@@ -671,6 +671,7 @@ void ServerClient::activateDiscoverItem(const QVariantMap &item)
         m_discoverHistory.append(DiscoverPage{m_discoverItems, m_discoverTitle,
                                                 m_discoverStage, m_discoverMediaType,
                                                 m_discoverPendingItem});
+        m_discoverPendingItem = item;
         const QString mediaType = item.value(QStringLiteral("mediaType"),
                                              m_discoverMediaType)
                                       .toString().trimmed();
@@ -710,8 +711,14 @@ void ServerClient::activateDiscoverItem(const QVariantMap &item)
     }
 
     if (m_discoverStage == QStringLiteral("streams")) {
-        if (!item.value(QStringLiteral("streamUrl")).toString().trimmed().isEmpty())
-            emit discoverPlaybackReady(item);
+        if (!item.value(QStringLiteral("streamUrl")).toString().trimmed().isEmpty()) {
+            QVariantMap playable = item;
+            const QString discoverTitle = playable.value(
+                QStringLiteral("discoverTitle")).toString().trimmed();
+            if (!discoverTitle.isEmpty())
+                playable.insert(QStringLiteral("title"), discoverTitle);
+            emit discoverPlaybackReady(playable);
+        }
         return;
     }
 
@@ -731,9 +738,34 @@ void ServerClient::activateDiscoverItem(const QVariantMap &item)
     m_discoverPendingItem = item;
     emit discoverChanged();
 
+    requestDiscoverPlayback(item, generation, true);
+}
+
+void ServerClient::prepareDiscoverPlayback(const QVariantMap &item)
+{
+    if (!paired() || item.isEmpty()) {
+        emit discoverPlaybackFailed(QStringLiteral(
+            "Pair this player before opening a Discover title."));
+        return;
+    }
+    if (item.value(QStringLiteral("nzbUrl")).toString().trimmed().isEmpty()) {
+        emit discoverPlaybackFailed(QStringLiteral(
+            "This Discover title no longer has a playable source."));
+        return;
+    }
+    requestDiscoverPlayback(item, 0, false);
+}
+
+void ServerClient::requestDiscoverPlayback(const QVariantMap &item, int generation,
+                                           bool updateDiscoverPage)
+{
+    const QString nzbUrl = item.value(QStringLiteral("nzbUrl")).toString().trimmed();
+
     const QJsonObject payload{
         {QStringLiteral("nzb_url"), nzbUrl},
-        {QStringLiteral("title"), item.value(QStringLiteral("title")).toString()},
+        {QStringLiteral("title"), item.value(
+             QStringLiteral("discoverSourceTitle"),
+             item.value(QStringLiteral("title"))).toString()},
         {QStringLiteral("category"), item.value(QStringLiteral("category")).toString()},
         {QStringLiteral("timeout"), 300},
     };
@@ -747,8 +779,8 @@ void ServerClient::activateDiscoverItem(const QVariantMap &item)
     QNetworkReply *reply = m_network.post(
         request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, generation, item] {
-                handleDiscoverPlayReply(reply, generation, item);
+            [this, reply, generation, item, updateDiscoverPage] {
+                handleDiscoverPlayReply(reply, generation, item, updateDiscoverPage);
             });
 }
 
@@ -1273,7 +1305,10 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
 
     const QString path = item.value(QStringLiteral("path")).toString().trimmed();
     const QString categoryId = item.value(QStringLiteral("categoryId")).toString().trimmed();
-    if (path.isEmpty() || categoryId.isEmpty())
+    const QString playStateId = item.value(QStringLiteral("playStateId")).toString().trimmed();
+    const QString nzbUrl = item.value(QStringLiteral("nzbUrl")).toString().trimmed();
+    const bool discoverItem = !playStateId.isEmpty() && !nzbUrl.isEmpty();
+    if (!discoverItem && (path.isEmpty() || categoryId.isEmpty()))
         return;
 
     m_pendingPlaybackItem = item;
@@ -1284,13 +1319,23 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
     applyLocalPlaybackProgress(item, positionMs, durationMs, completed, true);
 
     QJsonObject payload{
-        {QStringLiteral("id"), item.value(QStringLiteral("playStateId")).toString()},
+        {QStringLiteral("id"), playStateId},
         {QStringLiteral("seriesId"), item.value(QStringLiteral("seriesStateId")).toString()},
         {QStringLiteral("title"), item.value(QStringLiteral("title")).toString()},
         {QStringLiteral("mediaType"), item.value(QStringLiteral("mediaType")).toString()},
+        {QStringLiteral("category"), item.value(QStringLiteral("category")).toString()},
         {QStringLiteral("categoryId"), categoryId},
         {QStringLiteral("sourceIndex"), item.value(QStringLiteral("sourceIndex")).toInt()},
         {QStringLiteral("path"), path},
+        {QStringLiteral("nzbUrl"), nzbUrl},
+        {QStringLiteral("discoverStreamIndex"),
+         item.value(QStringLiteral("discoverStreamIndex")).toInt()},
+        {QStringLiteral("discoverSourceTitle"),
+         item.value(QStringLiteral("discoverSourceTitle")).toString()},
+        {QStringLiteral("poster"), item.value(QStringLiteral("poster")).toString()},
+        {QStringLiteral("backdrop"), item.value(QStringLiteral("backdrop")).toString()},
+        {QStringLiteral("description"), item.value(QStringLiteral("description")).toString()},
+        {QStringLiteral("date"), item.value(QStringLiteral("date")).toString()},
         {QStringLiteral("positionMs"), static_cast<double>(qMax<qint64>(0, positionMs))},
         {QStringLiteral("durationMs"), static_cast<double>(qMax<qint64>(0, durationMs))},
         {QStringLiteral("completed"), completed},
@@ -2378,6 +2423,17 @@ void ServerClient::handleDiscoverSearchReply(QNetworkReply *reply, int generatio
                                           .toString().trimmed().toLower();
         if (itemMediaType.isEmpty() || itemMediaType == QStringLiteral("nzb"))
             item.insert(QStringLiteral("mediaType"), mediaType);
+        const QString discoverTitle = m_discoverPendingItem.value(
+            QStringLiteral("title")).toString().trimmed();
+        if (!discoverTitle.isEmpty())
+            item.insert(QStringLiteral("discoverTitle"), discoverTitle);
+        for (const QString &key : {QStringLiteral("poster"), QStringLiteral("backdrop"),
+                                   QStringLiteral("description"), QStringLiteral("date")}) {
+            if (item.value(key).toString().trimmed().isEmpty()
+                && !m_discoverPendingItem.value(key).toString().trimmed().isEmpty()) {
+                item.insert(key, m_discoverPendingItem.value(key));
+            }
+        }
         value = item;
     }
     m_discoverItems = items;
@@ -2397,16 +2453,18 @@ void ServerClient::handleDiscoverSearchReply(QNetworkReply *reply, int generatio
 }
 
 void ServerClient::handleDiscoverPlayReply(QNetworkReply *reply, int generation,
-                                           const QVariantMap &sourceItem)
+                                           const QVariantMap &sourceItem,
+                                           bool updateDiscoverPage)
 {
     const QByteArray body = reply->readAll();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const bool succeeded = reply->error() == QNetworkReply::NoError
         && status >= 200 && status < 300;
     reply->deleteLater();
-    if (generation != m_discoverGeneration)
+    if (updateDiscoverPage && generation != m_discoverGeneration)
         return;
-    m_discoverLoading = false;
+    if (updateDiscoverPage)
+        m_discoverLoading = false;
 
     if (!succeeded) {
         if (status == 401 || status == 403) {
@@ -2414,21 +2472,31 @@ void ServerClient::handleDiscoverPlayReply(QNetworkReply *reply, int generation,
             setErrorMessage("This player is no longer authorized. Pair it with the server again.");
             return;
         }
-        m_discoverErrorMessage = responseError(
+        const QString message = responseError(
             body, status == 408
                 ? QStringLiteral("The server is still preparing this stream. Try it again shortly.")
                 : QStringLiteral("The NZB stream could not be prepared."));
-        emit discoverChanged();
+        if (updateDiscoverPage) {
+            m_discoverErrorMessage = message;
+            emit discoverChanged();
+        } else {
+            emit discoverPlaybackFailed(message);
+        }
         return;
     }
 
     QJsonObject response = QJsonDocument::fromJson(body).object();
     if (response.value(QStringLiteral("data")).isObject())
         response = response.value(QStringLiteral("data")).toObject();
+    const QString playStateId = response.value(
+        QStringLiteral("_tater_play_state_id")).toString().trimmed();
+    const QString safeNzbUrl = response.value(
+        QStringLiteral("_tater_nzb_url")).toString().trimmed();
     const QVariantList streams = response.value(QStringLiteral("streams"))
                                      .toArray().toVariantList();
     QVariantList playableStreams;
-    for (const QVariant &value : streams) {
+    for (qsizetype streamIndex = 0; streamIndex < streams.size(); ++streamIndex) {
+        const QVariant &value = streams.at(streamIndex);
         const QVariantMap stream = value.toMap();
         const QString streamUrl = stream.value(QStringLiteral("streamUrl"),
                                                stream.value(QStringLiteral("url")))
@@ -2440,20 +2508,47 @@ void ServerClient::handleDiscoverPlayReply(QNetworkReply *reply, int generation,
             playable.insert(it.key(), it.value());
         playable.insert(QStringLiteral("streamUrl"), streamUrl);
         playable.insert(QStringLiteral("type"), QStringLiteral("nzbStream"));
+        playable.insert(QStringLiteral("categoryId"), QStringLiteral("discover"));
+        playable.insert(QStringLiteral("discoverStreamIndex"), streamIndex);
+        if (playable.value(QStringLiteral("discoverSourceTitle")).toString()
+                .trimmed().isEmpty()) {
+            playable.insert(QStringLiteral("discoverSourceTitle"),
+                            sourceItem.value(QStringLiteral("title")));
+        }
+        if (!playStateId.isEmpty())
+            playable.insert(QStringLiteral("playStateId"), playStateId);
+        if (!safeNzbUrl.isEmpty())
+            playable.insert(QStringLiteral("nzbUrl"), safeNzbUrl);
         if (playable.value(QStringLiteral("title")).toString().trimmed().isEmpty())
             playable.insert(QStringLiteral("title"), QStringLiteral("Tater Tube Stream"));
         playableStreams.append(playable);
     }
 
     if (playableStreams.isEmpty()) {
-        m_discoverErrorMessage = QStringLiteral("The server did not return a playable file.");
-        emit discoverChanged();
+        const QString message = QStringLiteral("The server did not return a playable file.");
+        if (updateDiscoverPage) {
+            m_discoverErrorMessage = message;
+            emit discoverChanged();
+        } else {
+            emit discoverPlaybackFailed(message);
+        }
         return;
     }
-    if (playableStreams.size() == 1) {
-        m_discoverErrorMessage.clear();
-        emit discoverChanged();
-        emit discoverPlaybackReady(playableStreams.constFirst().toMap());
+    if (!updateDiscoverPage || playableStreams.size() == 1) {
+        int selectedIndex = sourceItem.value(
+            QStringLiteral("discoverStreamIndex"), 0).toInt();
+        selectedIndex = qBound(0, selectedIndex, playableStreams.size() - 1);
+        if (updateDiscoverPage) {
+            m_discoverErrorMessage.clear();
+            emit discoverChanged();
+        }
+        QVariantMap playable = playableStreams.at(selectedIndex).toMap();
+        const QString displayTitle = updateDiscoverPage
+            ? playable.value(QStringLiteral("discoverTitle")).toString().trimmed()
+            : sourceItem.value(QStringLiteral("title")).toString().trimmed();
+        if (!displayTitle.isEmpty())
+            playable.insert(QStringLiteral("title"), displayTitle);
+        emit discoverPlaybackReady(playable);
         return;
     }
 

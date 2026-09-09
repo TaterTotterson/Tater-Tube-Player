@@ -224,6 +224,12 @@ ApplicationWindow {
         return Math.max(0, offset)
     }
 
+    function canStartPlayback(item) {
+        var playable = detailsPlaybackItem(item)
+        return String(playable.streamUrl || "").trim().length > 0
+                || String(playable.nzbUrl || "").trim().length > 0
+    }
+
     function hasPlaybackProgress(item) {
         var playable = detailsPlaybackItem(item)
         var progress = Number(playable.progressPercent || 0)
@@ -1560,6 +1566,16 @@ ApplicationWindow {
         if (!item)
             return
         var source = String(item.streamUrl || "").trim()
+        if (source.length === 0 && String(item.nzbUrl || "").trim().length > 0) {
+            detailsStatusMessage = "Preparing your Discover stream…"
+            var discoverRequest = ({})
+            for (var discoverKey in item)
+                discoverRequest[discoverKey] = item[discoverKey]
+            discoverRequest.resumeDiscoverPlayback = resumeExisting === undefined
+                    ? true : resumeExisting === true
+            serverClient.prepareDiscoverPlayback(discoverRequest)
+            return
+        }
         if (source.length === 0)
             return
 
@@ -2442,7 +2458,13 @@ ApplicationWindow {
         }
 
         function onDiscoverPlaybackReady(item) {
-            root.startPlayback(item, root.mediaLabel(item))
+            var resume = item.resumeDiscoverPlayback === undefined
+                    ? true : item.resumeDiscoverPlayback === true
+            root.startPlayback(item, root.mediaLabel(item), resume)
+        }
+
+        function onDiscoverPlaybackFailed(message) {
+            root.detailsStatusMessage = message
         }
 
         function onRecommendationsChanged() {
@@ -4938,7 +4960,7 @@ ApplicationWindow {
                         text: "▶  Resume " + root.formatPlaybackTime(
                                   root.playbackResumeOffset(root.selectedItem))
                         primary: true
-                        enabled: !!root.detailsPlaybackItem(root.selectedItem).streamUrl
+                        enabled: root.canStartPlayback(root.selectedItem)
                                  && !root.detailsProgressClearing
                         onClicked: root.startPlayback(
                                        root.detailsPlaybackItem(root.selectedItem),
@@ -4954,7 +4976,7 @@ ApplicationWindow {
                               : (root.hasPlaybackProgress(root.selectedItem)
                                  ? "▶  Play from start" : "▶  Play")
                         primary: !detailsResume.visible
-                        enabled: !!root.detailsPlaybackItem(root.selectedItem).streamUrl
+                        enabled: root.canStartPlayback(root.selectedItem)
                                  && !root.detailsProgressClearing
                         onClicked: root.startPlayback(
                                        root.detailsPlaybackItem(root.selectedItem),
