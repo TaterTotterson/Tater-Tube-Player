@@ -84,6 +84,7 @@ ApplicationWindow {
     property int discoverVisibleLimit: 60
     property bool sideMenuOpen: false
     property var sideMenuReturnFocus: null
+    property bool legalNoticesOpen: false
     property double guideClockMs: Date.now()
     property double greetingClockMs: Date.now()
     property string viewingSessionId: ""
@@ -1133,6 +1134,7 @@ ApplicationWindow {
     function showPage(name) {
         sideMenuOpen = false
         sideMenuReturnFocus = null
+        legalNoticesOpen = false
         detailsOpen = false
         currentPage = name
         page.contentY = 0
@@ -1164,7 +1166,8 @@ ApplicationWindow {
     }
 
     function openSideMenu() {
-        if (sideMenuOpen || playbackOpen || detailsOpen || pairingOverlay.visible)
+        if (sideMenuOpen || legalNoticesOpen || playbackOpen || detailsOpen
+                || pairingOverlay.visible)
             return false
         if (currentPage === "recommendations") {
             recommendationSpeechVisitActive = false
@@ -1187,6 +1190,22 @@ ApplicationWindow {
                 sideHomeNav.forceActiveFocus()
         })
         return true
+    }
+
+    function openLegalNotices() {
+        if (!sideMenuOpen)
+            return
+        sideMenuOpen = false
+        legalNoticesOpen = true
+        Qt.callLater(function() { legalNoticesBack.forceActiveFocus() })
+    }
+
+    function closeLegalNotices() {
+        if (!legalNoticesOpen)
+            return
+        legalNoticesOpen = false
+        sideMenuOpen = true
+        Qt.callLater(function() { sideLegalNav.forceActiveFocus() })
     }
 
     function closeSideMenu(restoreFocus) {
@@ -1979,7 +1998,9 @@ ApplicationWindow {
     }
 
     function goBack() {
-        if (sideMenuOpen) {
+        if (legalNoticesOpen) {
+            closeLegalNotices()
+        } else if (sideMenuOpen) {
             closeSideMenu(true)
         } else if (playbackOpen) {
             closePlayback()
@@ -2016,6 +2037,8 @@ ApplicationWindow {
         var result = []
         if (pairingOverlay.visible) {
             appendFocusable(pairingOverlay, result)
+        } else if (legalNoticesOpen) {
+            appendFocusable(legalNoticesPanel, result)
         } else if (detailsOpen) {
             appendFocusable(detailsPanel, result)
         } else if (sideMenuOpen) {
@@ -2332,7 +2355,9 @@ ApplicationWindow {
     function toggleSideMenuFromInput() {
         if (root.playbackOpen || root.detailsOpen)
             return
-        if (root.sideMenuOpen)
+        if (root.legalNoticesOpen)
+            root.closeLegalNotices()
+        else if (root.sideMenuOpen)
             root.closeSideMenu(true)
         else
             root.openSideMenu()
@@ -4721,7 +4746,7 @@ ApplicationWindow {
             id: sideServerStatus
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: sideLegalNotice.top
+            anchors.bottom: sideLegalNav.top
             anchors.leftMargin: 26
             anchors.rightMargin: 26
             anchors.bottomMargin: 12
@@ -4753,22 +4778,18 @@ ApplicationWindow {
             }
         }
 
-        Text {
-            id: sideLegalNotice
+        FocusButton {
+            id: sideLegalNav
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: sideExitNav.top
             anchors.leftMargin: 26
             anchors.rightMargin: 26
             anchors.bottomMargin: 10
-            height: 30
-            text: "Uses Qt, FFmpeg & mpv under LGPL\nNotices and source information included"
-            color: "#858b91"
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            font.pixelSize: 9
-            font.weight: Font.Medium
-            lineHeight: 1.08
+            height: 38
+            compact: true
+            text: "Legal & licenses"
+            onClicked: root.openLegalNotices()
         }
 
         FocusButton {
@@ -4781,6 +4802,82 @@ ApplicationWindow {
             anchors.bottomMargin: 26
             text: "Exit to Steam"
             onClicked: Qt.quit()
+        }
+    }
+
+    Rectangle {
+        id: legalNoticesOverlay
+        anchors.fill: parent
+        visible: root.legalNoticesOpen
+        color: "#db050608"
+        z: 220
+
+        Rectangle {
+            id: legalNoticesPanel
+            anchors.centerIn: parent
+            width: Math.min(820, root.width - 100)
+            height: Math.min(540, root.height - 100)
+            radius: 28
+            color: "#ee111418"
+            border.width: 1
+            border.color: "#4b34383d"
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 42
+                spacing: 20
+
+                Text {
+                    text: "Legal & licenses"
+                    color: root.textPrimary
+                    font.pixelSize: 34
+                    font.weight: Font.Black
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 3
+                    radius: 2
+                    color: root.orange
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Tater Tube Player uses Qt 6 under LGPL version 3, and FFmpeg and mpv under LGPL version 2.1 or later. These components remain under their own licenses and are not covered by the Player's Apache 2.0 license."
+                    color: root.textPrimary
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 18
+                    lineHeight: 1.35
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Complete license texts, copyright notices, source locations, build records, and Qt relinking instructions are included in this installation's licenses and compliance folders."
+                    color: root.textSecondary
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 16
+                    lineHeight: 1.35
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Player source: github.com/TaterTotterson/Tater-Tube-Player"
+                    color: root.orangeBright
+                    wrapMode: Text.WrapAnywhere
+                    font.pixelSize: 15
+                    font.weight: Font.DemiBold
+                }
+
+                Item { width: 1; height: 6 }
+
+                FocusButton {
+                    id: legalNoticesBack
+                    width: 160
+                    text: "Back"
+                    primary: true
+                    onClicked: root.closeLegalNotices()
+                }
+            }
         }
     }
 
@@ -5471,6 +5568,7 @@ ApplicationWindow {
             if (visible) {
                 root.sideMenuOpen = false
                 root.sideMenuReturnFocus = null
+                root.legalNoticesOpen = false
                 Qt.callLater(function() { serverField.forceActiveFocus() })
             }
         }
