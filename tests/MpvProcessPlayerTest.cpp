@@ -18,6 +18,7 @@ private slots:
     void selectsBundledEngineWithoutColdStartProbe();
     void configuresNetworkReadAhead();
     void selectsGamescopeCompatibleVideoOutput();
+    void routesFocusedWindowPlaybackControls();
 };
 
 void MpvProcessPlayerTest::prefersBestEnglishAudioTrack()
@@ -126,6 +127,33 @@ void MpvProcessPlayerTest::selectsGamescopeCompatibleVideoOutput()
     QVERIFY(arguments.contains(QStringLiteral("--vo=sdl")));
     QVERIFY(arguments.contains(QStringLiteral("--hwdec=vaapi-copy")));
     QVERIFY(!arguments.contains(QStringLiteral("--gpu-context=waylandvk")));
+}
+
+void MpvProcessPlayerTest::routesFocusedWindowPlaybackControls()
+{
+    MpvProcessPlayer player;
+    QSignalSpy backSpy(&player, &MpvProcessPlayer::backRequested);
+    QSignalSpy audioSpy(&player, &MpvProcessPlayer::audioTracksRequested);
+    QSignalSpy subtitleSpy(&player, &MpvProcessPlayer::subtitlesRequested);
+
+    player.handleIpcMessage(QJsonObject{
+        {"event", "client-message"}, {"args", QJsonArray{"tater-back"}},
+    });
+    player.handleIpcMessage(QJsonObject{
+        {"event", "client-message"}, {"args", QJsonArray{"tater-audio"}},
+    });
+    player.handleIpcMessage(QJsonObject{
+        {"event", "client-message"}, {"args", QJsonArray{"tater-subtitles"}},
+    });
+
+    QCOMPARE(backSpy.count(), 1);
+    QCOMPARE(audioSpy.count(), 1);
+    QCOMPARE(subtitleSpy.count(), 1);
+
+    const QByteArray input = MpvProcessPlayer::inputConfigContents();
+    QVERIFY(input.contains("e script-message tater-back"));
+    QVERIFY(input.contains("r script-message tater-audio"));
+    QVERIFY(input.contains("f script-message tater-subtitles"));
 }
 
 QTEST_GUILESS_MAIN(MpvProcessPlayerTest)

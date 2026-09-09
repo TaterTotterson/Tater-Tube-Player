@@ -525,6 +525,16 @@ void MpvProcessPlayer::handleIpcMessage(const QJsonObject &message)
             emit errorOccurred(detail.isEmpty()
                 ? QStringLiteral("Native playback could not open this media.") : detail);
         }
+    } else if (event == QStringLiteral("client-message")) {
+        const QJsonArray arguments = message.value(QStringLiteral("args")).toArray();
+        const QString action = arguments.isEmpty()
+            ? QString{} : arguments.at(0).toString();
+        if (action == QStringLiteral("tater-back"))
+            emit backRequested();
+        else if (action == QStringLiteral("tater-audio"))
+            emit audioTracksRequested();
+        else if (action == QStringLiteral("tater-subtitles"))
+            emit subtitlesRequested();
     }
 }
 
@@ -728,14 +738,14 @@ void MpvProcessPlayer::renderOverlay()
 
     QString subtitleText;
     if (m_subtitleTracks.isEmpty())
-        subtitleText = QStringLiteral("Y  CC  NONE");
+        subtitleText = QStringLiteral("CC  NONE");
     else if (m_activeSubtitleId < 0)
-        subtitleText = QStringLiteral("Y  CC  OFF");
+        subtitleText = QStringLiteral("CC  OFF");
     else
-        subtitleText = QStringLiteral("Y  CC  %1").arg(subtitleLabel()).left(19);
+        subtitleText = QStringLiteral("CC  %1").arg(subtitleLabel()).left(24);
     const QString audioText = m_audioTracks.isEmpty()
-        ? QStringLiteral("X  AUDIO  NONE")
-        : QStringLiteral("X  AUDIO  %1").arg(audioTrackLabel()).left(33);
+        ? QStringLiteral("AUDIO  NONE")
+        : QStringLiteral("AUDIO  %1").arg(audioTrackLabel()).left(52);
 
     const QString quality = m_overlayQuality.left(94);
     const bool transcoding = quality.contains(QStringLiteral("TRANSCODE"),
@@ -746,27 +756,23 @@ void MpvProcessPlayer::renderOverlay()
     const int statusRight = statusLeft
         + std::clamp(static_cast<int>(quality.size()) * 10 + 54, 230, 1120);
 
-    const QString panel = QStringLiteral(
-        "{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H1D1917&\\1a&H28&\\p1}"
-        "m 48 840 l 1872 840 b 1886 840 1898 852 1898 866 "
-        "l 1898 1024 b 1898 1038 1886 1050 1872 1050 "
-        "l 48 1050 b 34 1050 22 1038 22 1024 "
-        "l 22 866 b 22 852 34 840 48 840{\\p0}");
     const QString progressTrack = QStringLiteral(
         "{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H605A55&\\1a&H18&\\p1}"
         "m %1 986 l %2 986 l %2 994 l %1 994{\\p0}")
         .arg(progressLeft).arg(progressRight);
-    QStringList events{panel};
+    QStringList events;
     events.append(QStringLiteral(
-        "{\\an7\\pos(82,866)\\fnSans Serif\\fs34\\b1\\bord0\\shad0"
-        "\\1c&HF3F6F6&}%1").arg(assEscape(m_overlayTitle.left(72))));
+        "{\\an7\\pos(82,866)\\fnSans Serif\\fs34\\b1\\bord2\\shad1"
+        "\\3c&H170E08&\\4c&H170E08&\\1c&HF3F6F6&}%1")
+        .arg(assEscape(m_overlayTitle.left(60))));
 
     QString detail = m_overlayDetail;
     if (m_paused)
         detail += QStringLiteral("  •  PAUSED");
     events.append(QStringLiteral(
-        "{\\an7\\pos(84,908)\\fnSans Serif\\fs18\\b1\\bord0\\shad0"
-        "\\1c&HB4AFAA&}%1").arg(assEscape(detail.left(92))));
+        "{\\an7\\pos(84,908)\\fnSans Serif\\fs18\\b1\\bord1\\shad1"
+        "\\3c&H170E08&\\4c&H170E08&\\1c&HB4AFAA&}%1")
+        .arg(assEscape(detail.left(82))));
 
     const QString statusColor = transcoding
         ? QStringLiteral("&H1F78FF&") : QStringLiteral("&H37332F&");
@@ -797,16 +803,27 @@ void MpvProcessPlayer::renderOverlay()
     const QString audioChipTextColor = m_audioControlActive
         ? QStringLiteral("&H11100F&")
         : (audioAvailable ? QStringLiteral("&HF3F6F6&") : QStringLiteral("&H77726D&"));
+    const int audioChipRight = 1648;
+    const int audioChipWidth = std::clamp(
+        static_cast<int>(audioText.size()) * 9 + 46, 220, 500);
+    const int audioChipLeft = audioChipRight - audioChipWidth;
+    const int audioChipCenter = (audioChipLeft + audioChipRight) / 2;
+    const int audioFontSize = audioText.size() > 42 ? 12
+        : (audioText.size() > 34 ? 13 : 15);
     events.append(QStringLiteral(
         "{\\an7\\pos(0,0)\\bord0\\shad0\\1c%1\\1a%2\\p1}"
-        "m 1398 872 l 1670 872 b 1680 872 1688 880 1688 890 "
-        "l 1688 906 b 1688 916 1680 924 1670 924 "
-        "l 1398 924 b 1388 924 1380 916 1380 906 "
-        "l 1380 890 b 1380 880 1388 872 1398 872{\\p0}")
-        .arg(audioChipColor, audioChipAlpha));
+        "m %3 872 l %4 872 b %5 872 %6 880 %6 890 "
+        "l %6 906 b %6 916 %5 924 %4 924 "
+        "l %3 924 b %7 924 %8 916 %8 906 "
+        "l %8 890 b %8 880 %7 872 %3 872{\\p0}")
+        .arg(audioChipColor, audioChipAlpha)
+        .arg(audioChipLeft + 10).arg(audioChipRight - 10)
+        .arg(audioChipRight - 4).arg(audioChipRight)
+        .arg(audioChipLeft + 4).arg(audioChipLeft));
     events.append(QStringLiteral(
-        "{\\an5\\pos(1534,898)\\fnSans Serif\\fs15\\b1\\bord0\\shad0"
-        "\\1c%1}%2").arg(audioChipTextColor, assEscape(audioText)));
+        "{\\an5\\pos(%1,898)\\fnSans Serif\\fs%2\\b1\\bord0\\shad0"
+        "\\1c%3}%4").arg(audioChipCenter).arg(audioFontSize)
+        .arg(audioChipTextColor, assEscape(audioText)));
 
     const bool subtitleAvailable = !m_subtitleTracks.isEmpty();
     const QString subtitleChipColor = m_subtitleControlActive
@@ -818,13 +835,13 @@ void MpvProcessPlayer::renderOverlay()
         : (subtitleAvailable ? QStringLiteral("&HF3F6F6&") : QStringLiteral("&H77726D&"));
     events.append(QStringLiteral(
         "{\\an7\\pos(0,0)\\bord0\\shad0\\1c%1\\1a%2\\p1}"
-        "m 1718 872 l 1844 872 b 1854 872 1862 880 1862 890 "
-        "l 1862 906 b 1862 916 1854 924 1844 924 "
-        "l 1718 924 b 1708 924 1700 916 1700 906 "
-        "l 1700 890 b 1700 880 1708 872 1718 872{\\p0}")
+        "m 1688 872 l 1828 872 b 1838 872 1846 880 1846 890 "
+        "l 1846 906 b 1846 916 1838 924 1828 924 "
+        "l 1688 924 b 1678 924 1670 916 1670 906 "
+        "l 1670 890 b 1670 880 1678 872 1688 872{\\p0}")
         .arg(subtitleChipColor, subtitleChipAlpha));
     events.append(QStringLiteral(
-        "{\\an5\\pos(1781,898)\\fnSans Serif\\fs15\\b1\\bord0\\shad0"
+        "{\\an5\\pos(1758,898)\\fnSans Serif\\fs14\\b1\\bord0\\shad0"
         "\\1c%1}%2").arg(subtitleChipTextColor, assEscape(subtitleText)));
 
     events.append(progressTrack);
@@ -921,12 +938,26 @@ QString MpvProcessPlayer::inputConfigPath() const
     const QString path = QDir(directory).filePath(QStringLiteral("mpv-input.conf"));
     QSaveFile file(path);
     if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        file.write("ESC quit\nBACKSPACE quit\nq quit\nSPACE cycle pause\n"
-                   "LEFT seek -10 exact\nRIGHT seek 10 exact\n"
-                   "UP add volume 5\nDOWN add volume -5\n");
+        file.write(inputConfigContents());
         file.commit();
     }
     return path;
+}
+
+QByteArray MpvProcessPlayer::inputConfigContents()
+{
+    return QByteArrayLiteral(
+        "ESC script-message tater-back\n"
+        "BACKSPACE script-message tater-back\n"
+        "q script-message tater-back\n"
+        "e script-message tater-back\n"
+        "r script-message tater-audio\n"
+        "f script-message tater-subtitles\n"
+        "SPACE cycle pause\n"
+        "LEFT seek -10 exact\n"
+        "RIGHT seek 10 exact\n"
+        "UP add volume 5\n"
+        "DOWN add volume -5\n");
 }
 
 QStringList MpvProcessPlayer::mpvArguments() const

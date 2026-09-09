@@ -47,6 +47,9 @@ FocusScope {
     Text {
         id: label
         anchors.centerIn: parent
+        width: Math.max(0, parent.width - (control.compact ? 24 : 32))
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
         text: control.text
         color: control.primary ? "#15100c" : "#f5f5f4"
         font.pixelSize: control.compact ? 15 : 17

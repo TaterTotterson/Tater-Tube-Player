@@ -5176,6 +5176,20 @@ ApplicationWindow {
                 root.closePlayback()
         }
 
+        function onBackRequested() {
+            root.goBack()
+        }
+
+        function onAudioTracksRequested() {
+            if (root.playbackOpen)
+                root.showOrCyclePlaybackAudio()
+        }
+
+        function onSubtitlesRequested() {
+            if (root.playbackOpen)
+                root.showOrCyclePlaybackSubtitles()
+        }
+
         function onErrorOccurred(message) {
             root.raise()
             root.requestActivate()
@@ -5420,10 +5434,10 @@ ApplicationWindow {
                     FocusButton {
                         id: audioButton
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 250
+                        width: Math.min(430, Math.max(220, implicitWidth))
                         compact: true
                         opacity: 0.82
-                        text: "X  " + root.playbackAudioLabel()
+                        text: root.playbackAudioLabel()
                         enabled: root.playbackMultipleAudioTracks()
                         onClicked: root.cyclePlaybackAudioTrack()
                     }
@@ -5431,10 +5445,10 @@ ApplicationWindow {
                     FocusButton {
                         id: subtitleButton
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 142
+                        width: Math.min(210, Math.max(132, implicitWidth))
                         compact: true
                         opacity: 0.82
-                        text: "Y  " + root.playbackSubtitleLabel()
+                        text: root.playbackSubtitleLabel()
                         enabled: root.playbackSubtitlesAvailable()
                         onClicked: root.togglePlaybackSubtitles()
                     }

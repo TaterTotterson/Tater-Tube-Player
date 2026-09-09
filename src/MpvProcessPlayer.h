@@ -96,6 +96,9 @@ signals:
     void loaded();
     void endOfMedia();
     void closed();
+    void backRequested();
+    void audioTracksRequested();
+    void subtitlesRequested();
     void errorOccurred(const QString &message);
 
 private:
@@ -114,6 +117,7 @@ private:
     int preferredAudioTrackId() const;
     void renderOverlay();
     QString inputConfigPath() const;
+    static QByteArray inputConfigContents();
     QStringList mpvArguments() const;
     static QString bundledPlaybackEngine(const QString &applicationDirectory,
                                          bool waylandOutputAvailable);
