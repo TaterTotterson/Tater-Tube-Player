@@ -2822,8 +2822,7 @@ ApplicationWindow {
             Column {
                 width: contentColumn.width
                 spacing: 12
-                visible: !demoMode && serverClient.homeReady
-                         && serverClient.continueWatching.length > 0
+                visible: !demoMode && serverClient.continueWatching.length > 0
 
                 SectionTitle {
                     width: parent.width
@@ -2923,8 +2922,7 @@ ApplicationWindow {
             Column {
                 width: contentColumn.width
                 spacing: 12
-                visible: !demoMode && serverClient.homeReady
-                         && serverClient.liveChannels.length > 0
+                visible: !demoMode && root.displayedLiveChannels().length > 0
 
                 SectionTitle {
                     width: parent.width
@@ -2937,11 +2935,11 @@ ApplicationWindow {
 
                     Repeater {
                         model: Math.min(root.shelfPreviewLimit,
-                                        serverClient.liveChannels.length)
+                                        root.displayedLiveChannels().length)
 
                         MediaCard {
                             required property int index
-                            property var channel: serverClient.liveChannels[index]
+                            property var channel: root.displayedLiveChannels()[index]
                             property var currentProgram: root.channelNow(channel)
 
                             width: liveChannelsRow.cardWidth
@@ -3022,8 +3020,7 @@ ApplicationWindow {
             Column {
                 width: contentColumn.width
                 spacing: 12
-                visible: !demoMode && serverClient.homeReady
-                         && serverClient.recentlyAdded.length > 0
+                visible: !demoMode && serverClient.recentlyAdded.length > 0
 
                 SectionTitle {
                     width: parent.width
@@ -3065,7 +3062,7 @@ ApplicationWindow {
                 readonly property bool hasHomeContent:
                     serverClient.continueWatching.length > 0
                     || serverClient.recentlyAdded.length > 0
-                    || serverClient.liveChannels.length > 0
+                    || root.displayedLiveChannels().length > 0
                     || serverClient.libraryRows.length > 0
                     || serverClient.libraries.length > 0
 

@@ -64,7 +64,7 @@ public:
                     socket->setProperty("responded", true);
                     requests.append(buffer);
                     FixtureResponse response;
-                    if (buffer.startsWith("GET /api/v1/player/home ")) {
+                    if (buffer.startsWith("GET /api/v1/player/home?")) {
                         response.body = QByteArrayLiteral("{\"success\":true,\"data\":{\"protocolVersion\":\"1\",\"capabilities\":{\"taterLink\":")
                             + (taterLink ? "true" : "false") + "}}}";
                     } else if (handle) {
@@ -199,7 +199,7 @@ void ServerClientTest::loadsVersionedHome()
                 QByteArray body;
                 if (request.startsWith("GET /api/tater/server ")) {
                     body = R"({"success":true,"data":{"name":"Test Tater Server","version":"9.9.9"}})";
-                } else if (request.startsWith("GET /api/v1/player/home ")) {
+                } else if (request.startsWith("GET /api/v1/player/home?")) {
                     body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"newznab":true,"tubeTV":true,"commercials":true,"taterLink":true},"hero":{"personalized":true,"eyebrow":"TATER LINK  •  PICKED FOR YOU","message":"Friday night calls for a cozy mystery from your library.","assistantName":"Totty"},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Show","mediaType":"show","categoryId":"local:tv","sourceIndex":0,"path":"New Show","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","logoUrl":"http://tube.test/logo/12.png","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
                 } else if (request.startsWith("GET /api/tater/recommendations ")) {
                     body = R"({"success":true,"data":{"profile_id":"household","batch":{"id":"batch-one","assistant_name":"Totty","summary":"A cozy mystery fits what you have been watching lately."},"items":[{"id":"pick-one","rank":1,"title":"Moonrise Manor","media_type":"movie","source":"local_media","reason":"A warm mystery with the same relaxed pace.","launch":{"title":"Moonrise Manor","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Moonrise Manor/movie.mkv","streamUrl":"http://tube.test/moonrise","poster":"http://tube.test/moonrise.jpg"}}]}})";
@@ -256,6 +256,8 @@ void ServerClientTest::loadsVersionedHome()
 
     ServerClient client;
     QTRY_VERIFY_WITH_TIMEOUT(client.homeReady(), 3000);
+    QVERIFY(requests.contains("GET /api/v1/player/home?include_live=0 "));
+    QTRY_VERIFY_WITH_TIMEOUT(requests.contains("GET /api/tater/tv/lineup "), 3000);
     QCOMPARE(client.serverName(), QStringLiteral("Test Tater Server"));
     QCOMPARE(client.continueWatching().size(), 1);
     QCOMPARE(client.continueWatching().first().toMap().value("title").toString(),
@@ -641,7 +643,7 @@ void ServerClientTest::clearsPlaybackProgress()
                 if (request.startsWith("DELETE /api/tater/playstate ")) {
                     stateCleared = true;
                     body = R"({"success":true,"data":{"cleared":true}})";
-                } else if (request.startsWith("GET /api/v1/player/home ")) {
+                } else if (request.startsWith("GET /api/v1/player/home?")) {
                     body = stateCleared
                         ? QByteArrayLiteral(R"({"success":true,"data":{"protocolVersion":"1","continueWatching":[],"recentlyAdded":[],"liveChannels":[],"libraries":[]}})")
                         : QByteArrayLiteral(R"({"success":true,"data":{"protocolVersion":"1","continueWatching":[{"title":"Resume Episode","mediaType":"episode","playStateId":"local:state","seriesStateId":"local:series","categoryId":"local:tv","sourceIndex":0,"path":"Show/Season 01/Episode.mkv","streamUrl":"http://tube.test/episode","viewOffset":12345,"progressPercent":25}],"recentlyAdded":[],"liveChannels":[],"libraries":[]}})");

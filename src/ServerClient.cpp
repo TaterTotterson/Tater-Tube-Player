@@ -392,7 +392,11 @@ void ServerClient::refreshHome()
 
     m_homeErrorMessage.clear();
     setHomeLoading(true);
-    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/v1/player/home"))};
+    QUrl homeUrl(endpointUrl(m_serverUrl, "/api/v1/player/home"));
+    QUrlQuery homeQuery;
+    homeQuery.addQueryItem(QStringLiteral("include_live"), QStringLiteral("0"));
+    homeUrl.setQuery(homeQuery);
+    QNetworkRequest request{homeUrl};
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
@@ -2192,6 +2196,14 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     emit connectionChanged();
     emit homeChanged();
     loadLibraryRows(false);
+    if (m_capabilities.value(QStringLiteral("tubeTV")).toBool()) {
+        refreshLiveGuide();
+    } else if (!m_liveGuideChannels.isEmpty() || m_liveGuideReady) {
+        m_liveGuideChannels.clear();
+        m_liveGuideErrorMessage.clear();
+        m_liveGuideReady = false;
+        emit liveGuideChanged();
+    }
     if (taterLinked)
         refreshRecommendations();
 }
