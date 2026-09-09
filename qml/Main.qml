@@ -1479,33 +1479,24 @@ ApplicationWindow {
                               Math.round(playbackBaseOffsetMs))
     }
 
-    function activatePlaybackControl(name) {
-        playbackAudioControlActive = name === "audio"
-                && playbackMultipleAudioTracks()
-        playbackSubtitleControlActive = name === "subtitles"
-                && playbackSubtitlesAvailable()
-        showPlaybackControls()
+    function showOrCyclePlaybackAudio() {
+        playbackAudioControlActive = false
+        playbackSubtitleControlActive = false
+        if (!playbackControlsVisible) {
+            showPlaybackControls()
+            return
+        }
+        cyclePlaybackAudioTrack()
     }
 
-    function movePlaybackControl(direction) {
-        var controls = []
-        if (playbackMultipleAudioTracks())
-            controls.push("audio")
-        if (playbackSubtitlesAvailable())
-            controls.push("subtitles")
-        if (controls.length === 0) {
-            activatePlaybackControl("")
-            return false
+    function showOrCyclePlaybackSubtitles() {
+        playbackAudioControlActive = false
+        playbackSubtitleControlActive = false
+        if (!playbackControlsVisible) {
+            showPlaybackControls()
+            return
         }
-        var current = playbackAudioControlActive ? "audio"
-                    : (playbackSubtitleControlActive ? "subtitles" : "")
-        var index = controls.indexOf(current)
-        if (index < 0)
-            index = direction < 0 ? controls.length - 1 : 0
-        else
-            index = (index + direction + controls.length) % controls.length
-        activatePlaybackControl(controls[index])
-        return true
+        togglePlaybackSubtitles()
     }
 
     function cyclePlaybackAudioTrack() {
@@ -2305,32 +2296,21 @@ ApplicationWindow {
 
     function acceptCurrentControl() {
         if (root.playbackOpen) {
-            if (root.playbackAudioControlActive)
-                root.cyclePlaybackAudioTrack()
-            else if (root.playbackSubtitleControlActive)
-                root.togglePlaybackSubtitles()
-            else
-                root.togglePlayback()
+            root.togglePlayback()
         } else {
             root.activateFocusedItem()
         }
     }
 
     function handleNavigateLeft() {
-        if (root.playbackOpen && (root.playbackAudioControlActive
-                                  || root.playbackSubtitleControlActive))
-            root.movePlaybackControl(-1)
-        else if (root.playbackOpen)
+        if (root.playbackOpen)
             root.seekPlaybackBy(-10000)
         else
             root.navigateLeft()
     }
 
     function handleNavigateRight() {
-        if (root.playbackOpen && (root.playbackAudioControlActive
-                                  || root.playbackSubtitleControlActive))
-            root.movePlaybackControl(1)
-        else if (root.playbackOpen)
+        if (root.playbackOpen)
             root.seekPlaybackBy(10000)
         else
             root.navigateRight()
@@ -2338,14 +2318,14 @@ ApplicationWindow {
 
     function handleNavigateUp() {
         if (root.playbackOpen)
-            root.activatePlaybackControl("")
+            root.showPlaybackControls()
         else
             root.moveFocus(0, -1)
     }
 
     function handleNavigateDown() {
         if (root.playbackOpen)
-            root.movePlaybackControl(1)
+            root.showPlaybackControls()
         else
             root.moveFocus(0, 1)
     }
@@ -2427,11 +2407,11 @@ ApplicationWindow {
         }
         function onSubtitles() {
             if (root.playbackOpen)
-                root.togglePlaybackSubtitles()
+                root.showOrCyclePlaybackSubtitles()
         }
         function onAudioTracks() {
             if (root.playbackOpen)
-                root.cyclePlaybackAudioTrack()
+                root.showOrCyclePlaybackAudio()
         }
     }
 
@@ -2514,8 +2494,8 @@ ApplicationWindow {
             root.goBack()
         }
     }
-    Shortcut { sequence: "R"; enabled: root.playbackOpen && !root.textEntryFocused; onActivated: root.togglePlaybackSubtitles() }
-    Shortcut { sequence: "F"; enabled: root.playbackOpen && !root.textEntryFocused; onActivated: root.cyclePlaybackAudioTrack() }
+    Shortcut { sequence: "R"; enabled: root.playbackOpen && !root.textEntryFocused; onActivated: root.showOrCyclePlaybackAudio() }
+    Shortcut { sequence: "F"; enabled: root.playbackOpen && !root.textEntryFocused; onActivated: root.showOrCyclePlaybackSubtitles() }
 
     onClosing: function(close) {
         root.recommendationSpeechVisitActive = false
@@ -2527,20 +2507,27 @@ ApplicationWindow {
         root.stopPlaybackEngine()
     }
 
-    Rectangle {
+    // Keep the browse UI in one stable scene. Details glass samples this item
+    // instead of an individual Flickable, whose moving content coordinates can
+    // otherwise make the reflection jump to the wrong portion of the screen.
+    Item {
+        id: browsingScene
         anchors.fill: parent
-        color: root.color
-        visible: !root.nativePlaybackActive
-    }
 
-    AmbientBackdrop {
+        Rectangle {
+            anchors.fill: parent
+            color: root.color
+            visible: !root.nativePlaybackActive
+        }
+
+        AmbientBackdrop {
         id: homeAmbientBackdrop
         anchors.fill: parent
         visible: !root.nativePlaybackActive && root.currentPage === "home"
         intensity: 0.92
     }
 
-    Flickable {
+        Flickable {
         id: page
         visible: !root.nativePlaybackActive
         anchors.left: parent.left
@@ -2725,17 +2712,14 @@ ApplicationWindow {
                 SectionTitle {
                     width: parent.width
                     title: "Continue watching"
-                    actionText: "SEE ALL  ›"
-                    actionEnabled: true
-                    onActionActivated: root.showPage("library")
                 }
 
-                Row {
+                HorizontalMediaRow {
+                    id: demoContinueWatchingRow
                     width: parent.width
-                    spacing: 15
 
                     MediaCard {
-                        width: (parent.width - 45) / 4
+                        width: demoContinueWatchingRow.cardWidth
                         eyebrow: "MOVIE  •  42 MIN LEFT"
                         title: "The Last Signal"
                         subtitle: "Resume from 01:16:08"
@@ -2747,7 +2731,7 @@ ApplicationWindow {
                                                         description: subtitle}, "MOVIE")
                     }
                     MediaCard {
-                        width: (parent.width - 45) / 4
+                        width: demoContinueWatchingRow.cardWidth
                         eyebrow: "S2  E4"
                         title: "Northern Lights"
                         subtitle: "The Long Way Home"
@@ -2759,7 +2743,7 @@ ApplicationWindow {
                                                         description: subtitle}, "EPISODE")
                     }
                     MediaCard {
-                        width: (parent.width - 45) / 4
+                        width: demoContinueWatchingRow.cardWidth
                         eyebrow: "MOVIE  •  18 MIN LEFT"
                         title: "Orange County Skies"
                         subtitle: "Resume from 01:34:22"
@@ -2771,7 +2755,7 @@ ApplicationWindow {
                                                         description: subtitle}, "MOVIE")
                     }
                     MediaCard {
-                        width: (parent.width - 45) / 4
+                        width: demoContinueWatchingRow.cardWidth
                         eyebrow: "S1  E7"
                         title: "After Midnight"
                         subtitle: "Static in the Valley"
@@ -2781,6 +2765,11 @@ ApplicationWindow {
                         progress: 0.46
                         onActivated: root.openDetails({title: title, mediaType: "episode",
                                                         description: subtitle}, "EPISODE")
+                    }
+
+                    RowActionCard {
+                        text: "See all"
+                        onActivated: root.showPage("library")
                     }
                 }
             }
@@ -2794,9 +2783,6 @@ ApplicationWindow {
                 SectionTitle {
                     width: parent.width
                     title: "Continue watching"
-                    actionText: "SEE ALL  ›"
-                    actionEnabled: true
-                    onActionActivated: root.showPage("library")
                 }
 
                 HorizontalMediaRow {
@@ -2823,6 +2809,11 @@ ApplicationWindow {
                             onActivated: root.openDetails(media, root.mediaLabel(media))
                         }
                     }
+
+                    RowActionCard {
+                        text: "See all"
+                        onActivated: root.showPage("library")
+                    }
                 }
             }
 
@@ -2834,17 +2825,14 @@ ApplicationWindow {
                 SectionTitle {
                     width: parent.width
                     title: "Live on Tater Tube"
-                    actionText: "OPEN GUIDE  ›"
-                    actionEnabled: true
-                    onActionActivated: root.showPage("live")
                 }
 
-                Row {
+                HorizontalMediaRow {
+                    id: demoLiveChannelsRow
                     width: parent.width
-                    spacing: 15
 
                     MediaCard {
-                        width: (parent.width - 45) / 4
+                        width: demoLiveChannelsRow.cardWidth
                         eyebrow: "CH 12  •  LIVE"
                         title: "Saturday Cartoons"
                         subtitle: "Up next: Galaxy Rangers"
@@ -2856,7 +2844,7 @@ ApplicationWindow {
                         onActivated: root.showPage("live")
                     }
                     MediaCard {
-                        width: (parent.width - 45) / 4
+                        width: demoLiveChannelsRow.cardWidth
                         eyebrow: "CH 24  •  LIVE"
                         title: "Creature Features"
                         subtitle: "Up next: Night Visitors"
@@ -2868,7 +2856,7 @@ ApplicationWindow {
                         onActivated: root.showPage("live")
                     }
                     MediaCard {
-                        width: (parent.width - 45) / 4
+                        width: demoLiveChannelsRow.cardWidth
                         eyebrow: "CH 88  •  LIVE"
                         title: "Neon Nights"
                         subtitle: "Up next: Electric Dreams"
@@ -2877,6 +2865,11 @@ ApplicationWindow {
                         artworkOpacity: 0.74
                         accent: "#6a597d"
                         progress: 0.52
+                        onActivated: root.showPage("live")
+                    }
+
+                    RowActionCard {
+                        text: "Open guide"
                         onActivated: root.showPage("live")
                     }
                 }
@@ -2891,9 +2884,6 @@ ApplicationWindow {
                 SectionTitle {
                     width: parent.width
                     title: "Live on Tater Tube"
-                    actionText: "OPEN GUIDE  ›"
-                    actionEnabled: true
-                    onActionActivated: root.showPage("live")
                 }
 
                 HorizontalMediaRow {
@@ -2923,6 +2913,11 @@ ApplicationWindow {
                             onActivated: root.openDetails(channel, "CHANNEL " + channel.number)
                         }
                     }
+
+                    RowActionCard {
+                        text: "Open guide"
+                        onActivated: root.showPage("live")
+                    }
                 }
             }
 
@@ -2934,17 +2929,13 @@ ApplicationWindow {
                 SectionTitle {
                     width: parent.width
                     title: "Recently added"
-                    actionText: "BROWSE LIBRARY  ›"
-                    actionEnabled: true
-                    onActionActivated: root.showPage("library")
                 }
 
-                Row {
+                HorizontalMediaRow {
                     id: demoRecentlyAddedRow
                     width: parent.width
-                    spacing: 15
                     MediaCard {
-                        width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
+                        width: demoRecentlyAddedRow.cardWidth
                         eyebrow: "MOVIE"; title: "Cosmic Drift"; subtitle: "2026  •  1h 52m"
                         artSource: Qt.resolvedUrl("../assets/demo/cosmic-drift.png")
                         artworkOpacity: 0.74
@@ -2952,7 +2943,7 @@ ApplicationWindow {
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
                     MediaCard {
-                        width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
+                        width: demoRecentlyAddedRow.cardWidth
                         eyebrow: "SHOW"; title: "Harbor Street"; subtitle: "2024  •  2 seasons"
                         artSource: Qt.resolvedUrl("../assets/demo/harbor-street.png")
                         artworkOpacity: 0.74
@@ -2960,7 +2951,7 @@ ApplicationWindow {
                         onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
                     }
                     MediaCard {
-                        width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
+                        width: demoRecentlyAddedRow.cardWidth
                         eyebrow: "MOVIE"; title: "The Long Winter"; subtitle: "2025  •  1h 44m"
                         artSource: Qt.resolvedUrl("../assets/demo/the-long-winter.png")
                         artworkOpacity: 0.74
@@ -2968,12 +2959,17 @@ ApplicationWindow {
                         onActivated: root.openDetails({title: title, mediaType: "movie"}, "MOVIE")
                     }
                     MediaCard {
-                        width: (demoRecentlyAddedRow.width - 3 * demoRecentlyAddedRow.spacing) / 4
+                        width: demoRecentlyAddedRow.cardWidth
                         eyebrow: "SHOW"; title: "After Midnight"; subtitle: "2023  •  8 episodes"
                         artSource: Qt.resolvedUrl("../assets/demo/after-midnight.png")
                         artworkOpacity: 0.74
                         accent: "#9c5a39"
                         onActivated: root.openDetails({title: title, mediaType: "show"}, "SHOW")
+                    }
+
+                    RowActionCard {
+                        text: "Browse library"
+                        onActivated: root.showPage("library")
                     }
                 }
             }
@@ -2987,9 +2983,6 @@ ApplicationWindow {
                 SectionTitle {
                     width: parent.width
                     title: "Recently added"
-                    actionText: "BROWSE LIBRARY  ›"
-                    actionEnabled: true
-                    onActionActivated: root.showPage("library")
                 }
 
                 HorizontalMediaRow {
@@ -3014,6 +3007,11 @@ ApplicationWindow {
                             accent: root.cardAccent(index)
                             onActivated: root.openLibraryEntry(media)
                         }
+                    }
+
+                    RowActionCard {
+                        text: "Browse library"
+                        onActivated: root.showPage("library")
                     }
                 }
             }
@@ -3095,7 +3093,7 @@ ApplicationWindow {
         }
     }
 
-    Rectangle {
+        Rectangle {
         id: sectionPage
         property string heldLibraryArtwork: ""
         readonly property bool showAmbientBackdrop:
@@ -3335,9 +3333,6 @@ ApplicationWindow {
                                 SectionTitle {
                                     width: parent.width
                                     title: root.itemTitle(shelf, "Library")
-                                    actionText: shelf.loading ? "LOADING…" : "SEE ALL  ›"
-                                    actionEnabled: !shelf.loading && shelfItems.length > 0
-                                    onActionActivated: root.openLibraryRow(shelf)
                                 }
 
                                 HorizontalMediaRow {
@@ -3366,6 +3361,13 @@ ApplicationWindow {
                                             accent: root.cardAccent(index + shelfColumn.index)
                                             onActivated: root.openLibraryEntry(media)
                                         }
+                                    }
+
+                                    RowActionCard {
+                                        visible: !shelfColumn.shelf.loading
+                                                 && shelfColumn.shelfItems.length > 0
+                                        text: "See all"
+                                        onActivated: root.openLibraryRow(shelfColumn.shelf)
                                     }
                                 }
 
@@ -4555,7 +4557,7 @@ ApplicationWindow {
         }
     }
 
-    Rectangle {
+        Rectangle {
         id: sideMenuScrim
         anchors.fill: parent
         visible: root.sideMenuOpen
@@ -4565,6 +4567,7 @@ ApplicationWindow {
         MouseArea {
             anchors.fill: parent
             onClicked: root.closeSideMenu(true)
+        }
         }
     }
 
@@ -4849,7 +4852,7 @@ ApplicationWindow {
 
                 FrostedGlass {
                     anchors.fill: parent
-                    sourceItem: root.currentPage === "home" ? page : sectionPage
+                    sourceItem: browsingScene
                     coordinateItem: detailsGlassPane
                     cornerRadius: 0
                     blurAmount: 0.86
@@ -5376,9 +5379,8 @@ ApplicationWindow {
                         width: 250
                         compact: true
                         opacity: 0.82
-                        text: root.playbackAudioLabel()
+                        text: "X  " + root.playbackAudioLabel()
                         enabled: root.playbackMultipleAudioTracks()
-                        primary: root.playbackAudioControlActive
                         onClicked: root.cyclePlaybackAudioTrack()
                     }
 
@@ -5388,9 +5390,8 @@ ApplicationWindow {
                         width: 142
                         compact: true
                         opacity: 0.82
-                        text: root.playbackSubtitleLabel()
+                        text: "Y  " + root.playbackSubtitleLabel()
                         enabled: root.playbackSubtitlesAvailable()
-                        primary: root.playbackSubtitleControlActive
                         onClicked: root.togglePlaybackSubtitles()
                     }
                 }

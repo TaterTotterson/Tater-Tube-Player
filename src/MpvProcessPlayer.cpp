@@ -715,14 +715,14 @@ void MpvProcessPlayer::renderOverlay()
 
     QString subtitleText;
     if (m_subtitleTracks.isEmpty())
-        subtitleText = QStringLiteral("CC  NONE");
+        subtitleText = QStringLiteral("Y  CC  NONE");
     else if (m_activeSubtitleId < 0)
-        subtitleText = QStringLiteral("CC  OFF");
+        subtitleText = QStringLiteral("Y  CC  OFF");
     else
-        subtitleText = QStringLiteral("CC  %1").arg(subtitleLabel()).left(16);
+        subtitleText = QStringLiteral("Y  CC  %1").arg(subtitleLabel()).left(19);
     const QString audioText = m_audioTracks.isEmpty()
-        ? QStringLiteral("AUDIO  NONE")
-        : QStringLiteral("AUDIO  %1").arg(audioTrackLabel()).left(30);
+        ? QStringLiteral("X  AUDIO  NONE")
+        : QStringLiteral("X  AUDIO  %1").arg(audioTrackLabel()).left(33);
 
     const QString quality = m_overlayQuality.left(94);
     const bool transcoding = quality.contains(QStringLiteral("TRANSCODE"),

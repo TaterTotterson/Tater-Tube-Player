@@ -14,6 +14,9 @@ tater_qt_version=6.11.2
 tater_ffmpeg_version=7.1.5
 tater_icu_version=73.2
 tater_mpv_version=0.40.0
+tater_libass_version=0.17.3
+tater_libplacebo_version=7.349.0
+tater_libjpeg_turbo_version=2.1.5
 tater_release_depot=${TATER_STEAM_DEPOT_DIR:-"${tater_repo_dir}/dist/steam/linux-x86_64"}
 tater_player_version=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9][0-9.]*\).*/\1/p' \
     "${tater_repo_dir}/CMakeLists.txt" | head -n 1)
@@ -99,6 +102,15 @@ tater_fetch icu4c-73_2-src.tgz \
 tater_fetch mpv_0.40.0.orig.tar.gz \
     https://deb.debian.org/debian/pool/main/m/mpv/mpv_0.40.0.orig.tar.gz \
     10a0f4654f62140a6dd4d380dcf0bbdbdcf6e697556863dc499c296182f081a3
+tater_fetch libass-0.17.3.tar.xz \
+    https://github.com/libass/libass/releases/download/0.17.3/libass-0.17.3.tar.xz \
+    eae425da50f0015c21f7b3a9c7262a910f0218af469e22e2931462fed3c50959
+tater_fetch libplacebo_7.349.0.orig.tar.gz \
+    https://deb.debian.org/debian/pool/main/libp/libplacebo/libplacebo_7.349.0.orig.tar.gz \
+    79120e685a1836344b51b13b6a5661622486a84e4d4a35f6c8d01679a20fbc86
+tater_fetch libjpeg-turbo_2.1.5.orig.tar.gz \
+    https://deb.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg-turbo_2.1.5.orig.tar.gz \
+    254f3642b04e309fee775123133c6464181addc150499561020312ec61c1bf7c
 
 cp "${tater_repo_dir}/THIRD_PARTY_NOTICES.md" "${tater_bundle_dir}/"
 cp "${tater_repo_dir}/docs/RELINKING_QT.md" "${tater_bundle_dir}/"
@@ -118,11 +130,15 @@ shared Qt and FFmpeg libraries in the Steam/Linux depot:
   FFmpeg ${tater_ffmpeg_version}
   ICU ${tater_icu_version}
   mpv ${tater_mpv_version}
+  libass ${tater_libass_version}
+  libplacebo ${tater_libplacebo_version}
+  libjpeg-turbo ${tater_libjpeg_turbo_version}
 
 The original compressed archives are preserved under upstream/ and verified by
 SHA256SUMS. The build Containerfile, notices, exact FFmpeg configure record,
 exact mpv Meson option record, and Qt relinking instructions are included
-alongside them. No local patches were applied to Qt, FFmpeg, ICU, or mpv.
+alongside them. No local patches were applied to Qt, FFmpeg, ICU, mpv,
+libass, libplacebo, or libjpeg-turbo.
 
 The Containerfile builds FFmpeg with GPL, nonfree, and version-3 components
 disabled, then builds the separately launched mpv executable with

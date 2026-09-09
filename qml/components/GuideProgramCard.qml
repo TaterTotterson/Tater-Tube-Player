@@ -174,14 +174,17 @@ FocusScope {
             }
         }
 
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: -5
-            radius: 24
-            color: "transparent"
-            border.width: card.activeFocus ? 2 : 0
-            border.color: "#66ff7a1a"
-        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: -5
+        radius: 24
+        color: "transparent"
+        visible: card.activeFocus
+        border.width: 3
+        border.color: "#ff8738"
+        z: 20
     }
 
     MouseArea {

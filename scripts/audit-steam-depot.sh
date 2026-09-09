@@ -44,6 +44,9 @@ for tater_required in \
     licenses/LGPL-2.1-or-later.txt \
     licenses/mpv-Copyright.txt \
     licenses/mpv-LGPL-2.1-or-later.txt \
+    licenses/libass-Copyright.txt \
+    licenses/libplacebo-Copyright.txt \
+    licenses/libjpeg-turbo-Copyright.txt \
     licenses/RELINKING_QT.md \
     licenses/Unicode-3.0-ICU-73.2.txt \
     licenses/source-manifest.txt \
@@ -57,6 +60,10 @@ for tater_required in \
     compliance/steam-runtime.txt \
     compliance/SHA256SUMS; do
     tater_require_file "${tater_required}"
+done
+
+for tater_native_runtime in lib/libass.so.9 lib/libplacebo.so.349 lib/libjpeg.so.62; do
+    tater_require_file "${tater_native_runtime}"
 done
 
 if [ ! -x "${tater_depot_dir}/tater-tube-player" ]; then

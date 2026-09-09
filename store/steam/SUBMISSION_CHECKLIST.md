@@ -48,7 +48,7 @@ as release-ready.
 - [ ] Confirm mascot and other brand-asset creation/distribution records
 - [x] Restrict the Linux settings file containing the paired-player token to the current OS user
 - [ ] Verify clean install, first pairing, controller navigation, suspend/resume, output switching, and uninstall
-- [ ] Verify direct play, audio-only transcode, video-only transcode, full transcode, HDR-to-SDR, and Tube TV transitions against Tater Tube Server 1.4.33+
+- [ ] Verify direct play, audio-only transcode, video-only transcode, full transcode, HDR-to-SDR, and Tube TV transitions against Tater Tube Server 1.4.34+
 - [ ] Supply Valve reviewers with a reachable test server or precise local test-server instructions and a rights-safe demo catalog
 - [x] Confirm the draft depot and store media contain no private addresses, credentials, or personal media
 - [x] Confirm the draft depot contains no emulator/ROM cores, game ports, Moonlight, downloader, commercial media, or Steamworks SDK binaries

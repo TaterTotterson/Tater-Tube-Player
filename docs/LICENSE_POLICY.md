@@ -40,6 +40,11 @@ parts disabled. Both Qt Multimedia and an mpv 0.40.0 build configured with
 `-Dgpl=false` use that audited FFmpeg build. mpv's GPL-only X11 output is
 disabled; Gamescope playback uses Wayland and Vulkan.
 
+The depot also carries the exact libass 0.17.3, libplacebo 7.349.0, and
+libjpeg-turbo 2.1.5 shared-library SONAMEs used by the audited mpv build. Their
+notices are installed in the depot, and the release source bundle preserves the
+matching upstream archives (including libplacebo's LGPL corresponding source).
+
 The application source is offered under Apache-2.0. This does not replace or
 weaken the separate LGPL obligations for Qt, FFmpeg, or mpv.
 

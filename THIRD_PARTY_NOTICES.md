@@ -85,6 +85,23 @@ release records.
 - Source: https://github.com/mpv-player/mpv
 - License information: https://github.com/mpv-player/mpv/blob/master/Copyright
 
+## libass, libplacebo, and libjpeg-turbo
+
+The native mpv playback process dynamically uses libass 0.17.3 for subtitle
+rendering and libplacebo 7.349.0 for its Vulkan video-rendering pipeline. The
+Steam depot carries the exact shared-library SONAMEs used to build mpv so the
+native player does not depend on whichever versions happen to be installed by
+SteamOS. The same release carries libjpeg-turbo 2.1.5, which mpv uses for JPEG
+image support. libass and libjpeg-turbo use permissive terms; libplacebo is
+distributed under LGPLv2.1-or-later. Their complete Debian
+copyright and license notices are included in the depot as
+`licenses/libass-Copyright.txt`, `licenses/libplacebo-Copyright.txt`, and
+`licenses/libjpeg-turbo-Copyright.txt`.
+
+- libass: https://github.com/libass/libass
+- libplacebo: https://code.videolan.org/videolan/libplacebo
+- libjpeg-turbo: https://libjpeg-turbo.org/
+
 ## Transitive components
 
 Qt, FFmpeg, and the Linux runtime use additional third-party components. Their

@@ -183,6 +183,19 @@ FocusScope {
         }
     }
 
+    // The artwork is loaded asynchronously and paints above the clipped
+    // background's own border. Keep the controller focus ring as the last
+    // visual layer so selection never disappears after an image arrives.
+    Rectangle {
+        anchors.fill: parent
+        radius: 18
+        color: "transparent"
+        visible: card.activeFocus
+        border.width: 3
+        border.color: "#ff8738"
+        z: 20
+    }
+
     MouseArea {
         id: pointer
         anchors.fill: parent

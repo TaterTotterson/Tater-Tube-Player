@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(TaterTubePlayer
-    VERSION 0.3.0
+    VERSION 0.3.1
     DESCRIPTION "A modern player for Tater Tube Server"
     LANGUAGES CXX
 )
@@ -52,9 +52,26 @@ if(TATER_STEAM_RELEASE)
         "${TATER_MPV_RELEASE_ROOT}/share/licenses/mpv/Copyright")
     set(TATER_MPV_LICENSE
         "${TATER_MPV_RELEASE_ROOT}/share/licenses/mpv/LICENSE.LGPL")
+    set(TATER_MPV_LIBASS
+        "${TATER_MPV_RELEASE_ROOT}/lib/libass.so.9")
+    set(TATER_MPV_LIBPLACEBO
+        "${TATER_MPV_RELEASE_ROOT}/lib/libplacebo.so.349")
+    set(TATER_MPV_LIBJPEG
+        "${TATER_MPV_RELEASE_ROOT}/lib/libjpeg.so.62")
+    set(TATER_MPV_LIBASS_COPYRIGHT
+        "${TATER_MPV_RELEASE_ROOT}/share/licenses/runtime/libass-copyright")
+    set(TATER_MPV_LIBPLACEBO_COPYRIGHT
+        "${TATER_MPV_RELEASE_ROOT}/share/licenses/runtime/libplacebo-copyright")
+    set(TATER_MPV_LIBJPEG_COPYRIGHT
+        "${TATER_MPV_RELEASE_ROOT}/share/licenses/runtime/libjpeg-turbo-copyright")
     foreach(tater_required_release_file IN ITEMS
             "${TATER_MPV_BUILD_OPTIONS}" "${TATER_MPV_COPYRIGHT}"
-            "${TATER_MPV_LICENSE}" "${TATER_MEDIA_RELEASE_ROOT}/ffmpeg-build-config.txt")
+            "${TATER_MPV_LICENSE}" "${TATER_MPV_LIBASS}"
+            "${TATER_MPV_LIBPLACEBO}" "${TATER_MPV_LIBJPEG}"
+            "${TATER_MPV_LIBASS_COPYRIGHT}"
+            "${TATER_MPV_LIBPLACEBO_COPYRIGHT}"
+            "${TATER_MPV_LIBJPEG_COPYRIGHT}"
+            "${TATER_MEDIA_RELEASE_ROOT}/ffmpeg-build-config.txt")
         if(NOT EXISTS "${tater_required_release_file}")
             message(FATAL_ERROR
                 "The audited LGPL playback release file is missing: ${tater_required_release_file}")
@@ -98,6 +115,7 @@ qt_add_qml_module(tater-tube-player
         qml/components/MediaCard.qml
         qml/components/PosterCard.qml
         qml/components/RecommendationHero.qml
+        qml/components/RowActionCard.qml
         qml/components/SeasonCard.qml
         qml/components/SectionTitle.qml
     RESOURCES
@@ -171,6 +189,22 @@ if(TATER_STEAM_RELEASE)
     install(FILES "${TATER_MPV_LICENSE}"
         DESTINATION licenses
         RENAME mpv-LGPL-2.1-or-later.txt
+    )
+    install(FILES "${TATER_MPV_LIBASS}" "${TATER_MPV_LIBPLACEBO}"
+                  "${TATER_MPV_LIBJPEG}"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+    install(FILES "${TATER_MPV_LIBASS_COPYRIGHT}"
+        DESTINATION licenses
+        RENAME libass-Copyright.txt
+    )
+    install(FILES "${TATER_MPV_LIBPLACEBO_COPYRIGHT}"
+        DESTINATION licenses
+        RENAME libplacebo-Copyright.txt
+    )
+    install(FILES "${TATER_MPV_LIBJPEG_COPYRIGHT}"
+        DESTINATION licenses
+        RENAME libjpeg-turbo-Copyright.txt
     )
     install(FILES
         "${TATER_MPV_BUILD_OPTIONS}"

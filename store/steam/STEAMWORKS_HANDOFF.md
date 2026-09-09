@@ -69,7 +69,7 @@ silence is intentional.
 
 - Use `AI_DISCLOSURE.md` for the pre-generated and live-generated AI portions
   of the Steam Content Survey.
-- State that Tater Tube Server 1.4.33 or newer is required and is not included.
+- State that Tater Tube Server 1.4.34 or newer is required and is not included.
 - State that the application supplies no movies, television programs, or live
   channels.
 - Do not claim Steam Deck Verified. Valve assigns compatibility after review.
@@ -92,6 +92,9 @@ Steam Input configuration:
   and Mouse` controller template. The player intentionally maps its Deck and
   DualSense outputs—WASD, 1/2/3/4, Space, E, R, F, Escape, and Tab—to the same
   navigation and playback actions as a native SDL gamepad.
+- During playback, X/R reveals the overlay and then cycles audio tracks; Y/F
+  reveals it and then cycles subtitles. The overlay itself has no focus
+  navigation state.
 - Do not require customers to select a different controller template.
 - Test the untouched Steam default on both the built-in Deck controls and a
   DualSense before marking controller-support fields complete.

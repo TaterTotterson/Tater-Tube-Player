@@ -53,8 +53,9 @@ with:
   bumpers, and station IDs;
 - play/pause, 10-second seeking, volume, back, and auto-hiding playback controls
   for Steam Input, keyboard, and touch;
-- compact playback-overlay controls that cycle subtitle and alternate audio
-  tracks, with the best non-commentary English audio selected by default;
+- compact, navigation-free playback-overlay controls: X cycles alternate audio
+  tracks and Y cycles subtitles after either button reveals the overlay, with
+  the best non-commentary English audio selected by default;
 - resume-position loading and periodic playback progress updates;
 - local poster discovery for media-adjacent `poster`, `folder`, `cover`, and
   title-matched JPG, PNG, or WebP files;
@@ -74,7 +75,7 @@ Requirements:
 - Qt 6.8+ with Quick, Quick Controls, QML, Multimedia, Network, and Test
 - A C++20 compiler
 - Tater Tube Server with the `/api/v1/player/home` endpoint
-- Tater Tube Server 1.4.33+ for the complete first Steam release feature set
+- Tater Tube Server 1.4.34+ for the complete first Steam release feature set
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug

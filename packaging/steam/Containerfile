@@ -28,11 +28,10 @@ RUN apt-get update \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Steam Runtime 4 supplies the matching shared libass and libplacebo runtime
-# libraries but omits their development packages. Extract only their headers,
-# pkg-config records, and copyright files from pinned Debian packages. The
-# runtime libraries themselves remain Valve-supplied and are not copied into
-# the Tater depot.
+# Extract the matching libass and libplacebo development records from pinned
+# Debian packages. The exact runtime libraries are retained with the audited
+# mpv build below: SteamOS itself can carry a newer SONAME than Steam Runtime 4,
+# so relying on the host silently disables native playback on some Decks.
 RUN set -eux; \
     mkdir -p /tmp/tater-dev /opt/tater-mpv/share/licenses/runtime; \
     curl -fsSL -o /tmp/libass-dev.deb \
@@ -53,6 +52,8 @@ RUN set -eux; \
         /opt/tater-mpv/share/licenses/runtime/libass-copyright; \
     cp /tmp/tater-dev/libplacebo/usr/share/doc/libplacebo-dev/copyright \
         /opt/tater-mpv/share/licenses/runtime/libplacebo-copyright; \
+    cp /usr/share/doc/libjpeg62-turbo/copyright \
+        /opt/tater-mpv/share/licenses/runtime/libjpeg-turbo-copyright; \
     rm -rf /tmp/tater-dev /tmp/libass-dev.deb /tmp/libplacebo-dev.deb
 
 # Build one shared LGPL-only FFmpeg stack for both Qt Multimedia and mpv. No
@@ -150,7 +151,13 @@ RUN set -eux; \
         -Dpdf-build=disabled; \
     meson compile -C build; \
     meson install -C build; \
-    mkdir -p /opt/tater-mpv/share/tater /opt/tater-mpv/share/licenses/mpv; \
+    mkdir -p /opt/tater-mpv/lib /opt/tater-mpv/share/tater \
+        /opt/tater-mpv/share/licenses/mpv; \
+    cp -L /usr/lib/x86_64-linux-gnu/libass.so.9 /opt/tater-mpv/lib/libass.so.9; \
+    cp -L /usr/lib/x86_64-linux-gnu/libplacebo.so.349 \
+        /opt/tater-mpv/lib/libplacebo.so.349; \
+    cp -L /usr/lib/x86_64-linux-gnu/libjpeg.so.62 \
+        /opt/tater-mpv/lib/libjpeg.so.62; \
     meson configure build > /opt/tater-mpv/share/tater/mpv-build-options.txt; \
     cp Copyright /opt/tater-mpv/share/licenses/mpv/Copyright; \
     cp LICENSE.LGPL /opt/tater-mpv/share/licenses/mpv/LICENSE.LGPL; \

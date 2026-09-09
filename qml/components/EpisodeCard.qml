@@ -177,8 +177,10 @@ FocusScope {
         anchors.margins: -6
         radius: 26
         color: "transparent"
-        border.width: card.activeFocus ? 2 : 0
-        border.color: "#55ff7a1a"
+        visible: card.activeFocus
+        border.width: 3
+        border.color: "#ff8738"
+        z: 20
     }
 
     MouseArea {

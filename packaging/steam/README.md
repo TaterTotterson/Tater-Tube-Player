@@ -5,7 +5,8 @@ recommends compiling native Linux applications in the matching runtime SDK; the
 Containerfile supplies that environment and installs the official shared Qt
 distribution. The release container builds FFmpeg 7.1.5 with GPL, version-3,
 and nonfree components disabled, then builds mpv 0.40.0 with `-Dgpl=false`.
-The depot carries that LGPL-only build as `bin/tater-mpv`, a separate native
+The depot carries that LGPL-only build as `bin/tater-mpv`, with its matching
+libass and libplacebo shared-library SONAMEs, as a separate native
 playback process so SteamOS can use Gamescope's Wayland/Vulkan HDR path and
 send HDMI bitstream audio formats accepted by the connected display. The Qt
 Multimedia player remains the fallback outside the Linux Steam build.
