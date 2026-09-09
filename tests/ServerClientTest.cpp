@@ -565,12 +565,37 @@ void ServerClientTest::postsPlaybackProgress()
         {QStringLiteral("path"), QStringLiteral("Test Movie.mkv")},
     }, 12345, 60000, false);
 
+    QCOMPARE(client.continueWatching().size(), 1);
+    const QVariantMap optimisticItem = client.continueWatching().constFirst().toMap();
+    QCOMPARE(optimisticItem.value(QStringLiteral("title")).toString(),
+             QStringLiteral("Test Movie"));
+    QCOMPARE(optimisticItem.value(QStringLiteral("viewOffset")).toLongLong(), 12345);
+    QCOMPARE(optimisticItem.value(QStringLiteral("viewOffsetSeconds")).toDouble(), 12.345);
+    QCOMPARE(optimisticItem.value(QStringLiteral("progressPercent")).toDouble(), 20.575);
+
     QTRY_VERIFY_WITH_TIMEOUT(requests.contains("POST /api/tater/playstate "), 3000);
     QVERIFY(requests.contains("Authorization: Bearer progress-token"));
     QVERIFY(requests.contains("\"categoryId\":\"local:movies\""));
     QVERIFY(requests.contains("\"durationMs\":60000"));
     QVERIFY(requests.contains("\"path\":\"Test Movie.mkv\""));
     QVERIFY(requests.contains("\"positionMs\":12345"));
+    QTRY_VERIFY_WITH_TIMEOUT(!client.homeLoading(), 3000);
+    QCOMPARE(client.continueWatching().size(), 1);
+    QCOMPARE(client.continueWatching().constFirst().toMap()
+                 .value(QStringLiteral("viewOffset")).toLongLong(), 12345);
+
+    client.savePlaybackProgress({
+        {QStringLiteral("playStateId"), QStringLiteral("local:state")},
+        {QStringLiteral("title"), QStringLiteral("Test Movie")},
+        {QStringLiteral("mediaType"), QStringLiteral("movie")},
+        {QStringLiteral("categoryId"), QStringLiteral("local:movies")},
+        {QStringLiteral("sourceIndex"), 0},
+        {QStringLiteral("path"), QStringLiteral("Test Movie.mkv")},
+    }, 60000, 60000, true);
+    QCOMPARE(client.continueWatching().size(), 0);
+    client.refreshHome();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.homeLoading(), 3000);
+    QCOMPARE(client.continueWatching().size(), 0);
 
     settings.clear();
 }

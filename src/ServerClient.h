@@ -259,6 +259,10 @@ private:
     void handlePairReply(QNetworkReply *reply, const QString &baseUrl);
     void handleServerInfoReply(QNetworkReply *reply);
     void handleHomeReply(QNetworkReply *reply);
+    void applyLocalPlaybackProgress(const QVariantMap &item, qint64 positionMs,
+                                    qint64 durationMs, bool completed,
+                                    bool persistAndNotify);
+    void applyPendingPlaybackProgress();
     void clearLocalPlaybackProgress(const QVariantMap &item);
     static QString responseError(const QByteArray &body, const QString &fallback);
 
@@ -298,6 +302,11 @@ private:
     QHash<QString, DiscoverCacheEntry> m_discoverCache;
     int m_discoverGeneration = 0;
     int m_playbackGeneration = 0;
+    QVariantMap m_pendingPlaybackItem;
+    qint64 m_pendingPlaybackPositionMs = 0;
+    qint64 m_pendingPlaybackDurationMs = 0;
+    qint64 m_pendingPlaybackStoredAtMs = 0;
+    bool m_pendingPlaybackCompleted = false;
     bool m_discoverLoading = false;
     QVariantList m_recommendations;
     QVariantMap m_recommendationBatch;

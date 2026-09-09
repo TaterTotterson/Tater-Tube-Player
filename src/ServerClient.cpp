@@ -218,6 +218,52 @@ bool scrubPlaybackProgress(QVariantList &items, const QVariantMap &target,
     }
     return changed;
 }
+
+void setPlaybackProgressFields(QVariantMap &item, qint64 positionMs,
+                               qint64 durationMs)
+{
+    const qint64 safePositionMs = qMax<qint64>(0, positionMs);
+    const qint64 safeDurationMs = qMax<qint64>(0, durationMs);
+    item.insert(QStringLiteral("viewOffset"), safePositionMs);
+    item.insert(QStringLiteral("viewOffsetSeconds"), safePositionMs / 1000.0);
+    if (safeDurationMs > 0) {
+        item.insert(QStringLiteral("durationSeconds"), safeDurationMs / 1000.0);
+        item.insert(QStringLiteral("progressPercent"),
+                    qBound(0.0, safePositionMs * 100.0 / safeDurationMs, 100.0));
+    }
+}
+
+bool updatePlaybackProgress(QVariantMap &candidate, const QVariantMap &target,
+                            qint64 positionMs, qint64 durationMs)
+{
+    QVariantMap resumeItem = candidate.value(QStringLiteral("resumeItem")).toMap();
+    const bool resumeMatches = !resumeItem.isEmpty()
+        && playStateMatches(resumeItem, target);
+    const bool candidateMatches = playStateMatches(candidate, target);
+    if (!resumeMatches && !candidateMatches)
+        return false;
+
+    if (resumeMatches) {
+        setPlaybackProgressFields(resumeItem, positionMs, durationMs);
+        candidate.insert(QStringLiteral("resumeItem"), resumeItem);
+    }
+    setPlaybackProgressFields(candidate, positionMs, durationMs);
+    return true;
+}
+
+bool updatePlaybackProgress(QVariantList &items, const QVariantMap &target,
+                            qint64 positionMs, qint64 durationMs)
+{
+    bool changed = false;
+    for (qsizetype index = 0; index < items.size(); ++index) {
+        QVariantMap candidate = items.at(index).toMap();
+        if (!updatePlaybackProgress(candidate, target, positionMs, durationMs))
+            continue;
+        items[index] = candidate;
+        changed = true;
+    }
+    return changed;
+}
 }
 
 ServerClient::ServerClient(QObject *parent)
@@ -447,6 +493,7 @@ void ServerClient::handleLibraryRowsReply(QNetworkReply *reply, int generation)
     const QJsonObject data = QJsonDocument::fromJson(body).object()
                                  .value("data").toObject();
     m_libraryRows = data.value("rows").toArray().toVariantList();
+    applyPendingPlaybackProgress();
     m_libraryRowsStoredAtMs = QDateTime::currentMSecsSinceEpoch();
     m_libraryErrorMessage.clear();
     setOnline(true);
@@ -1229,6 +1276,13 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
     if (path.isEmpty() || categoryId.isEmpty())
         return;
 
+    m_pendingPlaybackItem = item;
+    m_pendingPlaybackPositionMs = qMax<qint64>(0, positionMs);
+    m_pendingPlaybackDurationMs = qMax<qint64>(0, durationMs);
+    m_pendingPlaybackCompleted = completed;
+    m_pendingPlaybackStoredAtMs = QDateTime::currentMSecsSinceEpoch();
+    applyLocalPlaybackProgress(item, positionMs, durationMs, completed, true);
+
     QJsonObject payload{
         {QStringLiteral("id"), item.value(QStringLiteral("playStateId")).toString()},
         {QStringLiteral("seriesId"), item.value(QStringLiteral("seriesStateId")).toString()},
@@ -1251,6 +1305,136 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
     QNetworkReply *reply = m_network.post(
         request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+}
+
+void ServerClient::applyLocalPlaybackProgress(const QVariantMap &item,
+                                              qint64 positionMs,
+                                              qint64 durationMs,
+                                              bool completed,
+                                              bool persistAndNotify)
+{
+    bool homeDataChanged = false;
+    bool libraryDataChanged = false;
+    bool discoverDataChanged = false;
+    bool recommendationsDataChanged = false;
+    bool cachedDataChanged = false;
+
+    if (completed) {
+        homeDataChanged = scrubPlaybackProgress(m_continueWatching, item, true);
+    } else if (positionMs > 0) {
+        const bool foundInContinue = updatePlaybackProgress(
+            m_continueWatching, item, positionMs, durationMs);
+        homeDataChanged = foundInContinue;
+        if (!foundInContinue) {
+            QVariantMap resumeItem = item;
+            setPlaybackProgressFields(resumeItem, positionMs, durationMs);
+            m_continueWatching.prepend(resumeItem);
+            homeDataChanged = true;
+        }
+    }
+
+    if (completed) {
+        homeDataChanged = scrubPlaybackProgress(m_recentlyAdded, item, false)
+            || homeDataChanged;
+        const bool browsingContinue = !m_libraryHistory.isEmpty()
+            && m_libraryHistory.constLast().continueWatching;
+        libraryDataChanged = scrubPlaybackProgress(
+            m_libraryItems, item, browsingContinue);
+        recommendationsDataChanged = scrubPlaybackProgress(
+            m_recommendations, item, false);
+        discoverDataChanged = scrubPlaybackProgress(m_discoverItems, item, false);
+    } else {
+        homeDataChanged = updatePlaybackProgress(
+            m_recentlyAdded, item, positionMs, durationMs) || homeDataChanged;
+        libraryDataChanged = updatePlaybackProgress(
+            m_libraryItems, item, positionMs, durationMs);
+        recommendationsDataChanged = updatePlaybackProgress(
+            m_recommendations, item, positionMs, durationMs);
+        discoverDataChanged = updatePlaybackProgress(
+            m_discoverItems, item, positionMs, durationMs);
+    }
+
+    for (qsizetype rowIndex = m_libraryRows.size(); rowIndex-- > 0;) {
+        QVariantMap row = m_libraryRows.at(rowIndex).toMap();
+        QVariantList items = row.value(QStringLiteral("items")).toList();
+        const bool continueRow = row.value(QStringLiteral("entry")).toMap()
+                                     .value(QStringLiteral("type")).toString()
+                                     .compare(QStringLiteral("continue"),
+                                              Qt::CaseInsensitive) == 0;
+        bool changed = completed
+            ? scrubPlaybackProgress(items, item, continueRow)
+            : updatePlaybackProgress(items, item, positionMs, durationMs);
+        if (!completed && continueRow && !changed && positionMs > 0) {
+            QVariantMap resumeItem = item;
+            setPlaybackProgressFields(resumeItem, positionMs, durationMs);
+            items.prepend(resumeItem);
+            changed = true;
+        }
+        if (!changed)
+            continue;
+        libraryDataChanged = true;
+        if (continueRow && items.isEmpty()) {
+            m_libraryRows.removeAt(rowIndex);
+            continue;
+        }
+        row.insert(QStringLiteral("items"), items);
+        m_libraryRows[rowIndex] = row;
+    }
+
+    for (auto it = m_libraryCache.begin(); it != m_libraryCache.end(); ++it) {
+        const bool continuePage = it.key().endsWith(QStringLiteral("\n1"));
+        if (completed) {
+            cachedDataChanged = scrubPlaybackProgress(
+                it->items, item, continuePage) || cachedDataChanged;
+        } else {
+            const bool changed = updatePlaybackProgress(
+                it->items, item, positionMs, durationMs);
+            cachedDataChanged = changed || cachedDataChanged;
+            if (continuePage && !changed && positionMs > 0) {
+                QVariantMap resumeItem = item;
+                setPlaybackProgressFields(resumeItem, positionMs, durationMs);
+                it->items.prepend(resumeItem);
+                cachedDataChanged = true;
+            }
+        }
+    }
+    for (auto it = m_discoverCache.begin(); it != m_discoverCache.end(); ++it) {
+        if (completed)
+            cachedDataChanged = scrubPlaybackProgress(
+                it->items, item, false) || cachedDataChanged;
+        else
+            cachedDataChanged = updatePlaybackProgress(
+                it->items, item, positionMs, durationMs) || cachedDataChanged;
+    }
+
+    if (!persistAndNotify)
+        return;
+    if (homeDataChanged || libraryDataChanged || discoverDataChanged
+        || recommendationsDataChanged || cachedDataChanged) {
+        saveContentCache();
+    }
+    if (homeDataChanged)
+        emit homeChanged();
+    if (libraryDataChanged)
+        emit libraryChanged();
+    if (discoverDataChanged)
+        emit discoverChanged();
+    if (recommendationsDataChanged)
+        emit recommendationsChanged();
+}
+
+void ServerClient::applyPendingPlaybackProgress()
+{
+    constexpr qint64 kPendingProgressLifetimeMs = 30000;
+    if (m_pendingPlaybackItem.isEmpty()
+        || QDateTime::currentMSecsSinceEpoch() - m_pendingPlaybackStoredAtMs
+            > kPendingProgressLifetimeMs) {
+        return;
+    }
+    applyLocalPlaybackProgress(m_pendingPlaybackItem,
+                               m_pendingPlaybackPositionMs,
+                               m_pendingPlaybackDurationMs,
+                               m_pendingPlaybackCompleted, false);
 }
 
 void ServerClient::clearPlaybackProgress(const QVariantMap &item)
@@ -1303,6 +1487,11 @@ void ServerClient::clearPlaybackProgress(const QVariantMap &item)
             return;
         }
 
+        m_pendingPlaybackItem = item;
+        m_pendingPlaybackPositionMs = 0;
+        m_pendingPlaybackDurationMs = 0;
+        m_pendingPlaybackCompleted = true;
+        m_pendingPlaybackStoredAtMs = QDateTime::currentMSecsSinceEpoch();
         clearLocalPlaybackProgress(item);
         emit playbackProgressCleared();
         refreshHome();
@@ -1927,6 +2116,7 @@ void ServerClient::handleHomeReply(QNetworkReply *reply)
     m_libraries = data.value("libraries").toArray().toVariantList();
     m_capabilities = data.value("capabilities").toObject().toVariantMap();
     m_homeHero = data.value("hero").toObject().toVariantMap();
+    applyPendingPlaybackProgress();
     if (m_capabilities.contains(QStringLiteral("newznab"))
         && !m_capabilities.value(QStringLiteral("newznab")).toBool()) {
         resetDiscover();
@@ -2010,6 +2200,7 @@ void ServerClient::handleLibraryReply(QNetworkReply *reply,
     m_libraryItems = refreshedItems;
     m_libraryTitle = refreshedTitle;
     m_libraryErrorMessage.clear();
+    applyPendingPlaybackProgress();
     m_libraryCache.insert(libraryCacheKey(location), LibraryCacheEntry{
         m_libraryItems, m_libraryTitle, QDateTime::currentMSecsSinceEpoch(),
     });
@@ -2140,6 +2331,7 @@ void ServerClient::handleDiscoverFeedReply(QNetworkReply *reply, int generation,
         m_discoverTitle = fallbackTitle.isEmpty() ? QStringLiteral("Discover") : fallbackTitle;
     m_discoverMediaType = mediaType;
     m_discoverErrorMessage.clear();
+    applyPendingPlaybackProgress();
     m_discoverCache.insert(cacheKey, DiscoverCacheEntry{
         m_discoverItems, m_discoverTitle, m_discoverMediaType,
         QDateTime::currentMSecsSinceEpoch(),
@@ -2194,6 +2386,7 @@ void ServerClient::handleDiscoverSearchReply(QNetworkReply *reply, int generatio
         m_discoverTitle = fallbackTitle;
     m_discoverMediaType = mediaType;
     m_discoverErrorMessage.clear();
+    applyPendingPlaybackProgress();
     m_discoverCache.insert(cacheKey, DiscoverCacheEntry{
         m_discoverItems, m_discoverTitle, m_discoverMediaType,
         QDateTime::currentMSecsSinceEpoch(),
@@ -2409,6 +2602,7 @@ void ServerClient::handleRecommendationsReply(QNetworkReply *reply, int generati
     m_recommendations = recommendations;
     m_recommendationBatch = data.value(QStringLiteral("batch")).toObject().toVariantMap();
     m_recommendationsErrorMessage.clear();
+    applyPendingPlaybackProgress();
     setOnline(true);
     saveContentCache();
     emit recommendationsChanged();

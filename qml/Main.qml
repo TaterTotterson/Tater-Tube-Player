@@ -2270,8 +2270,7 @@ ApplicationWindow {
     function navigateLeft() {
         if (sideMenuOpen)
             return
-        if (!moveFocus(-1, 0))
-            openSideMenu()
+        moveFocus(-1, 0)
     }
 
     function navigateRight() {
@@ -2404,6 +2403,9 @@ ApplicationWindow {
         }
         function onBack() {
             root.goBack()
+        }
+        function onMenuRequested() {
+            root.toggleSideMenuFromInput()
         }
         function onSubtitles() {
             if (root.playbackOpen)

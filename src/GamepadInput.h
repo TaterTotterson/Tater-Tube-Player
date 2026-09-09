@@ -25,6 +25,7 @@ signals:
     void pageDown();
     void accept();
     void back();
+    void menuRequested();
     void subtitles();
     void audioTracks();
 
