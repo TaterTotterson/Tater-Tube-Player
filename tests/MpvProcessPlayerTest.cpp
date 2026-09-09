@@ -108,6 +108,7 @@ void MpvProcessPlayerTest::configuresNetworkReadAhead()
     QVERIFY(arguments.contains(QStringLiteral("--cache-pause-initial=yes")));
     QVERIFY(arguments.contains(QStringLiteral("--demuxer-readahead-secs=20")));
     QVERIFY(arguments.contains(QStringLiteral("--demuxer-max-bytes=256MiB")));
+    QVERIFY(!arguments.contains(QStringLiteral("--osc=no")));
 }
 
 QTEST_GUILESS_MAIN(MpvProcessPlayerTest)

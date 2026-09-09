@@ -936,7 +936,6 @@ QStringList MpvProcessPlayer::mpvArguments() const
         QStringLiteral("--fullscreen=yes"),
         QStringLiteral("--force-window=yes"),
         QStringLiteral("--keep-open=no"),
-        QStringLiteral("--osc=no"),
         QStringLiteral("--input-default-bindings=no"),
         QStringLiteral("--input-conf=%1").arg(inputConfigPath()),
         QStringLiteral("--input-ipc-server=%1").arg(m_ipcPath),
