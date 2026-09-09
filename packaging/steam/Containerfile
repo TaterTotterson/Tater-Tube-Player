@@ -159,6 +159,14 @@ RUN set -eux; \
         /opt/tater-mpv/lib/libplacebo.so.349; \
     cp -L /usr/lib/x86_64-linux-gnu/libjpeg.so.62 \
         /opt/tater-mpv/lib/libjpeg.so.62; \
+    cp -L /usr/lib/x86_64-linux-gnu/liblcms2.so.2 \
+        /opt/tater-mpv/lib/liblcms2.so.2; \
+    cp -L /usr/lib/x86_64-linux-gnu/libunibreak.so.6 \
+        /opt/tater-mpv/lib/libunibreak.so.6; \
+    cp /usr/share/doc/liblcms2-2/copyright \
+        /opt/tater-mpv/share/licenses/runtime/liblcms2-copyright; \
+    cp /usr/share/doc/libunibreak6/copyright \
+        /opt/tater-mpv/share/licenses/runtime/libunibreak-copyright; \
     meson configure build > /opt/tater-mpv/share/tater/mpv-build-options.txt; \
     cp Copyright /opt/tater-mpv/share/licenses/mpv/Copyright; \
     cp LICENSE.LGPL /opt/tater-mpv/share/licenses/mpv/LICENSE.LGPL; \

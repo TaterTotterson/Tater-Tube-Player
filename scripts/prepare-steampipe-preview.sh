@@ -27,6 +27,7 @@ tater_repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 tater_depot_name=${TATER_STEAM_DEPOT_NAME:-linux-x86_64}
 tater_steampipe_name=${TATER_STEAMPIPE_NAME:-steampipe}
 tater_builder_image=${TATER_STEAM_BUILDER_IMAGE:-tater-tube-player-steam-builder:latest}
+tater_platform_image=${TATER_STEAM_PLATFORM_IMAGE:-registry.gitlab.steamos.cloud/steamrt/steamrt4/platform@sha256:a6654ccd5ec00774ba98f0dd2cb300b411a4d686b59984a6008127e0af77ea34}
 
 case "$tater_depot_name" in
     *[!A-Za-z0-9._-]*|'')
@@ -77,6 +78,19 @@ case "$(uname -s)" in
             ./scripts/audit-steam-depot.sh "/workspace/dist/steam/$tater_depot_name"
         ;;
 esac
+
+if ! command -v docker >/dev/null 2>&1 || \
+    ! docker image inspect "$tater_platform_image" >/dev/null 2>&1; then
+    echo "The pinned Steam Runtime 4 platform image is required for the customer-runtime audit:" >&2
+    echo "  docker pull --platform linux/amd64 $tater_platform_image" >&2
+    exit 1
+fi
+docker run --rm --platform linux/amd64 \
+    --volume "$tater_repo_dir:/workspace:ro" \
+    --workdir /workspace \
+    "$tater_platform_image" \
+    ./scripts/audit-steam-platform-runtime.sh \
+    "/workspace/dist/steam/$tater_depot_name"
 
 mkdir -p "$tater_scripts_dir" "$tater_output_dir/output"
 

@@ -6,7 +6,8 @@ Containerfile supplies that environment and installs the official shared Qt
 distribution. The release container builds FFmpeg 7.1.5 with GPL, version-3,
 and nonfree components disabled, then builds mpv 0.40.0 with `-Dgpl=false`.
 The depot carries that LGPL-only build as `bin/tater-mpv`, with its matching
-libass and libplacebo shared-library SONAMEs, as a separate native
+libass and libplacebo shared-library SONAMEs plus their required Little CMS
+and libunibreak runtime libraries, as a separate native
 playback process so SteamOS can use Gamescope's Wayland/Vulkan HDR path and
 send HDMI bitstream audio formats accepted by the connected display. The Qt
 Multimedia player remains the fallback outside the Linux Steam build.
@@ -33,6 +34,16 @@ The script creates `dist/steam/linux-x86_64/`. It refuses to overwrite an
 existing depot so stale libraries cannot silently survive between builds. It
 also materializes Linux library links as regular files because SteamPipe
 uploads made from macOS do not retain symbolic-link entries.
+
+Before SteamPipe files are generated, the complete depot is also started and
+dependency-scanned in the pinned Steam Runtime 4 platform image. This catches
+libraries available in the larger SDK but absent from Valve's customer
+runtime. Pull that image once on the upload host:
+
+```sh
+docker pull --platform linux/amd64 \
+  registry.gitlab.steamos.cloud/steamrt/steamrt4/platform@sha256:a6654ccd5ec00774ba98f0dd2cb300b411a4d686b59984a6008127e0af77ea34
+```
 
 After committing the exact release revision, prepare the retained source
 archives with:

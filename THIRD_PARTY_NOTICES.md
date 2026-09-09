@@ -85,7 +85,7 @@ release records.
 - Source: https://github.com/mpv-player/mpv
 - License information: https://github.com/mpv-player/mpv/blob/master/Copyright
 
-## libass, libplacebo, and libjpeg-turbo
+## libass, libplacebo, libjpeg-turbo, Little CMS, and libunibreak
 
 The native mpv playback process dynamically uses libass 0.17.3 for subtitle
 rendering and libplacebo 7.349.0 for its Vulkan video-rendering pipeline. The
@@ -96,11 +96,16 @@ image support. libass and libjpeg-turbo use permissive terms; libplacebo is
 distributed under LGPLv2.1-or-later. Their complete Debian
 copyright and license notices are included in the depot as
 `licenses/libass-Copyright.txt`, `licenses/libplacebo-Copyright.txt`, and
-`licenses/libjpeg-turbo-Copyright.txt`.
+`licenses/libjpeg-turbo-Copyright.txt`. The depot also carries Little CMS 2
+and libunibreak, permissively licensed transitive dependencies of this native
+playback stack, with their complete notices in
+`licenses/liblcms2-Copyright.txt` and `licenses/libunibreak-Copyright.txt`.
 
 - libass: https://github.com/libass/libass
 - libplacebo: https://code.videolan.org/videolan/libplacebo
 - libjpeg-turbo: https://libjpeg-turbo.org/
+- Little CMS: https://www.littlecms.com/
+- libunibreak: https://github.com/adah1972/libunibreak
 
 ## Transitive components
 

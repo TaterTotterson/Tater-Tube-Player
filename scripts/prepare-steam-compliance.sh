@@ -39,7 +39,8 @@ tater_qt_prefix=$("${tater_qtpaths}" --query QT_INSTALL_PREFIX)
     uname -a
     if command -v dpkg-query >/dev/null 2>&1; then
         dpkg-query -W -f='${Package} ${Version}\n' \
-            libsdl2-2.0-0 libsdl2-dev libass9 libplacebo349 2>/dev/null || true
+            libsdl2-2.0-0 libsdl2-dev libass9 libplacebo349 \
+            liblcms2-2 libunibreak6 2>/dev/null || true
     fi
 } > "${tater_compliance_dir}/steam-runtime.txt"
 

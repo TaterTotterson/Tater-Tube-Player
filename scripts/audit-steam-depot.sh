@@ -47,6 +47,8 @@ for tater_required in \
     licenses/libass-Copyright.txt \
     licenses/libplacebo-Copyright.txt \
     licenses/libjpeg-turbo-Copyright.txt \
+    licenses/liblcms2-Copyright.txt \
+    licenses/libunibreak-Copyright.txt \
     licenses/RELINKING_QT.md \
     licenses/Unicode-3.0-ICU-73.2.txt \
     licenses/source-manifest.txt \
@@ -62,7 +64,9 @@ for tater_required in \
     tater_require_file "${tater_required}"
 done
 
-for tater_native_runtime in lib/libass.so.9 lib/libplacebo.so.349 lib/libjpeg.so.62; do
+for tater_native_runtime in \
+    lib/libass.so.9 lib/libplacebo.so.349 lib/libjpeg.so.62 \
+    lib/liblcms2.so.2 lib/libunibreak.so.6; do
     tater_require_file "${tater_native_runtime}"
 done
 
