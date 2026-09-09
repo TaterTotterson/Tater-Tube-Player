@@ -5134,10 +5134,6 @@ ApplicationWindow {
 
         function onLoaded() {
             root.handlePlaybackLoaded()
-            Qt.callLater(function() {
-                root.raise()
-                root.requestActivate()
-            })
         }
 
         function onPlaybackStateChanged() {
@@ -5168,15 +5164,21 @@ ApplicationWindow {
         }
 
         function onEndOfMedia() {
+            root.raise()
+            root.requestActivate()
             root.handlePlaybackEnd()
         }
 
         function onClosed() {
+            root.raise()
+            root.requestActivate()
             if (root.playbackOpen && !root.playbackEnded)
                 root.closePlayback()
         }
 
         function onErrorOccurred(message) {
+            root.raise()
+            root.requestActivate()
             root.handlePlaybackError(message)
         }
     }

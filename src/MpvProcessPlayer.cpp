@@ -406,8 +406,14 @@ void MpvProcessPlayer::startProcess()
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     const QString gamescopeWayland = environment.value(
         QStringLiteral("GAMESCOPE_WAYLAND_DISPLAY")).trimmed();
-    if (!gamescopeWayland.isEmpty())
+    if (!gamescopeWayland.isEmpty()) {
         environment.insert(QStringLiteral("WAYLAND_DISPLAY"), gamescopeWayland);
+        // Gamescope's game-facing Wayland compositor does not currently expose
+        // wp_viewporter, which mpv's native Wayland window requires. SDL's X11
+        // window runs through Gamescope's supported XWayland path instead.
+        if (!environment.value(QStringLiteral("DISPLAY")).trimmed().isEmpty())
+            environment.insert(QStringLiteral("SDL_VIDEODRIVER"), QStringLiteral("x11"));
+    }
     if (QFileInfo(m_executable).fileName() == QStringLiteral("tater-mpv")) {
         const QString libraryDirectory = QDir(QFileInfo(m_executable).absolutePath())
                                              .absoluteFilePath(QStringLiteral("../lib"));
@@ -939,8 +945,6 @@ QStringList MpvProcessPlayer::mpvArguments() const
         QStringLiteral("--input-default-bindings=no"),
         QStringLiteral("--input-conf=%1").arg(inputConfigPath()),
         QStringLiteral("--input-ipc-server=%1").arg(m_ipcPath),
-        QStringLiteral("--hwdec=auto-safe"),
-        QStringLiteral("--vo=gpu-next"),
         QStringLiteral("--target-colorspace-hint=auto"),
         QStringLiteral("--tone-mapping=auto"),
         QStringLiteral("--audio-channels=auto-safe"),
@@ -958,8 +962,14 @@ QStringList MpvProcessPlayer::mpvArguments() const
             m_title.isEmpty() ? QStringLiteral("Tater Tube") : m_title),
     };
     if (qEnvironmentVariableIsSet("GAMESCOPE_WAYLAND_DISPLAY")) {
-        arguments.append(QStringLiteral("--gpu-api=vulkan"));
-        arguments.append(QStringLiteral("--gpu-context=waylandvk"));
+        // mpv's SDL output is LGPL-compatible and works with Gamescope's
+        // XWayland surface. Its Wayland Vulkan context fails before the first
+        // frame when wp_viewporter is unavailable.
+        arguments.append(QStringLiteral("--hwdec=vaapi-copy"));
+        arguments.append(QStringLiteral("--vo=sdl"));
+    } else {
+        arguments.append(QStringLiteral("--hwdec=auto-safe"));
+        arguments.append(QStringLiteral("--vo=gpu-next"));
     }
 
     QStringList passthrough;

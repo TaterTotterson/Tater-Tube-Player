@@ -69,26 +69,26 @@ matching `icu4c-73_2-src.tgz` upstream source archive.
 
 ## mpv
 
-The Steam/Linux release launches mpv as a separate program for native Vulkan
-video output, hardware decoding, HDR presentation through Gamescope, and HDMI
-audio passthrough. It is not linked into the Apache-licensed Tater Tube Player
-executable.
+The Steam/Linux release launches mpv as a separate program for native video
+output, hardware decoding, subtitle rendering, and HDMI audio passthrough. It
+is not linked into the Apache-licensed Tater Tube Player executable.
 
 The release builds mpv 0.40.0 from its pinned upstream source archive with
-Meson's `-Dgpl=false` option. GPL-only paths, including mpv's X11 video output,
-are disabled; the Steam/Gamescope path uses Wayland and Vulkan. This build is
-distributed under LGPLv2.1-or-later. Its complete copyright file, LGPL text,
-exact Meson option record, and corresponding source are included with the
-release records.
+Meson's `-Dgpl=false` option. GPL-only paths, including mpv's own X11 video
+output, are disabled. In Steam Gaming Mode, mpv uses its LGPL-compatible SDL
+video output on Gamescope's XWayland surface with VAAPI copy-back hardware
+decoding. This build is distributed under LGPLv2.1-or-later. Its complete
+copyright file, LGPL text, exact Meson option record, and corresponding source
+are included with the release records.
 
 - Project: https://mpv.io/
 - Source: https://github.com/mpv-player/mpv
 - License information: https://github.com/mpv-player/mpv/blob/master/Copyright
 
-## libass, libplacebo, libjpeg-turbo, Little CMS, and libunibreak
+## Native playback support libraries
 
 The native mpv playback process dynamically uses libass 0.17.3 for subtitle
-rendering and libplacebo 7.349.0 for its Vulkan video-rendering pipeline. The
+rendering and libplacebo 7.349.0 for its GPU video-rendering pipeline. The
 Steam depot carries the exact shared-library SONAMEs used to build mpv so the
 native player does not depend on whichever versions happen to be installed by
 SteamOS. The same release carries libjpeg-turbo 2.1.5, which mpv uses for JPEG
@@ -100,12 +100,16 @@ copyright and license notices are included in the depot as
 and libunibreak, permissively licensed transitive dependencies of this native
 playback stack, with their complete notices in
 `licenses/liblcms2-Copyright.txt` and `licenses/libunibreak-Copyright.txt`.
+The native hardware-decoding path also uses the permissively licensed
+libdisplay-info library; its complete notice is included as
+`licenses/libdisplay-info-Copyright.txt`.
 
 - libass: https://github.com/libass/libass
 - libplacebo: https://code.videolan.org/videolan/libplacebo
 - libjpeg-turbo: https://libjpeg-turbo.org/
 - Little CMS: https://www.littlecms.com/
 - libunibreak: https://github.com/adah1972/libunibreak
+- libdisplay-info: https://gitlab.freedesktop.org/emersion/libdisplay-info
 
 ## Transitive components
 

@@ -7,10 +7,18 @@ distribution. The release container builds FFmpeg 7.1.5 with GPL, version-3,
 and nonfree components disabled, then builds mpv 0.40.0 with `-Dgpl=false`.
 The depot carries that LGPL-only build as `bin/tater-mpv`, with its matching
 libass and libplacebo shared-library SONAMEs plus their required Little CMS
-and libunibreak runtime libraries, as a separate native
-playback process so SteamOS can use Gamescope's Wayland/Vulkan HDR path and
-send HDMI bitstream audio formats accepted by the connected display. The Qt
-Multimedia player remains the fallback outside the Linux Steam build.
+and libunibreak runtime libraries, as a separate native playback process so
+SteamOS can use hardware decoding and send HDMI bitstream audio formats
+accepted by the connected display. The Qt
+Multimedia player is used by non-Steam builds.
+
+In Steam Gaming Mode, the native process uses mpv's LGPL-compatible SDL video
+output through Gamescope's XWayland surface. Gamescope's game-facing Wayland
+surface does not expose `wp_viewporter`, which mpv 0.40's native Wayland
+window requires. The Deck uses VAAPI copy-back hardware decoding on this path
+and reports an SDR presentation surface so the server tone-maps HDR sources
+safely. Other compatible Wayland desktops continue to use mpv's `gpu-next`
+output.
 
 The Steam Deck Arch/Distrobox build is only for fast hardware development. Its
 system FFmpeg and mpv packages must not be redistributed.

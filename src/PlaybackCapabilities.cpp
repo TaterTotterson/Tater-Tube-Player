@@ -188,9 +188,15 @@ QVariantMap PlaybackCapabilities::report() const
     }
 
     const ConnectedDisplayReport display = connectedDisplayReport(m_outputConnection);
-    const bool hdrTransportAvailable = environmentFlag("TATER_DISPLAY_HDR_ENABLED",
-        environmentFlag("ENABLE_GAMESCOPE_WSI", false)
-            && environmentFlag("STEAM_GAMESCOPE_HDR_SUPPORTED", true));
+    // The Steam Gaming Mode output renders through SDL/XWayland, whose
+    // output surface is SDR. Keep the physical display formats in the report,
+    // but do not advertise an HDR playback path so the server tone-maps safely.
+    const bool gamescopeSdlOutput = m_nativePlayback
+        && qEnvironmentVariableIsSet("GAMESCOPE_WAYLAND_DISPLAY");
+    const bool hdrTransportAvailable = !gamescopeSdlOutput
+        && environmentFlag("TATER_DISPLAY_HDR_ENABLED",
+            environmentFlag("ENABLE_GAMESCOPE_WSI", false)
+                && environmentFlag("STEAM_GAMESCOPE_HDR_SUPPORTED", true));
     const bool hdrEnabled = !display.hdrFormats.isEmpty() && hdrTransportAvailable;
     QStringList videoHDRFormats = environmentList("TATER_VIDEO_HDR_FORMATS");
     if (videoHDRFormats.isEmpty() && hdrEnabled) {

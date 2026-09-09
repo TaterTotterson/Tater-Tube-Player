@@ -17,6 +17,7 @@ private slots:
     void exposesCompactAudioLabels();
     void selectsBundledEngineWithoutColdStartProbe();
     void configuresNetworkReadAhead();
+    void selectsGamescopeCompatibleVideoOutput();
 };
 
 void MpvProcessPlayerTest::prefersBestEnglishAudioTrack()
@@ -109,6 +110,22 @@ void MpvProcessPlayerTest::configuresNetworkReadAhead()
     QVERIFY(arguments.contains(QStringLiteral("--demuxer-readahead-secs=20")));
     QVERIFY(arguments.contains(QStringLiteral("--demuxer-max-bytes=256MiB")));
     QVERIFY(!arguments.contains(QStringLiteral("--osc=no")));
+}
+
+void MpvProcessPlayerTest::selectsGamescopeCompatibleVideoOutput()
+{
+    const QByteArray previous = qgetenv("GAMESCOPE_WAYLAND_DISPLAY");
+    qputenv("GAMESCOPE_WAYLAND_DISPLAY", QByteArrayLiteral("gamescope-test"));
+    MpvProcessPlayer player;
+    const QStringList arguments = player.mpvArguments();
+    if (previous.isNull())
+        qunsetenv("GAMESCOPE_WAYLAND_DISPLAY");
+    else
+        qputenv("GAMESCOPE_WAYLAND_DISPLAY", previous);
+
+    QVERIFY(arguments.contains(QStringLiteral("--vo=sdl")));
+    QVERIFY(arguments.contains(QStringLiteral("--hwdec=vaapi-copy")));
+    QVERIFY(!arguments.contains(QStringLiteral("--gpu-context=waylandvk")));
 }
 
 QTEST_GUILESS_MAIN(MpvProcessPlayerTest)

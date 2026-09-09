@@ -49,6 +49,7 @@ for tater_required in \
     licenses/libjpeg-turbo-Copyright.txt \
     licenses/liblcms2-Copyright.txt \
     licenses/libunibreak-Copyright.txt \
+    licenses/libdisplay-info-Copyright.txt \
     licenses/RELINKING_QT.md \
     licenses/Unicode-3.0-ICU-73.2.txt \
     licenses/source-manifest.txt \
@@ -66,7 +67,7 @@ done
 
 for tater_native_runtime in \
     lib/libass.so.9 lib/libplacebo.so.349 lib/libjpeg.so.62 \
-    lib/liblcms2.so.2 lib/libunibreak.so.6; do
+    lib/liblcms2.so.2 lib/libunibreak.so.6 lib/libdisplay-info.so.2; do
     tater_require_file "${tater_native_runtime}"
 done
 
@@ -97,10 +98,11 @@ if grep -E -i -q 'gpl[[:space:]]+true' \
     tater_failed=1
 fi
 for tater_mpv_disabled in \
-    x11 gl-x11 egl-x11 vdpau dmabuf-wayland vaapi-drm lcms2; do
+    x11 gl-x11 egl-x11 vdpau dmabuf-wayland lcms2; do
     tater_require_mpv_option "${tater_mpv_disabled}" disabled
 done
-for tater_mpv_enabled in wayland vulkan vaapi vaapi-wayland; do
+for tater_mpv_enabled in \
+    wayland vulkan drm vaapi vaapi-drm vaapi-wayland sdl2 sdl2-video; do
     tater_require_mpv_option "${tater_mpv_enabled}" enabled
 done
 
@@ -114,6 +116,8 @@ if command -v readelf >/dev/null 2>&1 && [ -f "${tater_mpv_binary}" ]; then
             libass.so.9|libavcodec.so.61|libavfilter.so.10|libavformat.so.61|\
             libavutil.so.59|libplacebo.so.349|libswresample.so.5|libswscale.so.8|\
             libjpeg.so.62|libm.so.6|libz.so.1|libasound.so.2|\
+            libSDL2-2.0.so.0|libdisplay-info.so.2|libva-drm.so.2|libdrm.so.2|\
+            libgbm.so.1|\
             libpipewire-0.3.so.0|libpulse.so.0|libwayland-client.so.0|\
             libwayland-cursor.so.0|libxkbcommon.so.0|libEGL.so.1|\
             libwayland-egl.so.1|libvulkan.so.1|libva-wayland.so.2|libva.so.2|\

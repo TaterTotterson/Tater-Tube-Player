@@ -94,7 +94,8 @@ RUN set -eux; \
 RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        libass9 liblcms2-dev libplacebo349 libunibreak-dev wayland-protocols; \
+        libass9 libdisplay-info-dev liblcms2-dev libplacebo349 \
+        libunibreak-dev wayland-protocols; \
     ln -s libass.so.9 /usr/lib/x86_64-linux-gnu/libass.so; \
     ln -s libplacebo.so.349 /usr/lib/x86_64-linux-gnu/libplacebo.so; \
     rm -rf /var/lib/apt/lists/*; \
@@ -119,9 +120,10 @@ RUN set -eux; \
         -Dvdpau-gl-x11=disabled \
         -Dwayland=enabled \
         -Dvulkan=enabled \
+        -Ddrm=enabled \
         -Ddmabuf-wayland=disabled \
         -Dvaapi=enabled \
-        -Dvaapi-drm=disabled \
+        -Dvaapi-drm=enabled \
         -Dvaapi-wayland=enabled \
         -Dvaapi-x11=disabled \
         -Dalsa=enabled \
@@ -129,10 +131,10 @@ RUN set -eux; \
         -Dpulse=enabled \
         -Djack=disabled \
         -Doss-audio=disabled \
-        -Dsdl2=disabled \
+        -Dsdl2=enabled \
         -Dsdl2-audio=disabled \
         -Dsdl2-gamepad=disabled \
-        -Dsdl2-video=disabled \
+        -Dsdl2-video=enabled \
         -Dcaca=disabled \
         -Dcdda=disabled \
         -Ddvbin=disabled \
@@ -163,10 +165,14 @@ RUN set -eux; \
         /opt/tater-mpv/lib/liblcms2.so.2; \
     cp -L /usr/lib/x86_64-linux-gnu/libunibreak.so.6 \
         /opt/tater-mpv/lib/libunibreak.so.6; \
+    cp -L /usr/lib/x86_64-linux-gnu/libdisplay-info.so.2 \
+        /opt/tater-mpv/lib/libdisplay-info.so.2; \
     cp /usr/share/doc/liblcms2-2/copyright \
         /opt/tater-mpv/share/licenses/runtime/liblcms2-copyright; \
     cp /usr/share/doc/libunibreak6/copyright \
         /opt/tater-mpv/share/licenses/runtime/libunibreak-copyright; \
+    cp /usr/share/doc/libdisplay-info2/copyright \
+        /opt/tater-mpv/share/licenses/runtime/libdisplay-info-copyright; \
     meson configure build > /opt/tater-mpv/share/tater/mpv-build-options.txt; \
     cp Copyright /opt/tater-mpv/share/licenses/mpv/Copyright; \
     cp LICENSE.LGPL /opt/tater-mpv/share/licenses/mpv/LICENSE.LGPL; \
