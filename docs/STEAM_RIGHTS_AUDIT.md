@@ -1,6 +1,6 @@
 # Steam release-rights audit
 
-Audit date: September 8, 2026
+Audit date: September 10, 2026
 
 This is an engineering and release-record audit, not legal advice. Valve makes
 the final distribution decision, and the Steam Distribution Agreement places
@@ -31,7 +31,7 @@ CEG so users remain able to replace LGPL libraries.
 | Component | Distribution relationship | License plan | Status |
 | --- | --- | --- | --- |
 | Tater Tube Player | Main application | Apache-2.0; public tagged source | Ready after clean release tag |
-| Qt 6.11.2 | Dynamically linked shared libraries and QML plugins | LGPLv3; license, source, SBOM, and relinking instructions | Plan complete; final source URLs pending |
+| Qt 6.11.2 | Dynamically linked shared libraries and QML plugins | LGPLv3; license, source, module SBOMs, and relinking instructions | Plan complete; final source URLs pending |
 | FFmpeg 7.1.5 | Dynamically linked shared libraries used by Qt Multimedia and mpv | LGPLv2.1+ and permissive parts; GPL/version3/nonfree disabled | Configuration audited; final source URL pending |
 | ICU 73.2 | Dynamically linked shared libraries supplied with Qt | Unicode License; full license/data notices included | Recorded |
 | SDL 2.32.70 | Dynamically linked from Steam Runtime 4; not copied into depot | Zlib | Recorded |
@@ -88,10 +88,12 @@ are true:
 8. Complete a separate codec-patent review for the intended distribution
    territories; open-source copyright licenses do not grant patent rights.
 
-The audit script intentionally rejects a dirty final build, placeholder source
-locations, forbidden old-runtime components, Steamworks binaries, a mismatched
-SHA-256 inventory, an mpv build that is not recorded with `gpl=false`, or an
-FFmpeg build missing the required GPL/nonfree disable flags.
+The audit script intentionally rejects a dirty final build, a revision that is
+not the exact matching version tag, placeholder or non-HTTPS source locations,
+invalid source hashes, forbidden ROM/game/media payloads, old-runtime
+components, Steamworks binaries, a mismatched depot SHA-256 inventory, an mpv
+build that is not recorded with `gpl=false`, or an FFmpeg build missing the
+required GPL/nonfree disable flags.
 
 ## Suggested Valve reviewer note
 

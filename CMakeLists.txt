@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(TaterTubePlayer
-    VERSION 0.3.11
+    VERSION 0.3.19
     DESCRIPTION "A modern player for Tater Tube Server"
     LANGUAGES CXX
 )
@@ -122,11 +122,13 @@ qt_add_qml_module(tater-tube-player
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/Navigation.js
         qml/ViewingHistory.js
         qml/components/AmbientBackdrop.qml
         qml/components/FocusButton.qml
         qml/components/EpisodeCard.qml
         qml/components/DiscoveryCategoryCard.qml
+        qml/components/DiscoveryResultRow.qml
         qml/components/FrostedGlass.qml
         qml/components/GuideProgramCard.qml
         qml/components/HorizontalMediaRow.qml

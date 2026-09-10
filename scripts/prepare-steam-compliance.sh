@@ -51,7 +51,8 @@ for tater_sbom_root in \
     if [ -d "${tater_sbom_root}" ]; then
         find "${tater_sbom_root}" -maxdepth 1 -type f \
             \( -name 'qtbase-*.spdx' -o -name 'qtdeclarative-*.spdx' \
-               -o -name 'qtmultimedia-*.spdx' \) \
+               -o -name 'qtmultimedia-*.spdx' -o -name 'qtsvg-*.spdx' \
+               -o -name 'qtwayland-*.spdx' \) \
             -exec cp {} "${tater_compliance_dir}/qt-sbom/" \;
     fi
 done

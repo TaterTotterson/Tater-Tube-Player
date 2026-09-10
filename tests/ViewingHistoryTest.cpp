@@ -12,6 +12,9 @@ private slots:
     void rejectsExpiredHomeGuideEntries();
     void keepsPausedLiveProgramWhenBroadcastGuideAdvances();
     void retainsOnDemandEpisodeIdentity();
+    void clampsGridNavigationToPartialFinalRows();
+    void keepsVerticalNavigationOnNearestShelf();
+    void resolvesHomeShelfDestinations();
 private:
     QJSEngine engine;
 };
@@ -24,6 +27,13 @@ void ViewingHistoryTest::initTestCase()
     source.remove(QStringLiteral(".pragma library"));
     const auto result = engine.evaluate(source);
     QVERIFY2(!result.isError(), qPrintable(result.toString()));
+
+    QFile navigation(QStringLiteral(TATER_PLAYER_QML_DIR "/Navigation.js"));
+    QVERIFY(navigation.open(QIODevice::ReadOnly));
+    source = QString::fromUtf8(navigation.readAll());
+    source.remove(QStringLiteral(".pragma library"));
+    const auto navigationResult = engine.evaluate(source);
+    QVERIFY2(!navigationResult.isError(), qPrintable(navigationResult.toString()));
 }
 
 void ViewingHistoryTest::countsPlaybackWithoutCountingSeeksStallsOrSleep()
@@ -101,6 +111,54 @@ void ViewingHistoryTest::retainsOnDemandEpisodeIdentity()
     QCOMPARE(episode.property("item").property("seriesTitle").toString(), QStringLiteral("Harbor Street"));
     QCOMPARE(episode.property("positionMs").toInt(), 30000);
     QCOMPARE(episode.property("durationMs").toInt(), 1200000);
+}
+
+void ViewingHistoryTest::clampsGridNavigationToPartialFinalRows()
+{
+    // Four columns with a two-card final row: columns three and four above it
+    // should both land on the last card instead of refusing to move down.
+    QCOMPARE(engine.evaluate("verticalGridTarget(4, 10, 4, 1)").toInt(), 8);
+    QCOMPARE(engine.evaluate("verticalGridTarget(5, 10, 4, 1)").toInt(), 9);
+    QCOMPARE(engine.evaluate("verticalGridTarget(6, 10, 4, 1)").toInt(), 9);
+    QCOMPARE(engine.evaluate("verticalGridTarget(7, 10, 4, 1)").toInt(), 9);
+
+    // Once focus is already in that final row there is nowhere farther down.
+    QCOMPARE(engine.evaluate("verticalGridTarget(8, 10, 4, 1)").toInt(), -1);
+    QCOMPARE(engine.evaluate("verticalGridTarget(9, 10, 4, 1)").toInt(), -1);
+    QCOMPARE(engine.evaluate("verticalGridTarget(9, 10, 4, -1)").toInt(), 5);
+}
+
+void ViewingHistoryTest::keepsVerticalNavigationOnNearestShelf()
+{
+    engine.evaluate(R"(
+        var shelfPoints = [
+            {x: 120, y: 100},
+            {x: 1180, y: 310},
+            {x: 120, y: 520}
+        ];
+    )");
+    // Even when the next shelf is left on a far-right action card, Down must
+    // enter that shelf instead of skipping to the horizontally aligned row.
+    QCOMPARE(engine.evaluate("verticalFocusTarget(shelfPoints, 0, 1, 36)").toInt(), 1);
+    QCOMPARE(engine.evaluate("verticalFocusTarget(shelfPoints, 2, -1, 36)").toInt(), 1);
+    QCOMPARE(engine.evaluate("verticalFocusTarget(shelfPoints, 1, -1, 36)").toInt(), 0);
+}
+
+void ViewingHistoryTest::resolvesHomeShelfDestinations()
+{
+    engine.evaluate(R"(
+        var shelfRows = [
+            {entry: {type: 'continue', title: 'Server Continue'}},
+            {entry: {id: 'local-discover:recent', type: 'localDiscover',
+                     title: 'Server Recent'}}
+        ];
+        var continueEntry = homeShelfEntry(shelfRows, 'continue');
+        var recentEntry = homeShelfEntry(shelfRows, 'recent');
+        var fallbackRecent = homeShelfEntry([], 'recent');
+    )");
+    QCOMPARE(engine.evaluate("continueEntry.title").toString(), QStringLiteral("Server Continue"));
+    QCOMPARE(engine.evaluate("recentEntry.id").toString(), QStringLiteral("local-discover:recent"));
+    QCOMPARE(engine.evaluate("fallbackRecent.id").toString(), QStringLiteral("local-discover:recent"));
 }
 
 QTEST_GUILESS_MAIN(ViewingHistoryTest)

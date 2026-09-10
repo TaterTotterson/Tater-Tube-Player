@@ -12,11 +12,24 @@ if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
     exit 1
 fi
 
-if [ "${TATER_STEAM_DRAFT:-0}" != "1" ] \
-    && [ -n "$(git -C "${tater_repo_dir}" status --porcelain)" ]; then
-    echo "A final Steam depot must be built from a clean, tagged source tree." >&2
-    echo "Use TATER_STEAM_DRAFT=1 only for an explicitly non-release test depot." >&2
-    exit 1
+if [ "${TATER_STEAM_DRAFT:-0}" != "1" ]; then
+    if [ -n "$(git -C "${tater_repo_dir}" status --porcelain)" ]; then
+        echo "A final Steam depot must be built from a clean, tagged source tree." >&2
+        echo "Use TATER_STEAM_DRAFT=1 only for an explicitly non-release test depot." >&2
+        exit 1
+    fi
+
+    tater_release_version=$(awk '
+        /^project\(TaterTubePlayer/ { in_project = 1 }
+        in_project && $1 == "VERSION" { print $2; exit }
+    ' "${tater_repo_dir}/CMakeLists.txt")
+    tater_release_tag=$(git -C "${tater_repo_dir}" describe --tags --exact-match HEAD \
+        2>/dev/null || true)
+    if [ -z "${tater_release_version}" ] \
+        || [ "${tater_release_tag}" != "v${tater_release_version}" ]; then
+        echo "A final Steam depot must be built from the matching v${tater_release_version:-unknown} tag." >&2
+        exit 1
+    fi
 fi
 
 if [ -e "${tater_depot_dir}" ]; then

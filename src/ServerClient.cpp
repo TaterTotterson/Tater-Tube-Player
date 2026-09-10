@@ -17,9 +17,15 @@
 #include <QTemporaryFile>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QUuid>
 
 #include <algorithm>
+#include <condition_variable>
 #include <limits>
+#include <mutex>
+#include <optional>
+#include <thread>
+#include <utility>
 
 namespace {
 constexpr auto kSettingsServerUrl = "connection/serverUrl";
@@ -30,6 +36,8 @@ constexpr int kContentCacheVersion = 1;
 constexpr int kMaximumCachedLibraryPages = 48;
 constexpr int kMaximumCachedDiscoverPages = 48;
 constexpr qint64 kMaximumRecommendationAudioBytes = 8 * 1024 * 1024;
+constexpr qint64 kRecommendationSpeechClaimTimeoutMs = 15000;
+constexpr int kContentCacheSaveDelayMs = 650;
 
 void restrictSettingsToCurrentUser(QSettings &settings)
 {
@@ -145,39 +153,64 @@ QString normalizedPlayStatePath(QString value)
     return value.trimmed().replace('\\', '/');
 }
 
-QStringList playStateIDs(const QVariantMap &item)
-{
-    QStringList ids;
-    for (const QString &key : {QStringLiteral("seriesStateId"),
-                               QStringLiteral("playStateId")}) {
-        const QString id = item.value(key).toString().trimmed();
-        if (!id.isEmpty() && !ids.contains(id))
-            ids.append(id);
-    }
-    return ids;
-}
-
 bool playStateMatches(const QVariantMap &candidate, const QVariantMap &target)
 {
-    const QStringList targetIDs = playStateIDs(target);
-    const QStringList candidateIDs = playStateIDs(candidate);
-    for (const QString &id : targetIDs) {
-        if (candidateIDs.contains(id))
-            return true;
-    }
-
     const QString targetPath = normalizedPlayStatePath(
         target.value(QStringLiteral("path")).toString());
     const QString candidatePath = normalizedPlayStatePath(
         candidate.value(QStringLiteral("path")).toString());
-    if (targetPath.isEmpty() || targetPath != candidatePath)
+    if (!targetPath.isEmpty() && !candidatePath.isEmpty()) {
+        // Episodes share one seriesStateId so Continue Watching can advance
+        // through a show. That shared ID must not make every episode in the
+        // visible season look like the same playback item. A local file is
+        // identified by its category, source, and exact relative path.
+        return targetPath == candidatePath
+            && normalizedPlayStateCategory(
+                   target.value(QStringLiteral("categoryId")).toString())
+                == normalizedPlayStateCategory(
+                    candidate.value(QStringLiteral("categoryId")).toString())
+            && target.value(QStringLiteral("sourceIndex")).toInt()
+                == candidate.value(QStringLiteral("sourceIndex")).toInt();
+    }
+
+    // Discover items do not have local paths, so their stable per-title play
+    // state ID remains the correct identity. Deliberately do not compare the
+    // series ID here: it describes a group, not one playable episode.
+    const QString targetID = target.value(QStringLiteral("playStateId"))
+                                 .toString().trimmed();
+    const QString candidateID = candidate.value(QStringLiteral("playStateId"))
+                                    .toString().trimmed();
+    return !targetID.isEmpty() && targetID == candidateID;
+}
+
+bool playbackContainerIncludes(const QVariantMap &candidate,
+                               const QVariantMap &target)
+{
+    if (target.value(QStringLiteral("mediaType")).toString()
+            .compare(QStringLiteral("episode"), Qt::CaseInsensitive) != 0) {
         return false;
+    }
+    const QString candidateType = candidate.value(QStringLiteral("mediaType"))
+                                      .toString().trimmed().toLower();
+    if (candidateType != QStringLiteral("show")
+        && candidateType != QStringLiteral("season")) {
+        return false;
+    }
+
+    const QString containerPath = normalizedPlayStatePath(
+        candidate.value(QStringLiteral("path")).toString());
+    const QString episodePath = normalizedPlayStatePath(
+        target.value(QStringLiteral("path")).toString());
+    if (containerPath.isEmpty() || episodePath.isEmpty()
+        || !episodePath.startsWith(containerPath + QLatin1Char('/'))) {
+        return false;
+    }
     return normalizedPlayStateCategory(
-               target.value(QStringLiteral("categoryId")).toString())
+               candidate.value(QStringLiteral("categoryId")).toString())
             == normalizedPlayStateCategory(
-                candidate.value(QStringLiteral("categoryId")).toString())
-        && target.value(QStringLiteral("sourceIndex")).toInt()
-            == candidate.value(QStringLiteral("sourceIndex")).toInt();
+                target.value(QStringLiteral("categoryId")).toString())
+        && candidate.value(QStringLiteral("sourceIndex")).toInt()
+            == target.value(QStringLiteral("sourceIndex")).toInt();
 }
 
 bool scrubPlaybackProgress(QVariantMap &candidate, const QVariantMap &target)
@@ -240,10 +273,17 @@ bool updatePlaybackProgress(QVariantMap &candidate, const QVariantMap &target,
     const bool resumeMatches = !resumeItem.isEmpty()
         && playStateMatches(resumeItem, target);
     const bool candidateMatches = playStateMatches(candidate, target);
-    if (!resumeMatches && !candidateMatches)
+    const bool containerMatches = playbackContainerIncludes(candidate, target);
+    if (!resumeMatches && !candidateMatches && !containerMatches)
         return false;
 
-    if (resumeMatches) {
+    if (containerMatches) {
+        resumeItem = target;
+        setPlaybackProgressFields(resumeItem, positionMs, durationMs);
+        candidate.insert(QStringLiteral("resumeTitle"),
+                         target.value(QStringLiteral("title")));
+        candidate.insert(QStringLiteral("resumeItem"), resumeItem);
+    } else if (resumeMatches) {
         setPlaybackProgressFields(resumeItem, positionMs, durationMs);
         candidate.insert(QStringLiteral("resumeItem"), resumeItem);
     }
@@ -266,9 +306,259 @@ bool updatePlaybackProgress(QVariantList &items, const QVariantMap &target,
 }
 }
 
-ServerClient::ServerClient(QObject *parent)
-    : QObject(parent)
+class ContentCacheWriter final
 {
+public:
+    struct LibraryPage {
+        QString key;
+        QVariantList items;
+        QString title;
+        qint64 storedAtMs = 0;
+    };
+
+    struct DiscoverPage {
+        QString key;
+        QVariantList items;
+        QString title;
+        QString mediaType;
+        qint64 storedAtMs = 0;
+    };
+
+    struct Snapshot {
+        QString serverUrl;
+        qint64 savedAtMs = 0;
+        bool homeReady = false;
+        QVariantList continueWatching;
+        QVariantList recentlyAdded;
+        QVariantList liveChannels;
+        QVariantList libraries;
+        QVariantMap capabilities;
+        QVariantMap homeHero;
+        QStringList homeWarnings;
+        QVariantList libraryRows;
+        qint64 libraryRowsStoredAtMs = 0;
+        QVector<LibraryPage> libraryPages;
+        QVariantList discoverCategories;
+        QVector<DiscoverPage> discoverPages;
+        QVariantMap recommendationBatch;
+        QVariantList recommendations;
+        bool liveGuideReady = false;
+        QVariantList liveGuideChannels;
+    };
+
+    ContentCacheWriter()
+        : m_thread([this] { run(); })
+    {
+    }
+
+    ~ContentCacheWriter()
+    {
+        {
+            std::lock_guard lock(m_mutex);
+            m_stopping = true;
+            m_pending.reset();
+        }
+        m_ready.notify_one();
+        if (m_thread.joinable())
+            m_thread.join();
+    }
+
+    void enqueue(QString path, Snapshot snapshot)
+    {
+        {
+            std::lock_guard lock(m_mutex);
+            if (m_stopping)
+                return;
+            m_pending = Job{std::move(path), std::move(snapshot), m_generation};
+        }
+        m_ready.notify_one();
+    }
+
+    void invalidate()
+    {
+        std::lock_guard lock(m_mutex);
+        ++m_generation;
+        m_pending.reset();
+    }
+
+private:
+    struct Job {
+        QString path;
+        Snapshot snapshot;
+        quint64 generation = 0;
+    };
+
+    static bool isGuideInterstitial(const QVariant &value)
+    {
+        const QString kind = value.toMap().value(QStringLiteral("kind"))
+                                 .toString().trimmed().toLower();
+        return kind == QStringLiteral("commercial")
+            || kind == QStringLiteral("bumper")
+            || kind == QStringLiteral("tater_bumper");
+    }
+
+    static QVariantList compactGuideChannels(const QVariantList &channels)
+    {
+        QVariantList compact;
+        compact.reserve(channels.size());
+        for (const QVariant &value : channels) {
+            QVariantMap channel = value.toMap();
+            const QVariantList schedule = channel.value(QStringLiteral("schedule")).toList();
+            if (schedule.isEmpty()) {
+                compact.append(channel);
+                continue;
+            }
+
+            const double elapsed = channel.value(QStringLiteral("guideElapsedSeconds")).toDouble();
+            qsizetype first = -1;
+            for (qsizetype index = 0; index < schedule.size(); ++index) {
+                const QVariantMap program = schedule.at(index).toMap();
+                const double start = program.value(QStringLiteral("start")).toDouble();
+                const double end = program.value(QStringLiteral("end")).toDouble();
+                if ((start <= elapsed && elapsed < end) || start > elapsed) {
+                    first = index;
+                    break;
+                }
+            }
+            if (first < 0)
+                first = qMax<qsizetype>(0, schedule.size() - 1);
+            while (first > 0 && isGuideInterstitial(schedule.at(first))
+                   && isGuideInterstitial(schedule.at(first - 1))) {
+                --first;
+            }
+
+            QVariantList window;
+            int programs = 0;
+            for (qsizetype index = first; index < schedule.size(); ++index) {
+                const QVariant &program = schedule.at(index);
+                window.append(program);
+                if (!isGuideInterstitial(program) && ++programs >= 4)
+                    break;
+                if (window.size() >= 40)
+                    break;
+            }
+            channel.insert(QStringLiteral("schedule"), window);
+            compact.append(channel);
+        }
+        return compact;
+    }
+
+    static QByteArray serialize(Snapshot snapshot)
+    {
+        std::sort(snapshot.libraryPages.begin(), snapshot.libraryPages.end(),
+                  [](const LibraryPage &left, const LibraryPage &right) {
+            return left.storedAtMs > right.storedAtMs;
+        });
+        std::sort(snapshot.discoverPages.begin(), snapshot.discoverPages.end(),
+                  [](const DiscoverPage &left, const DiscoverPage &right) {
+            return left.storedAtMs > right.storedAtMs;
+        });
+
+        QJsonArray libraryPages;
+        for (int index = 0; index < snapshot.libraryPages.size()
+             && index < kMaximumCachedLibraryPages; ++index) {
+            const LibraryPage &page = snapshot.libraryPages.at(index);
+            libraryPages.append(QJsonObject{
+                {QStringLiteral("key"), page.key},
+                {QStringLiteral("items"), QJsonArray::fromVariantList(page.items)},
+                {QStringLiteral("title"), page.title},
+                {QStringLiteral("storedAtMs"), page.storedAtMs},
+            });
+        }
+
+        QJsonArray discoverPages;
+        for (int index = 0; index < snapshot.discoverPages.size()
+             && index < kMaximumCachedDiscoverPages; ++index) {
+            const DiscoverPage &page = snapshot.discoverPages.at(index);
+            discoverPages.append(QJsonObject{
+                {QStringLiteral("key"), page.key},
+                {QStringLiteral("items"), QJsonArray::fromVariantList(page.items)},
+                {QStringLiteral("title"), page.title},
+                {QStringLiteral("mediaType"), page.mediaType},
+                {QStringLiteral("storedAtMs"), page.storedAtMs},
+            });
+        }
+
+        const QJsonObject cache{
+            {QStringLiteral("version"), kContentCacheVersion},
+            {QStringLiteral("serverUrl"), snapshot.serverUrl},
+            {QStringLiteral("savedAtMs"), snapshot.savedAtMs},
+            {QStringLiteral("home"), QJsonObject{
+                {QStringLiteral("ready"), snapshot.homeReady},
+                {QStringLiteral("continueWatching"), QJsonArray::fromVariantList(snapshot.continueWatching)},
+                {QStringLiteral("recentlyAdded"), QJsonArray::fromVariantList(snapshot.recentlyAdded)},
+                {QStringLiteral("liveChannels"), QJsonArray::fromVariantList(snapshot.liveChannels)},
+                {QStringLiteral("libraries"), QJsonArray::fromVariantList(snapshot.libraries)},
+                {QStringLiteral("capabilities"), QJsonObject::fromVariantMap(snapshot.capabilities)},
+                {QStringLiteral("hero"), QJsonObject::fromVariantMap(snapshot.homeHero)},
+                {QStringLiteral("warnings"), QJsonArray::fromStringList(snapshot.homeWarnings)},
+            }},
+            {QStringLiteral("library"), QJsonObject{
+                {QStringLiteral("rows"), QJsonArray::fromVariantList(snapshot.libraryRows)},
+                {QStringLiteral("rowsStoredAtMs"), snapshot.libraryRowsStoredAtMs},
+                {QStringLiteral("pages"), libraryPages},
+            }},
+            {QStringLiteral("discover"), QJsonObject{
+                {QStringLiteral("categories"), QJsonArray::fromVariantList(snapshot.discoverCategories)},
+                {QStringLiteral("pages"), discoverPages},
+            }},
+            {QStringLiteral("recommendations"), QJsonObject{
+                {QStringLiteral("batch"), QJsonObject::fromVariantMap(snapshot.recommendationBatch)},
+                {QStringLiteral("items"), QJsonArray::fromVariantList(snapshot.recommendations)},
+            }},
+            {QStringLiteral("guide"), QJsonObject{
+                {QStringLiteral("ready"), snapshot.liveGuideReady},
+                {QStringLiteral("channels"), QJsonArray::fromVariantList(
+                    compactGuideChannels(snapshot.liveGuideChannels))},
+            }},
+        };
+        return QJsonDocument(cache).toJson(QJsonDocument::Compact);
+    }
+
+    void run()
+    {
+        for (;;) {
+            Job job;
+            {
+                std::unique_lock lock(m_mutex);
+                m_ready.wait(lock, [this] { return m_stopping || m_pending.has_value(); });
+                if (m_stopping)
+                    return;
+                job = std::move(*m_pending);
+                m_pending.reset();
+            }
+
+            const QByteArray data = serialize(std::move(job.snapshot));
+            QSaveFile file(job.path);
+            if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size()) {
+                file.cancelWriting();
+                continue;
+            }
+            std::lock_guard lock(m_mutex);
+            if (job.generation != m_generation) {
+                file.cancelWriting();
+                continue;
+            }
+            file.commit();
+        }
+    }
+
+    quint64 m_generation = 0;
+    bool m_stopping = false;
+    std::mutex m_mutex;
+    std::condition_variable m_ready;
+    std::optional<Job> m_pending;
+    std::thread m_thread;
+};
+
+ServerClient::ServerClient(QObject *parent)
+    : QObject(parent), m_contentCacheWriter(std::make_unique<ContentCacheWriter>())
+{
+    m_libraryShuffleSeed = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_contentCacheSaveTimer.setSingleShot(true);
+    m_contentCacheSaveTimer.setInterval(kContentCacheSaveDelayMs);
+    connect(&m_contentCacheSaveTimer, &QTimer::timeout,
+            this, &ServerClient::writeContentCacheSnapshot);
     m_recommendationSpeechPollTimer.setSingleShot(true);
     connect(&m_recommendationSpeechPollTimer, &QTimer::timeout,
             this, &ServerClient::pollRecommendationSpeech);
@@ -282,6 +572,8 @@ ServerClient::ServerClient(QObject *parent)
     if (paired())
         refresh();
 }
+
+ServerClient::~ServerClient() = default;
 
 QString ServerClient::normalizedServerUrl(const QString &rawUrl)
 {
@@ -458,7 +750,11 @@ void ServerClient::loadLibraryRows(bool forceNetwork)
     ++m_libraryRowsGeneration;
     const int generation = m_libraryRowsGeneration;
     m_libraryRowsPending = 1;
-    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/v1/player/library"))};
+    QUrl libraryUrl(endpointUrl(m_serverUrl, "/api/v1/player/library"));
+    QUrlQuery libraryQuery;
+    libraryQuery.addQueryItem(QStringLiteral("shuffle_seed"), m_libraryShuffleSeed);
+    libraryUrl.setQuery(libraryQuery);
+    QNetworkRequest request{libraryUrl};
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
@@ -866,6 +1162,8 @@ void ServerClient::loadLibraryLocation(const LibraryLocation &location, bool pus
             query.addQueryItem(QStringLiteral("path"), location.path);
         if (!location.title.isEmpty())
             query.addQueryItem(QStringLiteral("title"), location.title);
+        if (location.categoryId.startsWith(QStringLiteral("local-discover:")))
+            query.addQueryItem(QStringLiteral("shuffle_seed"), m_libraryShuffleSeed);
         url.setQuery(query);
     }
 
@@ -928,6 +1226,7 @@ void ServerClient::beginRecommendationSpeech(const QString &batchId)
     m_recommendationSpeechBatchId = requestedBatch;
     m_recommendationSpeechLoading = true;
     m_recommendationSpeechCreating = true;
+    m_recommendationSpeechStartedAtMs = QDateTime::currentMSecsSinceEpoch();
     m_recommendationSpeechDeadline.start();
     emit recommendationSpeechChanged();
 
@@ -991,6 +1290,7 @@ void ServerClient::cancelRecommendationSpeech()
     m_recommendationSpeechRequestId.clear();
     m_recommendationSpeechBatchId.clear();
     m_recommendationSpeechLoading = false;
+    m_recommendationSpeechStartedAtMs = 0;
     m_recommendationSpeechErrorMessage.clear();
     delete m_recommendationSpeechFile.data();
     m_recommendationSpeechFile.clear();
@@ -1032,7 +1332,15 @@ void ServerClient::pollRecommendationSpeech()
             downloadRecommendationSpeech(generation);
         } else if (status == QStringLiteral("pending") || status == QStringLiteral("processing")
                    || status == QStringLiteral("claimed")) {
-            m_recommendationSpeechPollTimer.start(250);
+            if (status == QStringLiteral("pending")
+                && m_recommendationSpeechStartedAtMs > 0
+                && QDateTime::currentMSecsSinceEpoch() - m_recommendationSpeechStartedAtMs
+                    >= kRecommendationSpeechClaimTimeoutMs) {
+                failRecommendationSpeech(QStringLiteral(
+                    "Tater's voice is not available right now. Your picks are ready below."));
+                return;
+            }
+            m_recommendationSpeechPollTimer.start(500);
         } else {
             const QString error = data.value(QStringLiteral("error")).toString().trimmed();
             failRecommendationSpeech(error.isEmpty()
@@ -1243,7 +1551,11 @@ void ServerClient::refreshLiveGuide()
     m_liveGuideLoading = true;
     m_liveGuideErrorMessage.clear();
     emit liveGuideChanged();
-    QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/tater/tv/lineup"))};
+    QUrl lineupUrl(endpointUrl(m_serverUrl, "/api/tater/tv/lineup"));
+    QUrlQuery lineupQuery;
+    lineupQuery.addQueryItem(QStringLiteral("window"), QStringLiteral("player"));
+    lineupUrl.setQuery(lineupQuery);
+    QNetworkRequest request{lineupUrl};
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Authorization", QByteArray("Bearer ") + m_token.toUtf8());
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
@@ -1354,6 +1666,60 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
     QNetworkReply *reply = m_network.post(
         request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+}
+
+void ServerClient::prepareNextEpisode(const QVariantMap &item)
+{
+    const QString mediaType = item.value(QStringLiteral("mediaType"))
+                                  .toString().trimmed().toLower();
+    const QString categoryId = item.value(QStringLiteral("categoryId"))
+                                   .toString().trimmed();
+    const QString path = item.value(QStringLiteral("path")).toString().trimmed();
+    if (!paired() || mediaType != QStringLiteral("episode")
+        || !categoryId.startsWith(QStringLiteral("local:")) || path.isEmpty()) {
+        QTimer::singleShot(0, this, &ServerClient::nextEpisodeUnavailable);
+        return;
+    }
+
+    const QJsonObject payload{
+        {QStringLiteral("id"), item.value(QStringLiteral("playStateId")).toString()},
+        {QStringLiteral("seriesId"), item.value(QStringLiteral("seriesStateId")).toString()},
+        {QStringLiteral("title"), item.value(QStringLiteral("title")).toString()},
+        {QStringLiteral("seriesTitle"), item.value(QStringLiteral("seriesTitle")).toString()},
+        {QStringLiteral("mediaType"), mediaType},
+        {QStringLiteral("categoryId"), categoryId},
+        {QStringLiteral("sourceIndex"), item.value(QStringLiteral("sourceIndex")).toInt()},
+        {QStringLiteral("path"), path},
+    };
+
+    QNetworkReply *reply = m_network.post(
+        taterJSONRequest(m_serverUrl, QStringLiteral("/api/tater/playstate/next"), m_token),
+        QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        const QByteArray body = reply->readAll();
+        const bool succeeded = taterReplySucceeded(reply);
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        reply->deleteLater();
+        if (!succeeded) {
+            if (status == 401 || status == 403) {
+                forgetServer();
+                setErrorMessage("This player is no longer authorized. Pair it with the server again.");
+            }
+            emit nextEpisodeFailed(responseError(
+                body, QStringLiteral("The next episode could not be loaded.")));
+            return;
+        }
+
+        const QJsonObject item = QJsonDocument::fromJson(body).object()
+                                     .value(QStringLiteral("data")).toObject()
+                                     .value(QStringLiteral("item")).toObject();
+        const QVariantMap next = item.toVariantMap();
+        if (next.value(QStringLiteral("streamUrl")).toString().trimmed().isEmpty()) {
+            emit nextEpisodeUnavailable();
+            return;
+        }
+        emit nextEpisodeReady(next);
+    });
 }
 
 void ServerClient::applyLocalPlaybackProgress(const QVariantMap &item,
@@ -1895,9 +2261,17 @@ void ServerClient::loadContentCache()
         || !m_liveGuideChannels.isEmpty();
 }
 
-void ServerClient::saveContentCache() const
+void ServerClient::saveContentCache()
 {
     if (!paired())
+        return;
+
+    m_contentCacheSaveTimer.start();
+}
+
+void ServerClient::writeContentCacheSnapshot()
+{
+    if (!paired() || !m_contentCacheWriter)
         return;
 
     const QString path = contentCachePath();
@@ -1906,95 +2280,44 @@ void ServerClient::saveContentCache() const
     if (!QDir().mkpath(QFileInfo(path).absolutePath()))
         return;
 
-    QJsonObject home{
-        {QStringLiteral("ready"), m_homeReady},
-        {QStringLiteral("continueWatching"), QJsonArray::fromVariantList(m_continueWatching)},
-        {QStringLiteral("recentlyAdded"), QJsonArray::fromVariantList(m_recentlyAdded)},
-        {QStringLiteral("liveChannels"), QJsonArray::fromVariantList(m_liveChannels)},
-        {QStringLiteral("libraries"), QJsonArray::fromVariantList(m_libraries)},
-        {QStringLiteral("capabilities"), QJsonObject::fromVariantMap(m_capabilities)},
-        {QStringLiteral("hero"), QJsonObject::fromVariantMap(m_homeHero)},
-        {QStringLiteral("warnings"), QJsonArray::fromStringList(m_homeWarnings)},
-    };
-
-    QVector<QString> libraryKeys;
-    libraryKeys.reserve(m_libraryCache.size());
-    for (auto it = m_libraryCache.cbegin(); it != m_libraryCache.cend(); ++it)
-        libraryKeys.append(it.key());
-    std::sort(libraryKeys.begin(), libraryKeys.end(), [this](const QString &left,
-                                                             const QString &right) {
-        return m_libraryCache.value(left).storedAtMs
-            > m_libraryCache.value(right).storedAtMs;
-    });
-    QJsonArray libraryPages;
-    for (int index = 0;
-         index < libraryKeys.size() && index < kMaximumCachedLibraryPages; ++index) {
-        const QString &key = libraryKeys.at(index);
-        const LibraryCacheEntry page = m_libraryCache.value(key);
-        libraryPages.append(QJsonObject{
-            {QStringLiteral("key"), key},
-            {QStringLiteral("items"), QJsonArray::fromVariantList(page.items)},
-            {QStringLiteral("title"), page.title},
-            {QStringLiteral("storedAtMs"), page.storedAtMs},
+    ContentCacheWriter::Snapshot snapshot;
+    snapshot.serverUrl = m_serverUrl;
+    snapshot.savedAtMs = QDateTime::currentMSecsSinceEpoch();
+    snapshot.homeReady = m_homeReady;
+    snapshot.continueWatching = m_continueWatching;
+    snapshot.recentlyAdded = m_recentlyAdded;
+    snapshot.liveChannels = m_liveChannels;
+    snapshot.libraries = m_libraries;
+    snapshot.capabilities = m_capabilities;
+    snapshot.homeHero = m_homeHero;
+    snapshot.homeWarnings = m_homeWarnings;
+    snapshot.libraryRows = m_libraryRows;
+    snapshot.libraryRowsStoredAtMs = m_libraryRowsStoredAtMs;
+    snapshot.libraryPages.reserve(m_libraryCache.size());
+    for (auto it = m_libraryCache.cbegin(); it != m_libraryCache.cend(); ++it) {
+        snapshot.libraryPages.append(ContentCacheWriter::LibraryPage{
+            it.key(), it->items, it->title, it->storedAtMs,
         });
     }
-
-    QVector<QString> discoverKeys;
-    discoverKeys.reserve(m_discoverCache.size());
-    for (auto it = m_discoverCache.cbegin(); it != m_discoverCache.cend(); ++it)
-        discoverKeys.append(it.key());
-    std::sort(discoverKeys.begin(), discoverKeys.end(), [this](const QString &left,
-                                                               const QString &right) {
-        return m_discoverCache.value(left).storedAtMs
-            > m_discoverCache.value(right).storedAtMs;
-    });
-    QJsonArray discoverPages;
-    for (int index = 0;
-         index < discoverKeys.size() && index < kMaximumCachedDiscoverPages; ++index) {
-        const QString &key = discoverKeys.at(index);
-        const DiscoverCacheEntry page = m_discoverCache.value(key);
-        discoverPages.append(QJsonObject{
-            {QStringLiteral("key"), key},
-            {QStringLiteral("items"), QJsonArray::fromVariantList(page.items)},
-            {QStringLiteral("title"), page.title},
-            {QStringLiteral("mediaType"), page.mediaType},
-            {QStringLiteral("storedAtMs"), page.storedAtMs},
+    snapshot.discoverCategories = m_discoverCategories;
+    snapshot.discoverPages.reserve(m_discoverCache.size());
+    for (auto it = m_discoverCache.cbegin(); it != m_discoverCache.cend(); ++it) {
+        snapshot.discoverPages.append(ContentCacheWriter::DiscoverPage{
+            it.key(), it->items, it->title, it->mediaType, it->storedAtMs,
         });
     }
-
-    const QJsonObject cache{
-        {QStringLiteral("version"), kContentCacheVersion},
-        {QStringLiteral("serverUrl"), m_serverUrl},
-        {QStringLiteral("savedAtMs"), QDateTime::currentMSecsSinceEpoch()},
-        {QStringLiteral("home"), home},
-        {QStringLiteral("library"), QJsonObject{
-            {QStringLiteral("rows"), QJsonArray::fromVariantList(m_libraryRows)},
-            {QStringLiteral("rowsStoredAtMs"), m_libraryRowsStoredAtMs},
-            {QStringLiteral("pages"), libraryPages},
-        }},
-        {QStringLiteral("discover"), QJsonObject{
-            {QStringLiteral("categories"), QJsonArray::fromVariantList(m_discoverCategories)},
-            {QStringLiteral("pages"), discoverPages},
-        }},
-        {QStringLiteral("recommendations"), QJsonObject{
-            {QStringLiteral("batch"), QJsonObject::fromVariantMap(m_recommendationBatch)},
-            {QStringLiteral("items"), QJsonArray::fromVariantList(m_recommendations)},
-        }},
-        {QStringLiteral("guide"), QJsonObject{
-            {QStringLiteral("ready"), m_liveGuideReady},
-            {QStringLiteral("channels"), QJsonArray::fromVariantList(m_liveGuideChannels)},
-        }},
-    };
-
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return;
-    file.write(QJsonDocument(cache).toJson(QJsonDocument::Compact));
-    file.commit();
+    snapshot.recommendationBatch = m_recommendationBatch;
+    snapshot.recommendations = m_recommendations;
+    snapshot.liveGuideReady = m_liveGuideReady;
+    snapshot.liveGuideChannels = m_liveGuideChannels;
+    m_contentCacheWriter->enqueue(path, std::move(snapshot));
 }
 
-void ServerClient::clearContentCache() const
+void ServerClient::clearContentCache()
 {
+    m_contentCacheSaveTimer.stop();
+    if (m_contentCacheWriter)
+        m_contentCacheWriter->invalidate();
     const QString path = contentCachePath();
     if (!path.isEmpty())
         QFile::remove(path);

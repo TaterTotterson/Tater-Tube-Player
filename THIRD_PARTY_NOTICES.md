@@ -12,6 +12,12 @@ Quick Controls. These modules are used under the GNU Lesser General Public
 License version 3. Qt remains copyright its respective contributors and The Qt
 Company.
 
+The deployed Linux runtime also includes dynamically linked Qt Concurrent,
+DBus, OpenGL, SVG, Wayland Client, Quick Effects, Quick Layouts, Quick Shapes,
+Quick Templates, and supporting QML modules and plugins. The release SBOM
+includes the matching Qt Base, Declarative, Multimedia, SVG, and Wayland SPDX
+records for the exact bundled Qt version.
+
 The full LGPLv3 and incorporated GPLv3 texts are included in
 `packaging/licenses/` and in the `licenses/` directory of the Steam depot.
 Including the GPLv3 text does not mean the Player ships a GPL-only Qt module;

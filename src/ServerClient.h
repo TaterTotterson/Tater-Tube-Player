@@ -13,8 +13,11 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <memory>
+
 class QNetworkReply;
 class QTemporaryFile;
+class ContentCacheWriter;
 
 class ServerClient final : public QObject
 {
@@ -63,6 +66,7 @@ class ServerClient final : public QObject
 
 public:
     explicit ServerClient(QObject *parent = nullptr);
+    ~ServerClient() override;
 
     QString serverUrl() const { return m_serverUrl; }
     QString serverName() const { return m_serverName; }
@@ -138,6 +142,7 @@ public:
                                                    int audioTrack);
     Q_INVOKABLE void savePlaybackProgress(const QVariantMap &item, qint64 positionMs,
                                           qint64 durationMs, bool completed = false);
+    Q_INVOKABLE void prepareNextEpisode(const QVariantMap &item);
     Q_INVOKABLE void clearPlaybackProgress(const QVariantMap &item);
     Q_INVOKABLE QString playbackTranscodeUrl(const QString &streamUrl,
                                              const QString &profile,
@@ -174,6 +179,9 @@ signals:
     void recommendationSpeechReady(const QUrl &audioUrl);
     void playbackPlanReady(const QVariantMap &plan);
     void playbackPlanFailed(const QString &message);
+    void nextEpisodeReady(const QVariantMap &item);
+    void nextEpisodeUnavailable();
+    void nextEpisodeFailed(const QString &message);
     void playbackProgressCleared();
     void playbackProgressClearFailed(const QString &message);
     void liveGuideChanged();
@@ -212,8 +220,9 @@ private:
     void loadSettings();
     void saveSettings() const;
     void loadContentCache();
-    void saveContentCache() const;
-    void clearContentCache() const;
+    void saveContentCache();
+    void writeContentCacheSnapshot();
+    void clearContentCache();
     static QString contentCachePath();
     void setBusy(bool busy);
     void setErrorMessage(const QString &message);
@@ -272,6 +281,8 @@ private:
     static QString responseError(const QByteArray &body, const QString &fallback);
 
     QNetworkAccessManager m_network;
+    std::unique_ptr<ContentCacheWriter> m_contentCacheWriter;
+    QTimer m_contentCacheSaveTimer;
     QString m_serverUrl;
     QString m_token;
     QString m_serverName;
@@ -288,6 +299,7 @@ private:
     QStringList m_homeWarnings;
     QVariantList m_libraryItems;
     QVariantList m_libraryRows;
+    QString m_libraryShuffleSeed;
     QString m_libraryTitle;
     QString m_libraryErrorMessage;
     QVector<LibraryLocation> m_libraryHistory;
@@ -325,6 +337,7 @@ private:
     QString m_recommendationSpeechBatchId;
     QString m_recommendationSpeechRequestId;
     QString m_recommendationSpeechErrorMessage;
+    qint64 m_recommendationSpeechStartedAtMs = 0;
     int m_recommendationSpeechGeneration = 0;
     bool m_recommendationSpeechCreating = false;
     bool m_recommendationSpeechLoading = false;

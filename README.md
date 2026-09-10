@@ -75,7 +75,7 @@ Requirements:
 - Qt 6.8+ with Quick, Quick Controls, QML, Multimedia, Network, and Test
 - A C++20 compiler
 - Tater Tube Server with the `/api/v1/player/home` endpoint
-- Tater Tube Server 1.4.34+ for the complete first Steam release feature set
+- Tater Tube Server 1.4.40+ for the complete first Steam release feature set
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug

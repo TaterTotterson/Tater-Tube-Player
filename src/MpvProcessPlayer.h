@@ -97,6 +97,7 @@ signals:
     void endOfMedia();
     void closed();
     void backRequested();
+    void seekRequested(qint64 deltaMs);
     void audioTracksRequested();
     void subtitlesRequested();
     void errorOccurred(const QString &message);

@@ -17,7 +17,7 @@ dedicated Steamworks link fields for the website and support URLs.
 - Price: `Free`
 - Primary language: English
 - Initial platform: SteamOS / 64-bit Linux
-- Tater Tube Server requirement: version 1.4.34 or newer
+- Tater Tube Server requirement: version 1.4.40 or newer
 
 ## Short description
 
@@ -97,7 +97,7 @@ own review. We can state that the interface is designed for Steam Deck.
 - Graphics: OpenGL 3.3 or Vulkan-capable graphics
 - Network: Broadband network connection
 - Storage: 1 GB available space
-- Additional notes: Requires an accessible Tater Tube Server 1.4.34 or newer. Hardware video decoding is recommended.
+- Additional notes: Requires an accessible Tater Tube Server 1.4.40 or newer. Hardware video decoding is recommended.
 
 ### Recommended
 

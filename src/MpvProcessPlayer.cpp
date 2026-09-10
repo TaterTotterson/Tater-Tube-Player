@@ -531,6 +531,10 @@ void MpvProcessPlayer::handleIpcMessage(const QJsonObject &message)
             ? QString{} : arguments.at(0).toString();
         if (action == QStringLiteral("tater-back"))
             emit backRequested();
+        else if (action == QStringLiteral("tater-seek-back"))
+            emit seekRequested(-10'000);
+        else if (action == QStringLiteral("tater-seek-forward"))
+            emit seekRequested(10'000);
         else if (action == QStringLiteral("tater-audio"))
             emit audioTracksRequested();
         else if (action == QStringLiteral("tater-subtitles"))
@@ -954,8 +958,8 @@ QByteArray MpvProcessPlayer::inputConfigContents()
         "r script-message tater-audio\n"
         "f script-message tater-subtitles\n"
         "SPACE cycle pause\n"
-        "LEFT seek -10 exact\n"
-        "RIGHT seek 10 exact\n"
+        "LEFT script-message tater-seek-back\n"
+        "RIGHT script-message tater-seek-forward\n"
         "UP add volume 5\n"
         "DOWN add volume -5\n");
 }
@@ -983,11 +987,10 @@ QStringList MpvProcessPlayer::mpvArguments() const
         QStringLiteral("--sid=no"),
         QStringLiteral("--osd-color=#fff4ec"),
         QStringLiteral("--osd-border-color=#d0180b04"),
-        QStringLiteral("--osd-bar=yes"),
-        QStringLiteral("--osd-on-seek=bar"),
-        QStringLiteral("--osd-bar-align-y=0.88"),
-        QStringLiteral("--osd-bar-w=72"),
-        QStringLiteral("--osd-bar-h=2"),
+        // Tater Tube renders its own seek timeline through osd-overlay. Keep
+        // mpv's native white seek bar disabled so the two UIs never overlap.
+        QStringLiteral("--osd-bar=no"),
+        QStringLiteral("--osd-on-seek=no"),
         QStringLiteral("--title=Tater Tube Player"),
         QStringLiteral("--force-media-title=%1").arg(
             m_title.isEmpty() ? QStringLiteral("Tater Tube") : m_title),

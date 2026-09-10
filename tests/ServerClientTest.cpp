@@ -119,6 +119,8 @@ private slots:
     void addsAudioOnlyTranscodeParameters();
     void addsVideoOnlyTranscodeParameters();
     void postsPlaybackProgress();
+    void updatesVisibleEpisodeProgressImmediately();
+    void requestsNextEpisodeAcrossSeasons();
     void clearsPlaybackProgress();
     void reportsViewingHistoryForMoviesEpisodesAndTubeTV();
     void gatesTaterFeaturesOnTaterLink();
@@ -203,7 +205,7 @@ void ServerClientTest::loadsVersionedHome()
                     body = R"({"success":true,"data":{"protocolVersion":"1","serverName":"Test Tater Server","serverVersion":"9.9.9","capabilities":{"localMedia":true,"newznab":true,"tubeTV":true,"commercials":true,"taterLink":true},"hero":{"personalized":true,"eyebrow":"TATER LINK  •  PICKED FOR YOU","message":"Friday night calls for a cozy mystery from your library.","assistantName":"Totty"},"continueWatching":[{"title":"Resume Me","mediaType":"movie","progressPercent":25,"poster":"http://tube.test/poster.jpg"}],"recentlyAdded":[{"title":"New Show","mediaType":"show","categoryId":"local:tv","sourceIndex":0,"path":"New Show","date":"2026"}],"liveChannels":[{"number":"12","title":"Cartoons","logoUrl":"http://tube.test/logo/12.png","now":{"title":"Galaxy Rangers","progressPercent":50},"next":{"title":"Creature Feature"}}],"libraries":[{"id":"local:movies","title":"Movies"}],"warnings":["Sample warning"]}})";
                 } else if (request.startsWith("GET /api/tater/recommendations ")) {
                     body = R"({"success":true,"data":{"profile_id":"household","batch":{"id":"batch-one","assistant_name":"Totty","summary":"A cozy mystery fits what you have been watching lately."},"items":[{"id":"pick-one","rank":1,"title":"Moonrise Manor","media_type":"movie","source":"local_media","reason":"A warm mystery with the same relaxed pace.","launch":{"title":"Moonrise Manor","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Moonrise Manor/movie.mkv","streamUrl":"http://tube.test/moonrise","poster":"http://tube.test/moonrise.jpg"}}]}})";
-                } else if (request.startsWith("GET /api/v1/player/library ")) {
+                } else if (request.startsWith("GET /api/v1/player/library")) {
                     body = R"({"success":true,"data":{"rows":[{"title":"Movies","entry":{"id":"local:movies","type":"local","title":"Movies"},"items":[{"title":"Shelf Preview","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"Preview.mkv","streamUrl":"http://tube.test/preview"}]},{"title":"All Movies","entry":{"id":"local-discover:movies","type":"localDiscover","title":"All Movies"},"items":[{"title":"Discovery Preview","type":"localFile","mediaType":"movie","categoryId":"local:movies","sourceIndex":0,"path":"DiscoveryPreview.mkv","streamUrl":"http://tube.test/discovery-preview"}]}]}})";
                 } else if (request.startsWith("GET /api/tater/usenet/catalog ")) {
                     body = R"({"success":true,"data":{"categories":[{"type":"tubeTv","title":"Tube TV"},{"id":"stream","type":"group","title":"Stream","children":[{"type":"discoverRoot","title":"Discover","children":[{"id":"movie:top","type":"discover","title":"Popular Movies","category":"movie"},{"id":"movie:year:2026","type":"discover","title":"New Movies","category":"movie"},{"id":"movie:imdbrating","type":"discover","title":"Featured Movies","category":"movie"},{"id":"series:top","type":"discover","title":"Popular TV","category":"series"},{"id":"series:year:2026","type":"discover","title":"New TV","category":"series"},{"id":"series:imdbrating","type":"discover","title":"Featured TV","category":"series"}]}]},{"type":"localRoot","title":"Local","children":[{"type":"continue","title":"Continue Watching"},{"id":"local:movies","type":"local","title":"Movies"}]}]}})";
@@ -223,7 +225,7 @@ void ServerClientTest::loadsVersionedHome()
                     body = R"({"streams":[{"title":"Discover Me 2026","url":"http://tube.test/api/files/stream?player_token=test-token"}],"_queue_status":"streamable","_tater_play_state_id":"nzb:discover-me","_tater_nzb_url":"http://indexer.test/get/one"})";
                 } else if (request.startsWith("POST /api/v1/player/playback/sessions ")) {
                     body = R"({"success":true,"data":{"stream_url":"http://tube.test/movie?transcode=video","mode":"video_transcode","video_mode":"transcode","audio_mode":"direct","video_codec":"h264","audio_codec":"eac3","quality_label":"Video H.264 • Audio Direct — Dolby Digital Plus","source":{"video_codec":"hevc","audio_codec":"eac3"}}})";
-                } else if (request.startsWith("GET /api/tater/tv/lineup ")) {
+                } else if (request.startsWith("GET /api/tater/tv/lineup?window=player ")) {
                     body = R"({"success":true,"data":{"startedAt":"2026-09-02T12:00:00Z","serverNow":"2026-09-02T12:00:30Z","channels":[{"number":"12","title":"Cartoons","streamUrl":"http://tube.test/live/12","logoUrl":"http://tube.test/logo/12.png","schedule":[{"title":"Playing Now","kind":"movie","categoryId":"local:movies","sourceIndex":2,"path":"Playing Now/movie.mkv","start":0,"end":60},{"title":"Up Next","kind":"movie","categoryId":"local:movies","sourceIndex":2,"path":"Up Next/movie.mkv","start":60,"end":120}]}]}})";
                 } else {
                     body = R"({"success":false,"error":{"message":"Not found"}})";
@@ -257,7 +259,8 @@ void ServerClientTest::loadsVersionedHome()
     ServerClient client;
     QTRY_VERIFY_WITH_TIMEOUT(client.homeReady(), 3000);
     QVERIFY(requests.contains("GET /api/v1/player/home?include_live=0 "));
-    QTRY_VERIFY_WITH_TIMEOUT(requests.contains("GET /api/tater/tv/lineup "), 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        requests.contains("GET /api/tater/tv/lineup?window=player "), 3000);
     QCOMPARE(client.serverName(), QStringLiteral("Test Tater Server"));
     QCOMPARE(client.continueWatching().size(), 1);
     QCOMPARE(client.continueWatching().first().toMap().value("title").toString(),
@@ -287,6 +290,7 @@ void ServerClientTest::loadsVersionedHome()
     QVERIFY(requests.contains("Authorization: Bearer test-token"));
     QTRY_COMPARE_WITH_TIMEOUT(client.libraryRows().size(), 2, 3000);
     QTRY_VERIFY_WITH_TIMEOUT(!client.libraryRowsLoading(), 3000);
+    QVERIFY(requests.contains("GET /api/v1/player/library?shuffle_seed="));
     const QVariantMap movieShelf = client.libraryRows().first().toMap();
     QCOMPARE(movieShelf.value("title").toString(), QStringLiteral("Movies"));
     QCOMPARE(movieShelf.value("items").toList().size(), 1);
@@ -329,6 +333,7 @@ void ServerClientTest::loadsVersionedHome()
     QTRY_COMPARE_WITH_TIMEOUT(client.libraryItems().size(), 3, 3000);
     QCOMPARE(client.libraryTitle(), QStringLiteral("All Movies"));
     QVERIFY(requests.contains("full=1"));
+    QVERIFY(requests.contains("shuffle_seed="));
 
     client.refreshDiscover();
     QTRY_COMPARE_WITH_TIMEOUT(client.discoverCategories().size(), 6, 3000);
@@ -432,6 +437,7 @@ void ServerClientTest::loadsVersionedHome()
     const qsizetype cachedItemRequestCount = requests.count("GET /api/tater/usenet/items?");
     const qsizetype cachedDiscoverRequestCount = requests.count(
         "GET /api/tater/usenet/discover?");
+    QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(cachePath).size() > 0, 3000);
     ServerClient cachedClient;
     QVERIFY(cachedClient.homeReady());
     QCOMPARE(cachedClient.continueWatching().size(), 2);
@@ -623,6 +629,102 @@ void ServerClientTest::postsPlaybackProgress()
     QCOMPARE(client.continueWatching().size(), 0);
 
     settings.clear();
+}
+
+void ServerClientTest::updatesVisibleEpisodeProgressImmediately()
+{
+    TaterNetworkFixture fixture;
+    fixture.handle = [](const QByteArray &request) {
+        FixtureResponse response;
+        if (request.startsWith("GET /api/v1/player/library")) {
+            response.body = R"({"success":true,"data":{"rows":[{"title":"TV Shows","entry":{"id":"local:tv","type":"local","title":"TV Shows"},"items":[{"title":"Orbit","type":"localFolder","mediaType":"show","categoryId":"local:tv","sourceIndex":0,"path":"Orbit"}]},{"title":"Orbit Seasons","entry":{"id":"local:tv","type":"local","title":"Orbit"},"items":[{"title":"Season 1","type":"localFolder","mediaType":"season","categoryId":"local:tv","sourceIndex":0,"path":"Orbit/Season 01"},{"title":"Season 2","type":"localFolder","mediaType":"season","categoryId":"local:tv","sourceIndex":0,"path":"Orbit/Season 02"}]}]}})";
+        } else if (request.startsWith("GET /api/tater/usenet/items?")) {
+            response.body = R"({"success":true,"data":{"title":"Orbit — Season 1","items":[{"title":"S01E01 Launch","type":"localFile","mediaType":"episode","categoryId":"local:tv","sourceIndex":0,"path":"Orbit/Season 01/Orbit.S01E01.mkv","streamUrl":"http://tube.test/orbit-s01e01","playStateId":"local-file:orbit-s01e01","seriesStateId":"local-series:orbit"},{"title":"S01E02 Drift","type":"localFile","mediaType":"episode","categoryId":"local:tv","sourceIndex":0,"path":"Orbit/Season 01/Orbit.S01E02.mkv","streamUrl":"http://tube.test/orbit-s01e02","playStateId":"local-file:orbit-s01e02","seriesStateId":"local-series:orbit"},{"title":"S01E03 Return","type":"localFile","mediaType":"episode","categoryId":"local:tv","sourceIndex":0,"path":"Orbit/Season 01/Orbit.S01E03.mkv","streamUrl":"http://tube.test/orbit-s01e03","playStateId":"local-file:orbit-s01e03","seriesStateId":"local-series:orbit"}]}})";
+        }
+        return response;
+    };
+
+    ServerClient client;
+    QTRY_VERIFY_WITH_TIMEOUT(client.homeReady(), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(client.libraryRows().size(), 2, 3000);
+    client.browseLibrary({
+        {QStringLiteral("categoryId"), QStringLiteral("local:tv")},
+        {QStringLiteral("sourceIndex"), 0},
+        {QStringLiteral("path"), QStringLiteral("Orbit/Season 01")},
+        {QStringLiteral("title"), QStringLiteral("Orbit — Season 1")},
+    });
+    QTRY_COMPARE_WITH_TIMEOUT(client.libraryItems().size(), 3, 3000);
+
+    // The next-episode endpoint intentionally returns the shared series ID as
+    // playStateId. The exact path must still update only the episode currently
+    // playing so the open episode grid changes as soon as playback stops.
+    QVariantMap autoplayedEpisode = client.libraryItems().at(1).toMap();
+    autoplayedEpisode.insert(QStringLiteral("playStateId"),
+                             QStringLiteral("local-series:orbit"));
+    QSignalSpy librarySpy(&client, &ServerClient::libraryChanged);
+    client.savePlaybackProgress(autoplayedEpisode, 180000, 1800000, false);
+
+    QVERIFY(librarySpy.count() > 0);
+    const QVariantList updated = client.libraryItems();
+    QCOMPARE(updated.at(0).toMap().value(QStringLiteral("progressPercent")).toDouble(), 0.0);
+    QCOMPARE(updated.at(1).toMap().value(QStringLiteral("viewOffset")).toLongLong(), 180000);
+    QCOMPARE(updated.at(1).toMap().value(QStringLiteral("progressPercent")).toDouble(), 10.0);
+    QCOMPARE(updated.at(2).toMap().value(QStringLiteral("progressPercent")).toDouble(), 0.0);
+
+    const QVariantMap show = client.libraryRows().at(0).toMap()
+                                 .value(QStringLiteral("items")).toList().at(0).toMap();
+    QCOMPARE(show.value(QStringLiteral("resumeTitle")).toString(),
+             QStringLiteral("S01E02 Drift"));
+    QCOMPARE(show.value(QStringLiteral("resumeItem")).toMap()
+                 .value(QStringLiteral("path")).toString(),
+             QStringLiteral("Orbit/Season 01/Orbit.S01E02.mkv"));
+
+    const QVariantList seasons = client.libraryRows().at(1).toMap()
+                                     .value(QStringLiteral("items")).toList();
+    QCOMPARE(seasons.at(0).toMap().value(QStringLiteral("progressPercent")).toDouble(), 10.0);
+    QVERIFY(!seasons.at(1).toMap().contains(QStringLiteral("progressPercent")));
+}
+
+void ServerClientTest::requestsNextEpisodeAcrossSeasons()
+{
+    TaterNetworkFixture fixture;
+    fixture.handle = [](const QByteArray &request) {
+        FixtureResponse response;
+        if (request.startsWith("POST /api/tater/playstate/next ")) {
+            response.body = R"({"success":true,"data":{"item":{"title":"S02E01 A New Start","type":"localFile","mediaType":"episode","categoryId":"local:tv","sourceIndex":0,"path":"Orbit/Season 02/Orbit.S02E01.mkv","streamUrl":"http://tube.test/orbit-s02e01","playStateId":"local-series:orbit","seriesStateId":"local-series:orbit"}}})";
+        }
+        return response;
+    };
+
+    ServerClient client;
+    QTRY_VERIFY_WITH_TIMEOUT(client.homeReady(), 3000);
+    QSignalSpy readySpy(&client, &ServerClient::nextEpisodeReady);
+    client.prepareNextEpisode({
+        {QStringLiteral("title"), QStringLiteral("S01E10 Finale")},
+        {QStringLiteral("mediaType"), QStringLiteral("episode")},
+        {QStringLiteral("categoryId"), QStringLiteral("local:tv")},
+        {QStringLiteral("sourceIndex"), 0},
+        {QStringLiteral("path"), QStringLiteral("Orbit/Season 01/Orbit.S01E10.mkv")},
+        {QStringLiteral("playStateId"), QStringLiteral("local-series:orbit")},
+        {QStringLiteral("seriesStateId"), QStringLiteral("local-series:orbit")},
+    });
+
+    QTRY_COMPARE_WITH_TIMEOUT(readySpy.count(), 1, 3000);
+    const QVariantMap next = readySpy.constFirst().constFirst().toMap();
+    QCOMPARE(next.value(QStringLiteral("path")).toString(),
+             QStringLiteral("Orbit/Season 02/Orbit.S02E01.mkv"));
+    QCOMPARE(next.value(QStringLiteral("streamUrl")).toString(),
+             QStringLiteral("http://tube.test/orbit-s02e01"));
+
+    const QList<QByteArray> requests = fixture.matching(
+        QByteArrayLiteral("POST /api/tater/playstate/next "));
+    QCOMPARE(requests.size(), 1);
+    QVERIFY(requests.constFirst().contains("Authorization: Bearer private-test-token"));
+    const QJsonObject payload = TaterNetworkFixture::payload(requests.constFirst());
+    QCOMPARE(payload.value(QStringLiteral("mediaType")).toString(),
+             QStringLiteral("episode"));
+    QCOMPARE(payload.value(QStringLiteral("path")).toString(),
+             QStringLiteral("Orbit/Season 01/Orbit.S01E10.mkv"));
 }
 
 void ServerClientTest::clearsPlaybackProgress()

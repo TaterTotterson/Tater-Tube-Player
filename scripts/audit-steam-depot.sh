@@ -65,6 +65,11 @@ for tater_required in \
     tater_require_file "${tater_required}"
 done
 
+for tater_qt_module in qtbase qtdeclarative qtmultimedia qtsvg qtwayland; do
+    tater_require_file "compliance/qt-sbom/${tater_qt_module}-6.11.2.spdx"
+    tater_require_file "compliance/qt-sbom/${tater_qt_module}-6.11.2.source.spdx"
+done
+
 for tater_native_runtime in \
     lib/libass.so.9 lib/libplacebo.so.349 lib/libjpeg.so.62 \
     lib/liblcms2.so.2 lib/libunibreak.so.6 lib/libdisplay-info.so.2; do
@@ -199,6 +204,19 @@ if find "${tater_depot_dir}" -type f \
     tater_failed=1
 fi
 
+if find "${tater_depot_dir}" -type f \
+    \( -iname '*.rom' -o -iname '*.bios' -o -iname '*.chd' \
+       -o -iname '*.cue' -o -iname '*.iso' -o -iname '*.nes' \
+       -o -iname '*.sfc' -o -iname '*.smc' -o -iname '*.gba' \
+       -o -iname '*.wad' -o -iname '*.nzb' -o -iname '*.m3u' \
+       -o -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.avi' \
+       -o -iname '*.mov' -o -iname '*.mp3' -o -iname '*.wav' \
+       -o -iname '*.flac' -o -iname '*.ogg' \) \
+    | grep -q .; then
+    echo "The depot contains a forbidden ROM, game-data, downloader, or media payload." >&2
+    tater_failed=1
+fi
+
 if grep -a -E -i -l \
     '(libretro|retroarch|moonlight-embedded|libsteam_api|SteamAPI_Init)' \
     "${tater_binary}" "${tater_mpv_binary}" >/dev/null 2>&1; then
@@ -243,6 +261,33 @@ if grep -q 'Tree state: dirty-draft' \
         echo "Draft depot: player source tree contains uncommitted work." >&2
     else
         echo "The depot was built from a dirty source tree." >&2
+        tater_failed=1
+    fi
+fi
+
+if [ "${TATER_STEAM_DRAFT:-0}" != "1" ]; then
+    if ! grep -q '^  Tree state: clean$' \
+        "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null; then
+        echo "The corresponding-source manifest does not record a clean source tree." >&2
+        tater_failed=1
+    fi
+    if ! grep -E -q '^  Revision: [0-9a-f]{40}$' \
+        "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null; then
+        echo "The corresponding-source manifest does not identify an exact Git revision." >&2
+        tater_failed=1
+    fi
+    tater_source_url_count=$(grep -E -c \
+        '^  (Archive: )?https://[^[:space:]]+$' \
+        "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null || true)
+    if [ "${tater_source_url_count}" -ne 5 ]; then
+        echo "The corresponding-source manifest must contain five HTTPS archive locations." >&2
+        tater_failed=1
+    fi
+    tater_source_hash_count=$(grep -E -c \
+        '^  SHA-256: [0-9a-f]{64}$' \
+        "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null || true)
+    if [ "${tater_source_hash_count}" -ne 5 ]; then
+        echo "The corresponding-source manifest must contain five valid SHA-256 values." >&2
         tater_failed=1
     fi
 fi

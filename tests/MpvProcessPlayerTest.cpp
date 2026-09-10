@@ -110,6 +110,9 @@ void MpvProcessPlayerTest::configuresNetworkReadAhead()
     QVERIFY(arguments.contains(QStringLiteral("--cache-pause-initial=yes")));
     QVERIFY(arguments.contains(QStringLiteral("--demuxer-readahead-secs=20")));
     QVERIFY(arguments.contains(QStringLiteral("--demuxer-max-bytes=256MiB")));
+    QVERIFY(arguments.contains(QStringLiteral("--osd-bar=no")));
+    QVERIFY(arguments.contains(QStringLiteral("--osd-on-seek=no")));
+    QVERIFY(!arguments.contains(QStringLiteral("--osd-on-seek=bar")));
     QVERIFY(!arguments.contains(QStringLiteral("--osc=no")));
 }
 
@@ -133,6 +136,7 @@ void MpvProcessPlayerTest::routesFocusedWindowPlaybackControls()
 {
     MpvProcessPlayer player;
     QSignalSpy backSpy(&player, &MpvProcessPlayer::backRequested);
+    QSignalSpy seekSpy(&player, &MpvProcessPlayer::seekRequested);
     QSignalSpy audioSpy(&player, &MpvProcessPlayer::audioTracksRequested);
     QSignalSpy subtitleSpy(&player, &MpvProcessPlayer::subtitlesRequested);
 
@@ -143,15 +147,28 @@ void MpvProcessPlayerTest::routesFocusedWindowPlaybackControls()
         {"event", "client-message"}, {"args", QJsonArray{"tater-audio"}},
     });
     player.handleIpcMessage(QJsonObject{
+        {"event", "client-message"}, {"args", QJsonArray{"tater-seek-back"}},
+    });
+    player.handleIpcMessage(QJsonObject{
+        {"event", "client-message"}, {"args", QJsonArray{"tater-seek-forward"}},
+    });
+    player.handleIpcMessage(QJsonObject{
         {"event", "client-message"}, {"args", QJsonArray{"tater-subtitles"}},
     });
 
     QCOMPARE(backSpy.count(), 1);
+    QCOMPARE(seekSpy.count(), 2);
+    QCOMPARE(seekSpy.at(0).at(0).toLongLong(), -10'000);
+    QCOMPARE(seekSpy.at(1).at(0).toLongLong(), 10'000);
     QCOMPARE(audioSpy.count(), 1);
     QCOMPARE(subtitleSpy.count(), 1);
 
     const QByteArray input = MpvProcessPlayer::inputConfigContents();
     QVERIFY(input.contains("e script-message tater-back"));
+    QVERIFY(input.contains("LEFT script-message tater-seek-back"));
+    QVERIFY(input.contains("RIGHT script-message tater-seek-forward"));
+    QVERIFY(!input.contains("LEFT seek"));
+    QVERIFY(!input.contains("RIGHT seek"));
     QVERIFY(input.contains("r script-message tater-audio"));
     QVERIFY(input.contains("f script-message tater-subtitles"));
 }

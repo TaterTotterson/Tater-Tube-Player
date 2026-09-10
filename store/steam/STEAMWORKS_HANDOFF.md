@@ -69,7 +69,7 @@ silence is intentional.
 
 - Use `AI_DISCLOSURE.md` for the pre-generated and live-generated AI portions
   of the Steam Content Survey.
-- State that Tater Tube Server 1.4.34 or newer is required and is not included.
+- State that Tater Tube Server 1.4.40 or newer is required and is not included.
 - State that the application supplies no movies, television programs, or live
   channels.
 - Do not claim Steam Deck Verified. Valve assigns compatibility after review.

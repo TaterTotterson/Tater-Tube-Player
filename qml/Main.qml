@@ -3,6 +3,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtMultimedia
 import "components"
+import "Navigation.js" as Navigation
 import "ViewingHistory.js" as ViewingHistory
 
 ApplicationWindow {
@@ -54,6 +55,7 @@ ApplicationWindow {
     property string playbackQuality: "Direct play"
     property bool playbackControlsVisible: true
     property bool playbackEnded: false
+    property bool playbackNextEpisodePending: false
     property bool playbackHasVideoFrame: false
     property real playbackVolume: 0.85
     property bool playbackMuted: false
@@ -176,6 +178,19 @@ ApplicationWindow {
         return item && item.title ? item.title : fallback
     }
 
+    function plainDetailsText(value) {
+        var text = String(value || "")
+        return text.replace(/<br\s*\/?\s*>/gi, "\n")
+                   .replace(/<[^>]*>/g, "")
+                   .replace(/&nbsp;/gi, " ")
+                   .replace(/&amp;/gi, "&")
+                   .replace(/&quot;/gi, "\"")
+                   .replace(/&#39;|&apos;/gi, "'")
+                   .replace(/&lt;/gi, "<")
+                   .replace(/&gt;/gi, ">")
+                   .trim()
+    }
+
     function mediaLabel(item) {
         if (!item)
             return "MEDIA"
@@ -261,9 +276,9 @@ ApplicationWindow {
                 || playable.description || playable.overview || playable.plot
                 || playable.summary || item.tagline || playable.tagline
         if (text)
-            return String(text)
+            return plainDetailsText(text)
         if (item.next && item.next.title)
-            return "Up next: " + item.next.title
+            return plainDetailsText("Up next: " + item.next.title)
         return "No synopsis is available for this title yet."
     }
 
@@ -520,6 +535,23 @@ ApplicationWindow {
             openLibraryRow(row)
     }
 
+    function openHomeShelf(shelf) {
+        if (demoMode) {
+            showPage("library")
+            return
+        }
+        var entry = Navigation.homeShelfEntry(librarySourceRows(), shelf)
+        if (!entry || (!entry.id && !entry.categoryId
+                       && String(entry.type || "").toLowerCase() !== "continue")) {
+            showPage("library")
+            return
+        }
+        libraryVisibleLimit = initialLibraryCardBatch
+        showPage("library")
+        serverClient.browseLibrary(entry)
+        resetLibraryScrollPosition()
+    }
+
     function openLibraryRow(row) {
         if (!row)
             return
@@ -764,6 +796,21 @@ ApplicationWindow {
         if (serverClient.discoverStage === "streams")
             return "READY TO PLAY"
         return itemMeta(item) || item.sizeText || mediaLabel(item)
+    }
+
+    function discoverResultMeta(item) {
+        if (!item)
+            return ""
+        var parts = []
+        if (item.sizeText)
+            parts.push(String(item.sizeText).toUpperCase())
+        if (item.files)
+            parts.push(String(item.files) + (String(item.files) === "1" ? " FILE" : " FILES"))
+        if (item.grabs)
+            parts.push(String(item.grabs) + " GRABS")
+        if (item.category)
+            parts.push(String(item.category).toUpperCase())
+        return parts.length > 0 ? parts.join("  •  ") : "READY TO PREPARE"
     }
 
     function recommendationSummary() {
@@ -1642,6 +1689,7 @@ ApplicationWindow {
         playbackStatusMessage = playbackIsLive ? "Tuning your channel…" : "Opening your media…"
         playbackQuality = playbackIsLive ? "Live HLS" : "Direct play"
         playbackEnded = false
+        playbackNextEpisodePending = false
         playbackControlsVisible = true
         detailsOpen = false
         playbackOpen = true
@@ -1819,6 +1867,7 @@ ApplicationWindow {
         stopPlaybackEngine()
         playbackOpen = false
         playbackPlanPending = false
+        playbackNextEpisodePending = false
         playbackHasVideoFrame = false
         playbackAudioControlActive = false
         playbackPlannedAudioTracks = []
@@ -1969,16 +2018,32 @@ ApplicationWindow {
     }
 
     function handlePlaybackEnd() {
+        if (playbackEnded)
+            return
         savePlaybackState(true)
         finishViewingHistory(playbackIsLive ? "stopped" : "completed")
         playbackEnded = true
         playbackControlsVisible = true
+        var mediaType = String(playbackItem && playbackItem.mediaType
+                               ? playbackItem.mediaType : "").toLowerCase()
+        var categoryId = String(playbackItem && playbackItem.categoryId
+                                ? playbackItem.categoryId : "")
+        var path = String(playbackItem && playbackItem.path
+                          ? playbackItem.path : "")
+        if (!playbackIsLive && serverClient.paired && mediaType === "episode"
+                && categoryId.indexOf("local:") === 0 && path.length > 0) {
+            playbackNextEpisodePending = true
+            playbackStatusMessage = "Loading the next episode…"
+            serverClient.prepareNextEpisode(playbackItem)
+            return
+        }
         playbackStatusMessage = "Finished"
     }
 
     function handlePlaybackError(errorString) {
         if (!playbackOpen)
             return
+        playbackNextEpisodePending = false
         if (retryWithCompatibleStream(errorString))
             return
         finishViewingHistory("stopped")
@@ -2226,12 +2291,16 @@ ApplicationWindow {
                     return false
                 ++targetIndex
             } else if (vertical < 0) {
-                targetIndex -= libraryGridView.columnCount
+                targetIndex = Navigation.verticalGridTarget(
+                            gridCurrent.index, libraryGridView.count,
+                            libraryGridView.columnCount, -1)
                 if (targetIndex < 0)
                     return false
             } else if (vertical > 0) {
-                targetIndex += libraryGridView.columnCount
-                if (targetIndex >= libraryGridView.count)
+                targetIndex = Navigation.verticalGridTarget(
+                            gridCurrent.index, libraryGridView.count,
+                            libraryGridView.columnCount, 1)
+                if (targetIndex < 0)
                     return false
             }
             return focusLibraryGridIndex(targetIndex)
@@ -2249,6 +2318,25 @@ ApplicationWindow {
         }
 
         var origin = current.mapToItem(root.contentItem, current.width / 2, current.height / 2)
+        if (vertical !== 0) {
+            var points = []
+            for (var pointIndex = 0; pointIndex < candidates.length; ++pointIndex) {
+                var candidatePoint = candidates[pointIndex].mapToItem(
+                            root.contentItem,
+                            candidates[pointIndex].width / 2,
+                            candidates[pointIndex].height / 2)
+                points.push({x: candidatePoint.x, y: candidatePoint.y})
+            }
+            var verticalTarget = Navigation.verticalFocusTarget(
+                        points, currentIndex, vertical, 36)
+            if (verticalTarget >= 0) {
+                candidates[verticalTarget].forceActiveFocus()
+                revealFocusedItem(candidates[verticalTarget])
+                return true
+            }
+            return false
+        }
+
         var currentTop = origin.y - current.height / 2
         var currentBottom = origin.y + current.height / 2
         var winner = null
@@ -2261,19 +2349,16 @@ ApplicationWindow {
                                             candidate.width / 2, candidate.height / 2)
             var dx = point.x - origin.x
             var dy = point.y - origin.y
-            if ((horizontal < 0 && dx >= -4) || (horizontal > 0 && dx <= 4)
-                    || (vertical < 0 && dy >= -4) || (vertical > 0 && dy <= 4))
+            if ((horizontal < 0 && dx >= -4) || (horizontal > 0 && dx <= 4))
                 continue
-            if (horizontal !== 0) {
-                var candidateTop = point.y - candidate.height / 2
-                var candidateBottom = point.y + candidate.height / 2
-                var verticalGap = Math.max(0, Math.max(currentTop, candidateTop)
-                                              - Math.min(currentBottom, candidateBottom))
-                if (verticalGap > 18)
-                    continue
-            }
-            var primary = horizontal !== 0 ? Math.abs(dx) : Math.abs(dy)
-            var cross = horizontal !== 0 ? Math.abs(dy) : Math.abs(dx)
+            var candidateTop = point.y - candidate.height / 2
+            var candidateBottom = point.y + candidate.height / 2
+            var verticalGap = Math.max(0, Math.max(currentTop, candidateTop)
+                                          - Math.min(currentBottom, candidateBottom))
+            if (verticalGap > 18)
+                continue
+            var primary = Math.abs(dx)
+            var cross = Math.abs(dy)
             var score = primary + cross * 2.4
             if (score < winnerScore) {
                 winner = candidate
@@ -2814,7 +2899,7 @@ ApplicationWindow {
 
                     RowActionCard {
                         text: "See all"
-                        onActivated: root.showPage("library")
+                        onActivated: root.openHomeShelf("continue")
                     }
                 }
             }
@@ -2856,7 +2941,7 @@ ApplicationWindow {
 
                     RowActionCard {
                         text: "See all"
-                        onActivated: root.showPage("library")
+                        onActivated: root.openHomeShelf("continue")
                     }
                 }
             }
@@ -3011,8 +3096,8 @@ ApplicationWindow {
                     }
 
                     RowActionCard {
-                        text: "Browse library"
-                        onActivated: root.showPage("library")
+                        text: "See all"
+                        onActivated: root.openHomeShelf("recent")
                     }
                 }
             }
@@ -3052,8 +3137,8 @@ ApplicationWindow {
                     }
 
                     RowActionCard {
-                        text: "Browse library"
-                        onActivated: root.showPage("library")
+                        text: "See all"
+                        onActivated: root.openHomeShelf("recent")
                     }
                 }
             }
@@ -3880,6 +3965,7 @@ ApplicationWindow {
                         id: discoverItemsGrid
                         width: parent.width
                         visible: !demoMode && serverClient.discoverStage !== "catalog"
+                                 && serverClient.discoverStage !== "results"
                                  && !serverClient.discoverLoading
                                  && serverClient.discoverErrorMessage.length === 0
                         columns: Math.max(1, Math.floor(width / 205))
@@ -3904,6 +3990,30 @@ ApplicationWindow {
                                                             : String(index + 1))
                                 artSource: media && media.poster ? media.poster : ""
                                 accent: root.cardAccent(index)
+                                onActivated: root.activateDiscoverItem(media)
+                            }
+                        }
+                    }
+
+                    Column {
+                        id: discoverResultsList
+                        width: parent.width
+                        visible: !demoMode && serverClient.discoverStage === "results"
+                                 && !serverClient.discoverLoading
+                                 && serverClient.discoverErrorMessage.length === 0
+                        spacing: 11
+
+                        Repeater {
+                            model: Math.min(root.discoverVisibleLimit,
+                                            root.displayedDiscoverItems().length)
+
+                            DiscoveryResultRow {
+                                required property int index
+                                property var media: root.displayedDiscoverItems()[index]
+                                width: discoverResultsList.width
+                                title: root.itemTitle(media, "Untitled release")
+                                meta: root.discoverResultMeta(media)
+                                number: index < 9 ? "0" + (index + 1) : String(index + 1)
                                 onActivated: root.activateDiscoverItem(media)
                             }
                         }
@@ -4923,7 +5033,8 @@ ApplicationWindow {
                 spacing: 15
 
                 Text {
-                    text: root.selectedKind
+                    text: root.plainDetailsText(root.selectedKind)
+                    textFormat: Text.PlainText
                     color: root.orangeBright
                     font.pixelSize: 12
                     font.weight: Font.Bold
@@ -4932,9 +5043,11 @@ ApplicationWindow {
 
                 Text {
                     width: parent.width
-                    text: root.selectedKind.indexOf("CHANNEL") === 0
-                          ? root.channelTitle(root.selectedItem)
-                          : root.itemTitle(root.selectedItem, "Tater Tube")
+                    text: root.plainDetailsText(
+                              root.selectedKind.indexOf("CHANNEL") === 0
+                              ? root.channelTitle(root.selectedItem)
+                              : root.itemTitle(root.selectedItem, "Tater Tube"))
+                    textFormat: Text.PlainText
                     color: root.textPrimary
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
@@ -4946,7 +5059,8 @@ ApplicationWindow {
                 Text {
                     width: parent.width
                     visible: root.detailsMeta(root.selectedItem).length > 0
-                    text: root.detailsMeta(root.selectedItem)
+                    text: root.plainDetailsText(root.detailsMeta(root.selectedItem))
+                    textFormat: Text.PlainText
                     color: "#d0d2d3"
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
@@ -4958,6 +5072,7 @@ ApplicationWindow {
                 Text {
                     width: parent.width
                     text: root.detailsSynopsis(root.selectedItem)
+                    textFormat: Text.PlainText
                     color: root.textSecondary
                     wrapMode: Text.WordWrap
                     maximumLineCount: 7
@@ -5071,6 +5186,28 @@ ApplicationWindow {
                 root.stopRecommendationSpeech()
             }
         }
+
+        function onNextEpisodeReady(item) {
+            if (!root.playbackOpen || !root.playbackEnded
+                    || !root.playbackNextEpisodePending)
+                return
+            root.playbackNextEpisodePending = false
+            root.startPlayback(item, "EPISODE", false)
+        }
+
+        function onNextEpisodeUnavailable() {
+            if (!root.playbackOpen || !root.playbackNextEpisodePending)
+                return
+            root.playbackNextEpisodePending = false
+            root.closePlayback()
+        }
+
+        function onNextEpisodeFailed(message) {
+            if (!root.playbackOpen || !root.playbackNextEpisodePending)
+                return
+            root.playbackNextEpisodePending = false
+            root.closePlayback()
+        }
     }
 
     Timer {
@@ -5178,6 +5315,11 @@ ApplicationWindow {
 
         function onBackRequested() {
             root.goBack()
+        }
+
+        function onSeekRequested(deltaMs) {
+            if (root.playbackOpen)
+                root.seekPlaybackBy(deltaMs)
         }
 
         function onAudioTracksRequested() {
