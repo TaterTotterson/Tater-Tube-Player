@@ -1,5 +1,9 @@
 # First Steam submission checklist
 
+This is an internal checklist for Tater Totterson AI LLC. Open items are
+developer/publisher tasks; this document does not ask Valve to complete any
+release, licensing, or rights work.
+
 ## Store presence
 
 - [x] Steamworks app created: App ID `5239420`
@@ -14,7 +18,7 @@
 - [x] Trailer includes genuine controller-style navigation and moving playback
 - [x] Trailer poster frame created
 - [x] Required store capsules rendered at current Valve dimensions
-- [ ] Required store capsules uploaded in Steamworks
+- [x] Required store capsules uploaded in Steamworks
 - [x] Website, support, and privacy links prepared for their dedicated fields
 - [x] Steamworks field-by-field handoff prepared
 - [x] Developer and publisher display names confirmed: `Tater Totterson AI LLC`
@@ -29,7 +33,7 @@
 - [ ] Final store preview checked at desktop and narrow widths
 - [ ] Store presence marked ready for review at least seven business days before its target publication
 
-## Build review gates
+## Developer/publisher release gates
 
 These do not block drafting the store page, but they block submitting the build
 as release-ready.
@@ -40,18 +44,18 @@ as release-ready.
 - [x] Choose and document the Qt LGPLv3 dynamic-linking distribution plan
 - [x] Select Apache-2.0 for the player source and reserve the Tater Tube trademarks
 - [x] Publish the public source repository
-- [ ] Tag the exact submitted revision
+- [x] Tag the exact submitted revision
 - [ ] Confirm the Steam launch option does not use Steam DRM/CEG
 - [x] Record Qt Multimedia, FFmpeg, codec libraries, SDL, and every shipped dependency
 - [x] Generate the release SBOM and third-party notices
-- [ ] Confirm source-offer/relinking obligations for the exact binaries in the depot
+- [x] Confirm source-offer/relinking obligations for the exact binaries in the depot
 - [ ] Confirm mascot and other brand-asset creation/distribution records
 - [x] Restrict the Linux settings file containing the paired-player token to the current OS user
 - [ ] Verify clean install, first pairing, controller navigation, suspend/resume, output switching, and uninstall
 - [ ] Verify direct play, audio-only transcode, video-only transcode, full transcode, HDR-to-SDR, and Tube TV transitions against Tater Tube Server 1.4.40+
 - [ ] Supply Valve reviewers with a reachable test server or precise local test-server instructions and a rights-safe demo catalog
-- [x] Confirm the draft depot and store media contain no private addresses, credentials, or personal media
-- [x] Confirm the draft depot contains no emulator/ROM cores, game ports, Moonlight, downloader, commercial media, or Steamworks SDK binaries
+- [x] Confirm the release depot and store media contain no private addresses, credentials, or personal media
+- [x] Confirm the release depot contains no emulator/ROM cores, game ports, Moonlight, downloader, commercial media, or Steamworks SDK binaries
 - [x] Replace the GPL mpv draft dependency with an audited LGPL-only build path
 - [ ] Complete and privately retain the brand/key-art rights attestation
 

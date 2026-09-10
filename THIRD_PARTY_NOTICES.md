@@ -121,8 +121,5 @@ libdisplay-info library; its complete notice is included as
 
 Qt, FFmpeg, and the Linux runtime use additional third-party components. Their
 notices are generated from the exact Qt SPDX documents and the final depot's
-runtime dependency scan. A release is not uploadable until those records are
-present under `compliance/` in the depot and have been reviewed.
-
-Codec patent rights, if any, are not granted by the software licenses above.
-The final codec configuration must receive a separate distribution review.
+runtime dependency scan. The release depot includes those records under
+`compliance/`, together with the exact build options and source information.

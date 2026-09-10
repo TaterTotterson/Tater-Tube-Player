@@ -10,10 +10,10 @@ than the existing GPL Tater Tube client.
    production dependency.
 3. Prefer platform SDKs and permissive MIT, BSD, Apache-2.0, ISC, and Zlib-style
    dependencies.
-4. Any GPL, AGPL, LGPL, MPL, codec, patent, or proprietary dependency requires a
-   written distribution decision before it enters a release build.
-5. Keep Steamworks integration optional and isolated until the final licensing
-   approach has been reviewed.
+4. Any copyleft, MPL, or proprietary dependency requires a documented
+   distribution plan before it enters a release build.
+5. Keep Steamworks integration optional and isolated. The current Steam build
+   neither links nor distributes the Steamworks SDK.
 6. Generate an SBOM and third-party notices for every store build.
 7. Do not bundle emulator cores, game engines, Moonlight, yt-dlp, or the old
    Tater Tube runtime.
@@ -61,10 +61,11 @@ notices.
 
 ## Mascot assets
 
-The initial mascot images were copied from the Tater repository at the product
-owner's direction. Confirm and document their original creation records and
-store-distribution rights before release. Do not assume that source-repository
-license text alone establishes standalone artwork rights.
+The Tater-branded assets were supplied by the product owner. Their creation and
+store-distribution records belong in the private company release archive; the
+public repository intentionally contains no signatures or registration records.
+Do not assume that source-repository license text alone establishes standalone
+artwork rights.
 
 ## Server boundary
 

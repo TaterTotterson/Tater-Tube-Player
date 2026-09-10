@@ -32,9 +32,9 @@ Suggested disclosure:
 > invalid output is discarded. Tater Picks is optional and is hidden when Tater
 > Link is not configured.
 
-Before submission, verify that the production Tater Core still enforces the
-catalog allowlist, structured response, length limits, and invalid-output
-rejection described above.
+Before submission, Tater Totterson AI LLC verifies that the production Tater
+Core still enforces the catalog allowlist, structured response, length limits,
+and invalid-output rejection described above.
 
 ## Mature-content survey note
 

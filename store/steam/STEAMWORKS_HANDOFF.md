@@ -1,7 +1,9 @@
 # Steamworks handoff
 
 Use this order for the first Tater Tube Player submission. Nothing in this file
-contains Steam account credentials.
+contains Steam account credentials. All setup, testing, licensing, and rights
+steps in this handoff are developer/publisher responsibilities; it does not ask
+Valve to perform them.
 
 Confirmed Steamworks identifiers:
 

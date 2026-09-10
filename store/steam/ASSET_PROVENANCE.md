@@ -22,15 +22,14 @@ The detailed fictional demo-title prompts are in `DEMO_ART_PROMPTS.md`. Retain
 the conversation/export records for the category, channel, mascot, and key-art
 variants in the private release archive.
 
-## Existing Tater brand assets — trademark scope stated; owner confirmation required
+## Existing Tater brand assets — private company rights record
 
 The product owner supplied the following existing Tater project assets for use
 in the Player and has stated that the underlying Tater logo/wordmark is covered
 by the company's trademark rights. The `Tube` addition and complete composite
 must not be described as separately registered without a matching registration
-record. Their inclusion is authorized only after the company retains a written
-confirmation that it owns or controls their application and Steam store
-distribution rights:
+record. The company keeps its ownership and Steam store distribution
+confirmation in the private release archive:
 
 - `assets/mascot/tater-front.png`
 - `assets/mascot/tater-salute.png`
@@ -38,7 +37,7 @@ distribution rights:
 - `assets/tater-tube-logo-leaning-transparent.png`
 - all capsule/library/client graphics derived from that logo and mascot
 
-## Supplied CRT-room key art — owner confirmation required
+## Supplied CRT-room key art — private company rights record
 
 The orange CRT-room image used by the Steam capsules and Library Hero was
 supplied by the product owner on September 7, 2026. Retain its original file

@@ -30,13 +30,13 @@ CEG so users remain able to replace LGPL libraries.
 
 | Component | Distribution relationship | License plan | Status |
 | --- | --- | --- | --- |
-| Tater Tube Player | Main application | Apache-2.0; public tagged source | Ready after clean release tag |
-| Qt 6.11.2 | Dynamically linked shared libraries and QML plugins | LGPLv3; license, source, module SBOMs, and relinking instructions | Plan complete; final source URLs pending |
-| FFmpeg 7.1.5 | Dynamically linked shared libraries used by Qt Multimedia and mpv | LGPLv2.1+ and permissive parts; GPL/version3/nonfree disabled | Configuration audited; final source URL pending |
+| Tater Tube Player | Main application | Apache-2.0; public tagged source | Enforced by the final-depot audit |
+| Qt 6.11.2 | Dynamically linked shared libraries and QML plugins | LGPLv3; license, source, module SBOMs, and relinking instructions | Corresponding-source records enforced by the final-depot audit |
+| FFmpeg 7.1.5 | Dynamically linked shared libraries used by Qt Multimedia and mpv | LGPLv2.1+ and permissive parts; GPL/version3/nonfree disabled | Configuration and corresponding-source records enforced by the final-depot audit |
 | ICU 73.2 | Dynamically linked shared libraries supplied with Qt | Unicode License; full license/data notices included | Recorded |
 | SDL 2.32.70 | Dynamically linked from Steam Runtime 4; not copied into depot | Zlib | Recorded |
-| mpv 0.40.0 | Separate executable launched through local IPC; not linked into the Player | LGPLv2.1+ build with `-Dgpl=false`; GPL-only X11 path disabled | Configuration audited; final source URL and hardware validation pending |
-| Steamworks SDK | Not linked or distributed | Not applicable | Confirmed absent from draft depot |
+| mpv 0.40.0 | Separate executable launched through local IPC; not linked into the Player | LGPLv2.1+ build with `-Dgpl=false`; GPL-only X11 path disabled | Configuration and corresponding-source records enforced by the final-depot audit |
+| Steamworks SDK | Not linked or distributed | Not applicable | Confirmed absent from the release depot |
 
 The earlier test draft's Debian GPL mpv package has been removed from the
 release path. The release container now builds mpv from pinned source with
@@ -59,34 +59,28 @@ material and the optional live Tater Picks feature exactly as documented in
 
 The owner has stated that the underlying Tater logo/wordmark is protected by
 the company's trademark rights. The `Tube` addition and combined presentation
-are not represented as a separately registered composite. The remaining
-asset-chain item is a written owner confirmation covering distribution of the
-complete Tater Tube logo, mascot, and supplied orange CRT-room key art. Use
-`store/steam/RIGHTS_ATTESTATION_TEMPLATE.md` and retain the signed record with
-the release archive; do not place a signature or private information in the
-public repository.
+are not represented as a separately registered composite. Tater Totterson AI
+LLC retains its logo, mascot, and CRT-room ownership/distribution confirmation
+privately using `store/steam/RIGHTS_ATTESTATION_TEMPLATE.md`; signatures and
+private registration information do not belong in the public repository.
 
-## Blocks on final build submission
+## Release controls
 
-The current uploaded build is a private test draft and must not be submitted
-for Valve build review. A final build is blocked until all of the following
-are true:
+These are Tater Totterson AI LLC release responsibilities, not tasks assigned
+to Valve. The automated final-depot process enforces the source and binary
+controls; the company completes the Steamworks and ownership records privately.
 
-1. Validate the LGPL-only mpv/FFmpeg candidate on Steam Deck and HDMI displays.
-2. Commit all intended code and media, create the exact release tag, and build
-   from a clean tree.
-3. Publish the Player and third-party source archives for that tag, then place
-   their reachable URLs and SHA-256 hashes in the depot source manifest.
-4. Complete and retain the logo, mascot, and CRT-room rights attestation.
-   Confirm the company's ownership or distribution authority for the original
-   application contributions at the same time.
-5. Complete the Steam AI/content disclosures and ensure the store page states
-   that Tater Tube Server is required and no media is included.
-6. Keep Steam DRM/CEG disabled and rerun the non-draft depot audit.
-7. Test the exact uploaded final build on a clean Steam Deck account/profile
-   and provide Valve a rights-safe demo server or deterministic demo mode.
-8. Complete a separate codec-patent review for the intended distribution
-   territories; open-source copyright licenses do not grant patent rights.
+1. Build only from the clean tag matching the application version.
+2. Publish the matching Player and third-party source archives and record their
+   reachable HTTPS URLs and SHA-256 hashes in the depot source manifest.
+3. Run the final-depot and Steam Runtime 4 audits.
+4. Keep Steam DRM/CEG disabled so LGPL libraries remain replaceable.
+5. Complete the Steam AI/content disclosures and state that Tater Tube Server
+   is required and no media is included.
+6. Retain the company ownership/distribution attestation in the private release
+   archive.
+7. Test the exact uploaded build through Steam and provide Valve the built-in
+   rights-safe demo mode for evaluation.
 
 The audit script intentionally rejects a dirty final build, a revision that is
 not the exact matching version tag, placeholder or non-HTTPS source locations,
@@ -105,7 +99,6 @@ required GPL/nonfree disable flags.
 > source locations, and relinking instructions are included in the depot. The
 > app does not link or distribute the Steamworks SDK and does not use Steam
 > DRM/CEG. Reviewers may use the built-in rights-safe demo mode without a
-> personal media library.
-
-Add the final public release/tag and corresponding-source links to that note
-before sending it.
+> personal media library. The matching application and third-party source are
+> published with the versioned release at
+> https://github.com/TaterTotterson/Tater-Tube-Player/releases.
