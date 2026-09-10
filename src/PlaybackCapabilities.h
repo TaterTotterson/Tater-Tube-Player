@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QMediaDevices>
 #include <QObject>
+#include <QSize>
 #include <QStringList>
 #include <QVariantMap>
 
@@ -32,6 +33,7 @@ public:
     // synthetic-display test without requiring physical HDR hardware.
     static QStringList hdrFormatsFromEdid(const QByteArray &edid);
     static QVariantMap audioCapabilitiesFromEdid(const QByteArray &edid);
+    static QSize normalizedDisplaySizeFromModes(const QByteArray &modes);
 
 signals:
     void capabilitiesChanged();

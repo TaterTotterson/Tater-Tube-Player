@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(TaterTubePlayer
-    VERSION 0.3.20
+    VERSION 0.3.21
     DESCRIPTION "A modern player for Tater Tube Server"
     LANGUAGES CXX
 )
@@ -31,6 +31,9 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS
     Quick
     QuickControls2
 )
+if(UNIX AND NOT APPLE)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS DBus)
+endif()
 find_package(SDL2 CONFIG QUIET)
 
 if(TATER_STEAM_RELEASE)
@@ -115,7 +118,13 @@ qt_add_executable(tater-tube-player
     src/PlaybackCapabilities.h
     src/ServerClient.cpp
     src/ServerClient.h
+    src/SleepInhibitor.cpp
+    src/SleepInhibitor.h
 )
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(tater-tube-player PRIVATE Qt6::DBus)
+endif()
 
 qt_add_qml_module(tater-tube-player
     URI TaterTube.Player

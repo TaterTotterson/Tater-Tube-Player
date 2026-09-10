@@ -11,6 +11,7 @@ private slots:
     void detectsDolbyVisionAndHdr10PlusVendorBlocks();
     void detectsHdmiAudioCapabilities();
     void ignoresInvalidEdid();
+    void normalizesPhysicalDisplayModes();
 };
 
 void PlaybackCapabilitiesTest::detectsHdrStaticMetadata()
@@ -76,6 +77,18 @@ void PlaybackCapabilitiesTest::detectsHdmiAudioCapabilities()
 void PlaybackCapabilitiesTest::ignoresInvalidEdid()
 {
     QVERIFY(PlaybackCapabilities::hdrFormatsFromEdid(QByteArray(32, '\0')).isEmpty());
+}
+
+void PlaybackCapabilitiesTest::normalizesPhysicalDisplayModes()
+{
+    QCOMPARE(PlaybackCapabilities::normalizedDisplaySizeFromModes(
+                 QByteArrayLiteral("1080x1920\n1080x1920\n")),
+             QSize(1920, 1080));
+    QCOMPARE(PlaybackCapabilities::normalizedDisplaySizeFromModes(
+                 QByteArrayLiteral("3840x2160\n1920x1080\n")),
+             QSize(3840, 2160));
+    QVERIFY(!PlaybackCapabilities::normalizedDisplaySizeFromModes(
+                 QByteArrayLiteral("not-a-mode\n")).isValid());
 }
 
 QTEST_APPLESS_MAIN(PlaybackCapabilitiesTest)

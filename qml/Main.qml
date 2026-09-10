@@ -80,6 +80,14 @@ ApplicationWindow {
     readonly property bool playbackEngineBuffering:
         mpvPlayer.available ? mpvPlayer.buffering
                             : mediaPlayer.mediaStatus === MediaPlayer.StalledMedia
+
+    onPlaybackEnginePlayingChanged: {
+        sleepInhibitor.active = playbackOpen && playbackEnginePlaying
+    }
+
+    onPlaybackOpenChanged: {
+        sleepInhibitor.active = playbackOpen && playbackEnginePlaying
+    }
     readonly property int initialLibraryCardBatch: 48
     readonly property int libraryMaterializeBatch: 24
     property int libraryVisibleLimit: initialLibraryCardBatch

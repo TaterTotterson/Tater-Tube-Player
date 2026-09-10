@@ -8,11 +8,13 @@
 #include <QJsonObject>
 #include <QMediaFormat>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QSysInfo>
 #include <QTimer>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 void appendUnique(QStringList &values, const QString &value)
@@ -86,6 +88,66 @@ struct ConnectedDisplayReport {
     int maxAudioChannels = 2;
     QString source;
 };
+
+bool externalDrmConnector(const QString &connector)
+{
+    return !connector.contains(QStringLiteral("eDP"), Qt::CaseInsensitive)
+        && !connector.contains(QStringLiteral("LVDS"), Qt::CaseInsensitive)
+        && !connector.contains(QStringLiteral("DSI"), Qt::CaseInsensitive)
+        && !connector.contains(QStringLiteral("Writeback"), Qt::CaseInsensitive);
+}
+
+QSize physicalDisplaySize(const QString &outputConnection)
+{
+    bool widthValid = false;
+    bool heightValid = false;
+    const int overrideWidth = qEnvironmentVariableIntValue(
+        "TATER_DISPLAY_WIDTH", &widthValid);
+    const int overrideHeight = qEnvironmentVariableIntValue(
+        "TATER_DISPLAY_HEIGHT", &heightValid);
+    if (widthValid && heightValid && overrideWidth > 0 && overrideHeight > 0)
+        return QSize(std::max(overrideWidth, overrideHeight),
+                     std::min(overrideWidth, overrideHeight));
+
+#if defined(Q_OS_LINUX)
+    const QDir drm(QStringLiteral("/sys/class/drm"));
+    const QStringList connectors = drm.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    QStringList external;
+    QStringList internal;
+    for (const QString &connector : connectors) {
+        if (!connector.contains(QLatin1Char('-')))
+            continue;
+        QFile status(drm.filePath(connector + QStringLiteral("/status")));
+        if (!status.open(QIODevice::ReadOnly)
+            || status.readAll().trimmed() != QByteArrayLiteral("connected")) {
+            continue;
+        }
+        if (externalDrmConnector(connector))
+            external.append(connector);
+        else
+            internal.append(connector);
+    }
+
+    QStringList candidates;
+    if (outputConnection == QStringLiteral("hdmi") || !external.isEmpty())
+        candidates.append(external);
+    candidates.append(internal);
+    if (outputConnection != QStringLiteral("hdmi"))
+        candidates.append(external);
+    for (const QString &connector : std::as_const(candidates)) {
+        QFile modes(drm.filePath(connector + QStringLiteral("/modes")));
+        if (!modes.open(QIODevice::ReadOnly))
+            continue;
+        const QSize size = PlaybackCapabilities::normalizedDisplaySizeFromModes(
+            modes.readAll());
+        if (size.isValid())
+            return size;
+    }
+#else
+    Q_UNUSED(outputConnection)
+#endif
+    return {};
+}
 
 void applyEdidCapabilities(ConnectedDisplayReport &report, const QByteArray &edid)
 {
@@ -187,6 +249,18 @@ QVariantMap PlaybackCapabilities::report() const
         maxHeight = std::min(pixels.width(), pixels.height());
     }
 
+    // Steam may expose a user-selected virtual 4K surface to the app while
+    // Gamescope presents it on a lower-resolution handheld panel. Cap the
+    // advertised playback size to the physical connector so the server does
+    // not send 4K frames that SDL must convert and downscale on the CPU.
+    if (qEnvironmentVariableIsSet("GAMESCOPE_WAYLAND_DISPLAY")) {
+        const QSize physical = physicalDisplaySize(m_outputConnection);
+        if (physical.isValid()) {
+            maxWidth = std::min(maxWidth, physical.width());
+            maxHeight = std::min(maxHeight, physical.height());
+        }
+    }
+
     const ConnectedDisplayReport display = connectedDisplayReport(m_outputConnection);
     // The Steam Gaming Mode output renders through SDL/XWayland, whose
     // output surface is SDR. Keep the physical display formats in the report,
@@ -253,6 +327,25 @@ QVariantMap PlaybackCapabilities::report() const
              {2, m_defaultAudioOutput.maximumChannelCount(), display.maxAudioChannels})},
         {QStringLiteral("compatibility_mode"), m_compatibilityMode},
     };
+}
+
+QSize PlaybackCapabilities::normalizedDisplaySizeFromModes(const QByteArray &modes)
+{
+    static const QRegularExpression modePattern(
+        QStringLiteral(R"(^\s*(\d+)x(\d+)\s*$)"));
+    for (const QByteArray &line : modes.split('\n')) {
+        const QRegularExpressionMatch match = modePattern.match(
+            QString::fromLatin1(line));
+        if (!match.hasMatch())
+            continue;
+        bool widthValid = false;
+        bool heightValid = false;
+        const int width = match.captured(1).toInt(&widthValid);
+        const int height = match.captured(2).toInt(&heightValid);
+        if (widthValid && heightValid && width > 0 && height > 0)
+            return QSize(std::max(width, height), std::min(width, height));
+    }
+    return {};
 }
 
 QStringList PlaybackCapabilities::hdrFormatsFromEdid(const QByteArray &edid)

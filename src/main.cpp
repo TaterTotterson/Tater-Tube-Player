@@ -3,6 +3,7 @@
 #include "GamepadInput.h"
 #include "MpvProcessPlayer.h"
 #include "PlaybackCapabilities.h"
+#include "SleepInhibitor.h"
 
 #include <QCommandLineOption>
 #include <QCommandLineParser>
@@ -85,6 +86,7 @@ int main(int argc, char *argv[])
     PlaybackCapabilities playbackCapabilities(
         parser.isSet(QStringLiteral("compatible-playback")) && !mpvPlayer.available(),
         mpvPlayer.available());
+    SleepInhibitor sleepInhibitor;
     if (parser.isSet(QStringLiteral("print-capabilities"))) {
         QTimer::singleShot(750, &app, [&app, &playbackCapabilities] {
             const QByteArray output = QJsonDocument(
@@ -108,6 +110,8 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("mpvPlayer"), &mpvPlayer);
     engine.rootContext()->setContextProperty(QStringLiteral("playbackCapabilities"),
                                              &playbackCapabilities);
+    engine.rootContext()->setContextProperty(QStringLiteral("sleepInhibitor"),
+                                             &sleepInhibitor);
     engine.rootContext()->setContextProperty(QStringLiteral("demoMode"),
                                              parser.isSet(QStringLiteral("demo")));
     engine.rootContext()->setContextProperty(QStringLiteral("playbackPreviewUrl"),
