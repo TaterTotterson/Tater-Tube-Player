@@ -36,14 +36,16 @@ CEG so users remain able to replace LGPL libraries.
 | ICU 73.2 | Dynamically linked shared libraries supplied with Qt | Unicode License; full license/data notices included | Recorded |
 | SDL 2.32.70 | Dynamically linked from Steam Runtime 4; not copied into depot | Zlib | Recorded |
 | mpv 0.40.0 | Separate executable launched through local IPC; not linked into the Player | LGPLv2.1+ build with `-Dgpl=false`; GPL-only X11 path disabled | Configuration and corresponding-source records enforced by the final-depot audit |
+| libplacebo 7.349.0-3 | Dynamically linked shared library used by mpv | LGPLv2.1+; upstream source plus exact Debian source delta | Source package revision and delta retained in the release archive |
 | Steamworks SDK | Not linked or distributed | Not applicable | Confirmed absent from the release depot |
 
 The earlier test draft's Debian GPL mpv package has been removed from the
 release path. The release container now builds mpv from pinned source with
 `-Dgpl=false` and builds its shared FFmpeg dependency with GPL, version-3, and
 nonfree parts disabled. The exact build records and licenses are installed in
-the depot and checked by the release audit. Gamescope uses the retained
-Wayland/Vulkan path rather than mpv's GPL-only X11 output.
+the depot and checked by the release audit. Steam Gaming Mode uses mpv's
+LGPL-compatible SDL video output on Gamescope's XWayland surface rather than
+mpv's GPL-only native X11 output.
 
 ## Shipped and marketing content
 

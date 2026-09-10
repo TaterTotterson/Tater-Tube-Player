@@ -93,12 +93,14 @@ are included with the release records.
 
 ## Native playback support libraries
 
-The native mpv playback process dynamically uses libass 0.17.3 for subtitle
-rendering and libplacebo 7.349.0 for its GPU video-rendering pipeline. The
-Steam depot carries the exact shared-library SONAMEs used to build mpv so the
+The native mpv playback process dynamically uses Debian libass
+0.17.3-1+deb13u1 for subtitle rendering and Debian libplacebo 7.349.0-3 for its
+GPU video-rendering pipeline. The Steam depot carries the exact shared-library
+SONAMEs used to build mpv so the
 native player does not depend on whichever versions happen to be installed by
-SteamOS. The same release carries libjpeg-turbo 2.1.5, which mpv uses for JPEG
-image support. libass and libjpeg-turbo use permissive terms; libplacebo is
+SteamOS. The same release carries Debian libjpeg-turbo 2.1.5-4, which mpv uses
+for JPEG image support. libass and libjpeg-turbo use permissive terms;
+libplacebo is
 distributed under LGPLv2.1-or-later. Their complete Debian
 copyright and license notices are included in the depot as
 `licenses/libass-Copyright.txt`, `licenses/libplacebo-Copyright.txt`, and
@@ -109,6 +111,12 @@ playback stack, with their complete notices in
 The native hardware-decoding path also uses the permissively licensed
 libdisplay-info library; its complete notice is included as
 `licenses/libdisplay-info-Copyright.txt`.
+
+The versioned corresponding-source archive includes the upstream source plus
+the signed Debian source descriptors and complete Debian source deltas for the
+exact libass, libplacebo, and libjpeg-turbo package revisions named above.
+This preserves Debian's build-system and security patches alongside the
+runtime binaries; no Tater Tube patch is applied to those libraries.
 
 - libass: https://github.com/libass/libass
 - libplacebo: https://code.videolan.org/videolan/libplacebo

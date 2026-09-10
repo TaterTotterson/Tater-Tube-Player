@@ -9,8 +9,10 @@ must contain:
 
 - the Tater Tube Player source archive generated from that tag;
 - the exact corresponding source for every distributed Qt module;
-- the exact corresponding source and configuration for FFmpeg, mpv, libass,
-  libplacebo, and libjpeg-turbo;
+- the exact corresponding source and configuration for FFmpeg and mpv;
+- the upstream source, signed Debian source descriptor, and complete Debian
+  source delta for the exact libass, libplacebo, and libjpeg-turbo package
+  revisions copied into the depot;
 - source or authoritative source references required by every other reciprocal
   dependency in the depot;
 - `source-manifest.txt`, containing versions, download locations, archive

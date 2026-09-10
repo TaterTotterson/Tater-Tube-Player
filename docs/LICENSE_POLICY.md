@@ -38,12 +38,16 @@ system FFmpeg and mpv packages must never be copied into a store depot. The
 Steam release builds a shared FFmpeg 7.1.5 with GPL, version-3, and nonfree
 parts disabled. Both Qt Multimedia and an mpv 0.40.0 build configured with
 `-Dgpl=false` use that audited FFmpeg build. mpv's GPL-only X11 output is
-disabled; Gamescope playback uses Wayland and Vulkan.
+disabled. In Steam Gaming Mode, playback uses mpv's LGPL-compatible SDL video
+output on Gamescope's XWayland surface; compatible desktop sessions may use
+the retained Wayland/Vulkan path.
 
-The depot also carries the exact libass 0.17.3, libplacebo 7.349.0, and
-libjpeg-turbo 2.1.5 shared-library SONAMEs used by the audited mpv build. Their
-notices are installed in the depot, and the release source bundle preserves the
-matching upstream archives (including libplacebo's LGPL corresponding source).
+The depot also carries the exact Debian libass 0.17.3-1+deb13u1, libplacebo
+7.349.0-3, and libjpeg-turbo 2.1.5-4 shared-library SONAMEs used by the audited
+mpv build. Their notices are installed in the depot. The release source bundle
+preserves each matching upstream archive together with the signed Debian
+source descriptor and full Debian source delta, including libplacebo's LGPL
+corresponding source and Debian build-system patch.
 
 The application source is offered under Apache-2.0. This does not replace or
 weaken the separate LGPL obligations for Qt, FFmpeg, or mpv.

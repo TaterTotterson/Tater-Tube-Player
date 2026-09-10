@@ -49,6 +49,7 @@ as release-ready.
 - [x] Record Qt Multimedia, FFmpeg, codec libraries, SDL, and every shipped dependency
 - [x] Generate the release SBOM and third-party notices
 - [x] Confirm source-offer/relinking obligations for the exact binaries in the depot
+- [x] Retain Debian source descriptors and deltas for copied native playback libraries
 - [ ] Confirm mascot and other brand-asset creation/distribution records
 - [x] Restrict the Linux settings file containing the paired-player token to the current OS user
 - [ ] Verify clean install, first pairing, controller navigation, suspend/resume, output switching, and uninstall

@@ -154,8 +154,9 @@ ICU source and notices
   Archive: ${tater_icu_source_url}
   SHA-256: ${tater_icu_source_sha256}
 
-mpv corresponding source
-  Version and LGPL-only build options: compliance/mpv-version.txt and compliance/mpv-build-options.txt
+Native playback corresponding source
+  mpv version and LGPL-only build options: compliance/mpv-version.txt and compliance/mpv-build-options.txt
+  Includes exact Debian source deltas for the bundled libplacebo, libass, and libjpeg-turbo package revisions.
   Archive: ${tater_mpv_source_url}
   SHA-256: ${tater_mpv_source_sha256}
 EOF

@@ -14,9 +14,9 @@ tater_qt_version=6.11.2
 tater_ffmpeg_version=7.1.5
 tater_icu_version=73.2
 tater_mpv_version=0.40.0
-tater_libass_version=0.17.3
-tater_libplacebo_version=7.349.0
-tater_libjpeg_turbo_version=2.1.5
+tater_libass_version=0.17.3-1+deb13u1
+tater_libplacebo_version=7.349.0-3
+tater_libjpeg_turbo_version=2.1.5-4
 tater_release_depot=${TATER_STEAM_DEPOT_DIR:-"${tater_repo_dir}/dist/steam/linux-x86_64"}
 tater_player_version=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9][0-9.]*\).*/\1/p' \
     "${tater_repo_dir}/CMakeLists.txt" | head -n 1)
@@ -102,15 +102,36 @@ tater_fetch icu4c-73_2-src.tgz \
 tater_fetch mpv_0.40.0.orig.tar.gz \
     https://deb.debian.org/debian/pool/main/m/mpv/mpv_0.40.0.orig.tar.gz \
     10a0f4654f62140a6dd4d380dcf0bbdbdcf6e697556863dc499c296182f081a3
-tater_fetch libass-0.17.3.tar.xz \
-    https://github.com/libass/libass/releases/download/0.17.3/libass-0.17.3.tar.xz \
+tater_fetch libass_0.17.3.orig.tar.xz \
+    https://deb.debian.org/debian/pool/main/liba/libass/libass_0.17.3.orig.tar.xz \
     eae425da50f0015c21f7b3a9c7262a910f0218af469e22e2931462fed3c50959
+tater_fetch libass_0.17.3.orig.tar.xz.asc \
+    https://deb.debian.org/debian/pool/main/liba/libass/libass_0.17.3.orig.tar.xz.asc \
+    71383b2d1138bf13008d2919da911a2c381bb196fe546571e2698e44d336b7b1
+tater_fetch libass_0.17.3-1+deb13u1.debian.tar.xz \
+    https://deb.debian.org/debian/pool/main/liba/libass/libass_0.17.3-1+deb13u1.debian.tar.xz \
+    441b33f8e13162d1f7613bc0d644f3b4710d190ae177046b3bc85a80910d2cc3
+tater_fetch libass_0.17.3-1+deb13u1.dsc \
+    https://deb.debian.org/debian/pool/main/liba/libass/libass_0.17.3-1+deb13u1.dsc \
+    c5691038593afa304a9923a1d9dbbe72e7f0788991094dce45787d517c9df398
 tater_fetch libplacebo_7.349.0.orig.tar.gz \
     https://deb.debian.org/debian/pool/main/libp/libplacebo/libplacebo_7.349.0.orig.tar.gz \
     79120e685a1836344b51b13b6a5661622486a84e4d4a35f6c8d01679a20fbc86
+tater_fetch libplacebo_7.349.0-3.debian.tar.xz \
+    https://deb.debian.org/debian/pool/main/libp/libplacebo/libplacebo_7.349.0-3.debian.tar.xz \
+    31003c3fbf9b739649c070598438805b618e4985f4d8ef27eba97338bd2306f9
+tater_fetch libplacebo_7.349.0-3.dsc \
+    https://deb.debian.org/debian/pool/main/libp/libplacebo/libplacebo_7.349.0-3.dsc \
+    4ba8c1f5e3f39f16fbfb853dfcf9fc7cb3c7b8ad54a5dee5cb7296292126400f
 tater_fetch libjpeg-turbo_2.1.5.orig.tar.gz \
     https://deb.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg-turbo_2.1.5.orig.tar.gz \
     254f3642b04e309fee775123133c6464181addc150499561020312ec61c1bf7c
+tater_fetch libjpeg-turbo_2.1.5-4.debian.tar.xz \
+    https://deb.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg-turbo_2.1.5-4.debian.tar.xz \
+    739e7dc22904dccdc5ab105de57a6e4c1515c0e841e68226e6410ff4976e0e91
+tater_fetch libjpeg-turbo_2.1.5-4.dsc \
+    https://deb.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg-turbo_2.1.5-4.dsc \
+    26cbf22aa3b3e327df072513f14a5ddfb4a7b9a3d78c46a5dccfd711c13ac743
 
 cp "${tater_repo_dir}/THIRD_PARTY_NOTICES.md" "${tater_bundle_dir}/"
 cp "${tater_repo_dir}/docs/RELINKING_QT.md" "${tater_bundle_dir}/"
@@ -137,8 +158,9 @@ shared Qt and FFmpeg libraries in the Steam/Linux depot:
 The original compressed archives are preserved under upstream/ and verified by
 SHA256SUMS. The build Containerfile, notices, exact FFmpeg configure record,
 exact mpv Meson option record, and Qt relinking instructions are included
-alongside them. No local patches were applied to Qt, FFmpeg, ICU, mpv,
-libass, libplacebo, or libjpeg-turbo.
+alongside them. The libass, libplacebo, and libjpeg-turbo entries include the
+signed Debian source descriptor and complete Debian source delta for the exact
+package revision used by the depot. No Tater Tube patches were applied.
 
 The Containerfile builds FFmpeg with GPL, nonfree, and version-3 components
 disabled, then builds the separately launched mpv executable with

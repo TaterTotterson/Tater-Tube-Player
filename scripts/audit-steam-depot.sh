@@ -178,7 +178,9 @@ if find "${tater_depot_dir}" -type f \
        -o -name 'libQt6Graphs*.so*' -o -name 'libQt6Grpc*.so*' \
        -o -name 'libQt6HttpServer.so*' -o -name 'libQt6Lottie.so*' \
        -o -name 'libQt6Mqtt.so*' -o -name 'libQt6NetworkAuth.so*' \
+       -o -name 'libQt6QmlCompiler.so*' \
        -o -name 'libQt6Quick3D*.so*' -o -name 'libQt6QuickTimeline.so*' \
+       -o -name 'libQt6Quick3DPhysics*.so*' \
        -o -name 'libQt6VirtualKeyboard.so*' \
        -o -name 'libQt6WaylandCompositor.so*' -o -name 'libsteam_api.so*' \) \
     | grep -q .; then
@@ -189,7 +191,9 @@ if find "${tater_depot_dir}" -type f \
            -o -name 'libQt6Graphs*.so*' -o -name 'libQt6Grpc*.so*' \
            -o -name 'libQt6HttpServer.so*' -o -name 'libQt6Lottie.so*' \
            -o -name 'libQt6Mqtt.so*' -o -name 'libQt6NetworkAuth.so*' \
+           -o -name 'libQt6QmlCompiler.so*' \
            -o -name 'libQt6Quick3D*.so*' -o -name 'libQt6QuickTimeline.so*' \
+           -o -name 'libQt6Quick3DPhysics*.so*' \
            -o -name 'libQt6VirtualKeyboard.so*' \
            -o -name 'libQt6WaylandCompositor.so*' -o -name 'libsteam_api.so*' \) >&2
     tater_failed=1
