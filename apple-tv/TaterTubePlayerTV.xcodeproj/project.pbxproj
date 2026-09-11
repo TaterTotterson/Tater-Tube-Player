@@ -28,6 +28,8 @@
 		A10000000000000000000013 /* NativePlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* NativePlayerView.swift */; };
 		A10000000000000000000014 /* LiveTVView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* LiveTVView.swift */; };
 		A10000000000000000000015 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* DiscoveryView.swift */; };
+		A10000000000000000000016 /* RecommendationSpeechCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* RecommendationSpeechCoordinator.swift */; };
+		A10000000000000000000017 /* TaterPicksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* TaterPicksView.swift */; };
 		A10000000000000000000020 /* tater-tube-logo-leaning-transparent.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */; };
 		A10000000000000000000021 /* tater-hero-remote.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* tater-hero-remote.png */; };
 		A10000000000000000000022 /* cosmic-drift-poster.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* cosmic-drift-poster.png */; };
@@ -68,6 +70,8 @@
 		A20000000000000000000014 /* NativePlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePlayerView.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* LiveTVView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVView.swift; sourceTree = "<group>"; };
 		A20000000000000000000016 /* DiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryView.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* RecommendationSpeechCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationSpeechCoordinator.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* TaterPicksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaterPicksView.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "tater-tube-logo-leaning-transparent.png"; path = "../assets/tater-tube-logo-leaning-transparent.png"; sourceTree = "<group>"; };
 		A20000000000000000000021 /* tater-hero-remote.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "tater-hero-remote.png"; path = "../assets/mascot/tater-hero-remote.png"; sourceTree = "<group>"; };
 		A20000000000000000000022 /* cosmic-drift-poster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "cosmic-drift-poster.png"; path = "../assets/demo/cosmic-drift-poster.png"; sourceTree = "<group>"; };
@@ -127,6 +131,7 @@
 				A20000000000000000000005 /* PlayerStore.swift */,
 				A20000000000000000000011 /* PlaybackCapabilities.swift */,
 				A20000000000000000000012 /* PlaybackCoordinator.swift */,
+				A20000000000000000000017 /* RecommendationSpeechCoordinator.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -155,6 +160,7 @@
 				A2000000000000000000000B /* PairingView.swift */,
 				A2000000000000000000000A /* RootView.swift */,
 				A2000000000000000000000F /* SettingsView.swift */,
+				A20000000000000000000018 /* TaterPicksView.swift */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -273,6 +279,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000015 /* DiscoveryView.swift in Sources */,
+				A10000000000000000000016 /* RecommendationSpeechCoordinator.swift in Sources */,
+				A10000000000000000000017 /* TaterPicksView.swift in Sources */,
 				A10000000000000000000001 /* TaterTubePlayerTVApp.swift in Sources */,
 				A10000000000000000000002 /* Models.swift in Sources */,
 				A10000000000000000000003 /* CredentialStore.swift in Sources */,

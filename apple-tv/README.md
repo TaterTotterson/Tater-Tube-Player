@@ -41,11 +41,14 @@ completion handling, and automatic season-to-season episode continuation.
 Discovery includes the six server-configured movie and TV collections, bundled
 Tater artwork, cached title feeds and searches, complete release filenames,
 multi-file selection, native playback, viewing history, and resumable Continue
-Watching entries.
+Watching entries. Tater Picks adds the current server-generated recommendation
+set, artwork and per-title reasons, the dedicated spoken group briefing, and
+movie, episode, and Tube TV viewing context for future scheduled picks. Speech
+stops automatically when the viewer leaves the section.
 
-The remaining Steam behavior is:
-
-1. Tater Picks, recommendation reasons, and the server-generated spoken message
+The native Apple TV feature-parity foundation is complete. Physical-device
+playback validation, accessibility review, App Store artwork, and final store
+packaging remain release work rather than missing player sections.
 
 Apple TV requests an MPEG-TS-compatible output only when AVKit cannot consume a
 source container directly. Compatible video and audio tracks are repackaged

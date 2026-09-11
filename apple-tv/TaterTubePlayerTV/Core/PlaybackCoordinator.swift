@@ -25,6 +25,11 @@ final class PlaybackCoordinator: ObservableObject {
     private var basePositionMS: Int64 = 0
     private var isCompleting = false
     private var progressSaveInFlight = false
+    private var reportsViewing = false
+    private var viewingSessionID = ""
+    private var viewingWatchedMS: Int64 = 0
+    private var viewingLastSampleAt: Date?
+    private var hasReportedViewingStart = false
 
     var statusMessage: String {
         switch state {
@@ -36,7 +41,12 @@ final class PlaybackCoordinator: ObservableObject {
         }
     }
 
-    func start(item: MediaItem, client: APIClient, resume: Bool) async {
+    func start(
+        item: MediaItem,
+        client: APIClient,
+        resume: Bool,
+        reportsViewing: Bool = false
+    ) async {
         cleanupPlayer()
         self.client = client
         currentItem = item
@@ -44,6 +54,11 @@ final class PlaybackCoordinator: ObservableObject {
         state = .preparing
         shouldDismiss = false
         isCompleting = false
+        self.reportsViewing = reportsViewing
+        viewingSessionID = UUID().uuidString.lowercased()
+        viewingWatchedMS = 0
+        viewingLastSampleAt = nil
+        hasReportedViewingStart = false
 
         do {
             let capabilities = PlaybackCapabilitiesReport.current
@@ -62,6 +77,9 @@ final class PlaybackCoordinator: ObservableObject {
         }
 
         let completed = state == .finished || isNearEnd
+        if reportsViewing {
+            await reportViewing(item: item, state: completed ? "completed" : "stopped")
+        }
         if !isCompleting, !item.isLiveChannel {
             await saveProgress(item: item, completed: completed, active: false)
         }
@@ -70,6 +88,7 @@ final class PlaybackCoordinator: ObservableObject {
         plan = nil
         client = nil
         state = .idle
+        resetViewingSession()
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
@@ -117,6 +136,7 @@ final class PlaybackCoordinator: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = true
         player.play()
         state = .playing
+        viewingLastSampleAt = Date()
         if !item.isLiveChannel {
             await saveProgress(item: item, completed: false, active: true)
         }
@@ -147,6 +167,10 @@ final class PlaybackCoordinator: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, let item = self.currentItem else { return }
                 await self.saveProgress(item: item, completed: false, active: true)
+                await self.reportViewing(
+                    item: item,
+                    state: self.hasReportedViewingStart ? "progress" : "started"
+                )
             }
         }
 
@@ -171,6 +195,9 @@ final class PlaybackCoordinator: ObservableObject {
     private func handlePlaybackEnd() async {
         guard !isCompleting, let item = currentItem, let client else { return }
         isCompleting = true
+        if reportsViewing {
+            await reportViewing(item: item, state: "completed")
+        }
         if item.isLiveChannel {
             state = .finished
             shouldDismiss = true
@@ -183,8 +210,14 @@ final class PlaybackCoordinator: ObservableObject {
            item.categoryID?.lowercased().hasPrefix("local:") == true,
            let next = try? await client.nextEpisode(after: item),
            next.streamURL != nil {
+            let shouldReportViewing = reportsViewing
             isCompleting = false
-            await start(item: next, client: client, resume: false)
+            await start(
+                item: next,
+                client: client,
+                resume: false,
+                reportsViewing: shouldReportViewing
+            )
             return
         }
 
@@ -212,6 +245,39 @@ final class PlaybackCoordinator: ObservableObject {
             completed: completed,
             playbackActive: active
         )
+    }
+
+    private func reportViewing(item: MediaItem, state: String) async {
+        guard reportsViewing, let client else { return }
+        updateViewingWatchTime()
+        guard viewingWatchedMS > 0 else { return }
+        try? await client.saveViewingEvent(
+            for: item,
+            state: state,
+            positionMS: positionMS,
+            durationMS: durationMS,
+            sessionID: viewingSessionID,
+            watchedMS: viewingWatchedMS
+        )
+        hasReportedViewingStart = true
+    }
+
+    private func updateViewingWatchTime() {
+        let now = Date()
+        defer { viewingLastSampleAt = now }
+        guard player?.timeControlStatus == .playing,
+              let last = viewingLastSampleAt
+        else { return }
+        let elapsed = min(max(now.timeIntervalSince(last), 0), 20)
+        viewingWatchedMS += Int64(elapsed * 1000)
+    }
+
+    private func resetViewingSession() {
+        reportsViewing = false
+        viewingSessionID = ""
+        viewingWatchedMS = 0
+        viewingLastSampleAt = nil
+        hasReportedViewingStart = false
     }
 
     private var positionMS: Int64 {
@@ -266,7 +332,8 @@ private enum PlaybackError: LocalizedError {
 
 extension MediaItem {
     var isLiveChannel: Bool {
-        ["channel", "live", "tube_tv", "tubetv"].contains(mediaType?.lowercased() ?? "")
+        ["channel", "live", "tube_tv", "tubetv"].contains(type?.lowercased() ?? "")
+            || ["channel", "live", "tube_tv", "tubetv"].contains(mediaType?.lowercased() ?? "")
     }
 
     var resumeOffsetMS: Int64 {

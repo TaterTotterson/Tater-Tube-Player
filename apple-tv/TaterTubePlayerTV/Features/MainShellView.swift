@@ -2,11 +2,13 @@ import SwiftUI
 
 struct MainShellView: View {
     @EnvironmentObject private var store: PlayerStore
-    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--discover")
-        ? 3
-        : (ProcessInfo.processInfo.arguments.contains("--live")
-            ? 2
-            : (ProcessInfo.processInfo.arguments.contains("--library") ? 1 : 0))
+    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--picks")
+        ? 4
+        : (ProcessInfo.processInfo.arguments.contains("--discover")
+            ? 3
+            : (ProcessInfo.processInfo.arguments.contains("--live")
+                ? 2
+                : (ProcessInfo.processInfo.arguments.contains("--library") ? 1 : 0)))
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -31,11 +33,7 @@ struct MainShellView: View {
             }
 
             if store.home?.capabilities.taterLink == true {
-                ComingSoonView(
-                    icon: "wand.and.stars",
-                    title: "Tater Picks",
-                    message: "Tater's recommendations and spoken group message will use the existing server endpoints."
-                )
+                TaterPicksView()
                 .tabItem { Label("Picks", systemImage: "wand.and.stars") }
                 .tag(4)
             }
@@ -65,28 +63,5 @@ struct MainShellView: View {
             get: { store.errorMessage != nil },
             set: { if !$0 { store.errorMessage = nil } }
         )
-    }
-}
-
-private struct ComingSoonView: View {
-    let icon: String
-    let title: String
-    let message: String
-
-    var body: some View {
-        VStack(spacing: 30) {
-            Image(systemName: icon)
-                .font(.system(size: 92, weight: .light))
-                .foregroundStyle(TaterTheme.orange)
-            Text(title)
-                .font(.system(size: 52, weight: .bold, design: .rounded))
-            Text(message)
-                .font(.system(size: 27, weight: .medium, design: .rounded))
-                .foregroundStyle(TaterTheme.secondaryText)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 760)
-        }
-        .padding(64)
-        .taterGlass(cornerRadius: 34)
     }
 }

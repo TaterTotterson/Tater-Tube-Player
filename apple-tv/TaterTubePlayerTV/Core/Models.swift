@@ -319,6 +319,211 @@ struct DiscoverPlayRequest: Encodable {
     }
 }
 
+struct TaterRecommendationsResponse: Decodable, Equatable {
+    let batch: TaterRecommendationBatch?
+    let profileID: String?
+    let items: [TaterRecommendationItem]
+
+    init(
+        batch: TaterRecommendationBatch?,
+        profileID: String? = "household",
+        items: [TaterRecommendationItem]
+    ) {
+        self.batch = batch
+        self.profileID = profileID
+        self.items = items
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case batch
+        case profileID = "profileId"
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        batch = try values.decodeIfPresent(TaterRecommendationBatch.self, forKey: .batch)
+        profileID = try values.decodeIfPresent(String.self, forKey: .profileID)
+        items = try values.decodeIfPresent([TaterRecommendationItem].self, forKey: .items) ?? []
+    }
+}
+
+struct TaterRecommendationBatch: Decodable, Equatable {
+    let id: String
+    let profileID: String?
+    let assistantName: String
+    let summary: String
+    let picksBriefing: String?
+    let generatedAt: String?
+    let expiresAt: String?
+
+    init(
+        id: String,
+        profileID: String? = "household",
+        assistantName: String = "Tater",
+        summary: String,
+        picksBriefing: String? = nil,
+        generatedAt: String? = nil,
+        expiresAt: String? = nil
+    ) {
+        self.id = id
+        self.profileID = profileID
+        self.assistantName = assistantName
+        self.summary = summary
+        self.picksBriefing = picksBriefing
+        self.generatedAt = generatedAt
+        self.expiresAt = expiresAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case profileID = "profileId"
+        case assistantName, summary, picksBriefing, generatedAt, expiresAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(String.self, forKey: .id) ?? ""
+        profileID = try values.decodeIfPresent(String.self, forKey: .profileID)
+        assistantName = try values.decodeIfPresent(String.self, forKey: .assistantName) ?? "Tater"
+        summary = try values.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        picksBriefing = try values.decodeIfPresent(String.self, forKey: .picksBriefing)
+        generatedAt = try values.decodeIfPresent(String.self, forKey: .generatedAt)
+        expiresAt = try values.decodeIfPresent(String.self, forKey: .expiresAt)
+    }
+}
+
+struct TaterRecommendationItem: Decodable, Equatable, Identifiable {
+    let id: String
+    let rank: Int
+    let candidateID: String?
+    let title: String
+    let mediaType: String?
+    let source: String?
+    let reason: String
+    let feedback: String?
+    let launch: MediaItem
+
+    init(
+        id: String,
+        rank: Int,
+        candidateID: String? = nil,
+        title: String,
+        mediaType: String? = nil,
+        source: String? = nil,
+        reason: String,
+        feedback: String? = nil,
+        launch: MediaItem
+    ) {
+        self.id = id
+        self.rank = rank
+        self.candidateID = candidateID
+        self.title = title
+        self.mediaType = mediaType
+        self.source = source
+        self.reason = reason
+        self.feedback = feedback
+        self.launch = launch
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, rank
+        case candidateID = "candidateId"
+        case title, mediaType, source, reason, feedback, launch
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        rank = try values.decodeIfPresent(Int.self, forKey: .rank) ?? 0
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Tater Pick"
+        mediaType = try values.decodeIfPresent(String.self, forKey: .mediaType)
+        source = try values.decodeIfPresent(String.self, forKey: .source)
+        reason = try values.decodeIfPresent(String.self, forKey: .reason)
+            ?? "Tater thinks this belongs on your screen."
+        feedback = try values.decodeIfPresent(String.self, forKey: .feedback)
+        launch = try values.decode(MediaItem.self, forKey: .launch)
+        candidateID = try values.decodeFlexibleStringIfPresent(forKey: .candidateID)
+        id = try values.decodeFlexibleStringIfPresent(forKey: .id)
+            ?? candidateID
+            ?? "pick:\(rank):\(title)"
+    }
+}
+
+struct TaterTTSCreateRequest: Encodable {
+    let profileID: String
+    let batchID: String
+    let briefingKind: String
+    let localHour: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case profileID = "profile_id"
+        case batchID = "batch_id"
+        case briefingKind = "briefing_kind"
+        case localHour = "local_hour"
+    }
+}
+
+struct TaterTTSRequestState: Decodable {
+    let id: String
+    let status: String
+    let contentType: String?
+    let error: String?
+    let audioURL: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, status, contentType, error
+        case audioURL = "audioUrl"
+    }
+}
+
+struct TaterViewingEventRequest: Encodable {
+    let eventID: String
+    let profileID: String
+    let source: String
+    let mediaID: String
+    let mediaType: String
+    let title: String
+    let seriesTitle: String?
+    let season: Int
+    let episode: Int
+    let positionMS: Int64
+    let durationMS: Int64
+    let state: String
+    let occurredAt: String
+    let metadata: TaterViewingMetadata
+
+    private enum CodingKeys: String, CodingKey {
+        case eventID = "event_id"
+        case profileID = "profile_id"
+        case source
+        case mediaID = "media_id"
+        case mediaType = "media_type"
+        case title
+        case seriesTitle = "series_title"
+        case season, episode
+        case positionMS = "position_ms"
+        case durationMS = "duration_ms"
+        case state
+        case occurredAt = "occurred_at"
+        case metadata
+    }
+}
+
+struct TaterViewingMetadata: Encodable {
+    let watchedMS: Int64
+    let action: String
+    let year: String?
+    let channelNumber: String?
+    let channelName: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case watchedMS = "watched_ms"
+        case action, year
+        case channelNumber = "channel_number"
+        case channelName = "channel_name"
+    }
+}
+
 struct LibraryLocation: Hashable, Identifiable {
     let categoryID: String
     let title: String
@@ -426,6 +631,8 @@ struct MediaItem: Decodable, Equatable, Identifiable {
     let communityRating: Double?
     let mediaType: String?
     let category: String?
+    let channelNumber: String?
+    let channelName: String?
     let categoryID: String?
     let sourceIndex: Int
     let path: String?
@@ -471,6 +678,8 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         communityRating: Double? = nil,
         mediaType: String? = nil,
         category: String? = nil,
+        channelNumber: String? = nil,
+        channelName: String? = nil,
         categoryID: String? = nil,
         sourceIndex: Int = 0,
         path: String? = nil,
@@ -515,6 +724,8 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         self.communityRating = communityRating
         self.mediaType = mediaType
         self.category = category
+        self.channelNumber = channelNumber
+        self.channelName = channelName
         self.categoryID = categoryID
         self.sourceIndex = sourceIndex
         self.path = path
@@ -566,6 +777,8 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         case communityRating
         case mediaType
         case category
+        case channelNumber
+        case channelName
         case categoryID = "categoryId"
         case sourceIndex
         case path
@@ -606,6 +819,8 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         type = try values.decodeIfPresent(String.self, forKey: .type)
         mediaType = try values.decodeIfPresent(String.self, forKey: .mediaType)
         category = try values.decodeIfPresent(String.self, forKey: .category)
+        channelNumber = try values.decodeIfPresent(String.self, forKey: .channelNumber)
+        channelName = try values.decodeIfPresent(String.self, forKey: .channelName)
         categoryID = try values.decodeIfPresent(String.self, forKey: .categoryID)
         sourceIndex = try values.decodeIfPresent(Int.self, forKey: .sourceIndex) ?? 0
         path = try values.decodeIfPresent(String.self, forKey: .path)
@@ -973,13 +1188,25 @@ struct LiveChannel: Decodable, Equatable, Identifiable {
     }
 
     var playbackItem: MediaItem {
-        MediaItem(
+        let program = now
+        return MediaItem(
             id: "tube-tv:\(number)",
-            title: title,
+            title: program?.title ?? title,
+            type: "channel",
             subtitle: number.isEmpty ? "Live on Tater Tube" : "Channel \(number)",
-            summary: now.map { "Now playing: \($0.title)" },
-            mediaType: "channel",
-            poster: logoURL,
+            summary: program?.summary ?? program.map { "Now playing: \($0.title)" },
+            mediaType: program?.mediaType ?? program?.kind ?? "channel",
+            category: program?.category,
+            channelNumber: number,
+            channelName: title,
+            categoryID: program?.categoryID,
+            sourceIndex: program?.sourceIndex ?? 0,
+            path: program?.path,
+            poster: program?.poster ?? logoURL,
+            backdrop: program?.backdrop,
+            seriesPoster: program?.seriesPoster,
+            seasonPoster: program?.seasonPoster,
+            episodeStill: program?.episodeStill,
             streamURL: streamURL
         )
     }
@@ -1366,6 +1593,23 @@ enum DemoCatalog {
         MediaItem(id: "demo-show-north", title: "Northern Lights", summary: "Two old friends return north and uncover what the quiet kept hidden.", mediaType: "show", categoryID: "local:tv", path: "Northern Lights", date: "2024", seasonCount: 3, episodeCount: 24, demoArtworkName: "northern-lights"),
         MediaItem(id: "demo-show-midnight", title: "After Midnight", summary: "A late-night radio signal carries secrets from across the valley.", mediaType: "show", categoryID: "local:tv", path: "After Midnight", date: "2023", seasonCount: 1, episodeCount: 8, demoArtworkName: "after-midnight")
     ]
+
+    static let recommendations = TaterRecommendationsResponse(
+        batch: TaterRecommendationBatch(
+            id: "demo-picks",
+            assistantName: "Tater",
+            summary: "Settle in with a little adventure, a smart mystery, and a few familiar favorites from your shelves.",
+            picksBriefing: "You have been spending time with atmospheric stories and easygoing adventures, so I kept this group cinematic, inviting, and good for a night on the couch."
+        ),
+        items: [
+            TaterRecommendationItem(id: "pick-cosmic", rank: 1, title: "Cosmic Drift", mediaType: "movie", source: "local_media", reason: "A spacious adventure that fits the science-fiction stories you have been enjoying.", launch: demoMovies[0]),
+            TaterRecommendationItem(id: "pick-harbor", rank: 2, title: "Harbor Street", mediaType: "show", source: "local_media", reason: "A warm, character-driven series that is easy to settle back into.", launch: demoShows[0]),
+            TaterRecommendationItem(id: "pick-neon", rank: 3, title: "Neon Nights", mediaType: "movie", source: "local_media", reason: "A stylish late-night movie with the same atmospheric edge as your recent watches.", launch: demoMovies[2]),
+            TaterRecommendationItem(id: "pick-north", rank: 4, title: "Northern Lights", mediaType: "show", source: "local_media", reason: "A quiet mystery with plenty of room for one more episode.", launch: demoShows[1]),
+            TaterRecommendationItem(id: "pick-winter", rank: 5, title: "The Long Winter", mediaType: "movie", source: "local_media", reason: "A focused survival story for when you want something tense and cinematic.", launch: demoMovies[1]),
+            TaterRecommendationItem(id: "pick-midnight", rank: 6, title: "After Midnight", mediaType: "show", source: "local_media", reason: "The eerie radio mystery makes this a strong pick for an evening watch.", launch: demoShows[2])
+        ]
+    )
 
     private static let demoSeasons = [
         MediaItem(id: "demo-harbor-s1", title: "Season 1", mediaType: "season", categoryID: "local:tv", path: "Harbor Street/Season 1", episodeCount: 8, demoArtworkName: "harbor-street"),

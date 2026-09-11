@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 
@@ -46,6 +47,11 @@ struct LiveGuideResult {
 
 struct DiscoverCatalogResult {
     let value: [DiscoverCategory]
+    let encodedEnvelope: Data
+}
+
+struct RecommendationsResult {
+    let value: TaterRecommendationsResponse
     let encodedEnvelope: Data
 }
 
@@ -187,6 +193,60 @@ final class APIClient: @unchecked Sendable {
         return DiscoverCatalogResult(
             value: response.discoveryCategories,
             encodedEnvelope: data
+        )
+    }
+
+    func recommendations() async throws -> RecommendationsResult {
+        let data = try await request(path: "/api/tater/recommendations")
+        return RecommendationsResult(
+            value: try decodeEnvelope(TaterRecommendationsResponse.self, from: data),
+            encodedEnvelope: data
+        )
+    }
+
+    func createRecommendationSpeech(batchID: String, localHour: Int) async throws -> TaterTTSRequestState {
+        let payload = TaterTTSCreateRequest(
+            profileID: "household",
+            batchID: batchID,
+            briefingKind: "recommendations",
+            localHour: localHour
+        )
+        let data = try await request(
+            path: "/api/tater/tts/requests",
+            method: "POST",
+            body: try JSONEncoder().encode(payload)
+        )
+        return try decodeEnvelope(TaterTTSRequestState.self, from: data)
+    }
+
+    func recommendationSpeechStatus(requestID: String) async throws -> TaterTTSRequestState {
+        let data = try await request(path: "/api/tater/tts/requests/\(requestID)")
+        return try decodeEnvelope(TaterTTSRequestState.self, from: data)
+    }
+
+    func recommendationSpeechAudio(requestID: String) async throws -> Data {
+        guard let url = resolvedURL(for: "/api/tater/tts/requests/\(requestID)/audio") else {
+            throw TaterAPIError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("audio/wav", forHTTPHeaderField: "Accept")
+        if let token, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data)
+        guard data.count <= 8 * 1024 * 1024 else {
+            throw TaterAPIError.server(413, "Tater's voice returned an unexpectedly large audio file.")
+        }
+        return data
+    }
+
+    func cancelRecommendationSpeech(requestID: String) async {
+        _ = try? await request(
+            path: "/api/tater/tts/requests/\(requestID)",
+            method: "DELETE"
         )
     }
 
@@ -335,6 +395,72 @@ final class APIClient: @unchecked Sendable {
         )
     }
 
+    func saveViewingEvent(
+        for item: MediaItem,
+        state: String,
+        positionMS: Int64,
+        durationMS: Int64,
+        sessionID: String,
+        watchedMS: Int64
+    ) async throws {
+        let state = state.lowercased()
+        guard ["started", "progress", "paused", "completed", "stopped"].contains(state),
+              watchedMS > 0,
+              !sessionID.isEmpty
+        else { return }
+
+        let live = item.isLiveChannel
+        let kind = item.mediaType?.lowercased() ?? ""
+        let episodeLike = ["episode", "tv", "series", "show", "tvshow"].contains(kind)
+            || item.categoryID?.lowercased().contains("tv") == true
+        let mediaType = episodeLike ? "episode" : "movie"
+        guard kind != "commercial", kind != "bumper", kind != "commercial_break" else { return }
+
+        let title = String(item.title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        guard !title.isEmpty else { return }
+        let path = item.path?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var seriesTitle = item.seriesTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if seriesTitle.isEmpty, episodeLike, let first = path.split(separator: "/").first {
+            seriesTitle = String(first)
+        }
+        let numbers = episodeNumbers(in: title + " " + path)
+        let source = live ? "tube_tv" : "local_media"
+        let identity = path.isEmpty
+            ? (item.playStateID ?? [mediaType, title, seriesTitle].joined(separator: "|"))
+            : [item.categoryID ?? "", String(item.sourceIndex), path].joined(separator: "|")
+        let mediaID = "local:" + sha256(identity)
+        let eventID = "player:" + sha256([sessionID, source, mediaID].joined(separator: "|"))
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let payload = TaterViewingEventRequest(
+            eventID: eventID,
+            profileID: "household",
+            source: source,
+            mediaID: mediaID,
+            mediaType: mediaType,
+            title: title,
+            seriesTitle: seriesTitle.isEmpty ? nil : String(seriesTitle.prefix(500)),
+            season: numbers.season,
+            episode: numbers.episode,
+            positionMS: max(0, positionMS),
+            durationMS: max(0, durationMS),
+            state: state,
+            occurredAt: formatter.string(from: Date()),
+            metadata: TaterViewingMetadata(
+                watchedMS: max(0, watchedMS),
+                action: state,
+                year: item.date,
+                channelNumber: live ? item.channelNumber : nil,
+                channelName: live ? item.channelName : nil
+            )
+        )
+        _ = try await request(
+            path: "/api/tater/viewing/events",
+            method: "POST",
+            body: try JSONEncoder().encode(payload)
+        )
+    }
+
     func clearPlayState(for item: MediaItem) async throws {
         let payload = PlayStateRequest(
             item: item,
@@ -391,6 +517,10 @@ final class APIClient: @unchecked Sendable {
 
     func decodeCachedDiscoverCatalog(_ data: Data) throws -> [DiscoverCategory] {
         try decodeEnvelope(DiscoverCatalogResponse.self, from: data).discoveryCategories
+    }
+
+    func decodeCachedRecommendations(_ data: Data) throws -> TaterRecommendationsResponse {
+        try decodeEnvelope(TaterRecommendationsResponse.self, from: data)
     }
 
     func localArtworkURL(for program: LiveProgram) -> String? {
@@ -463,6 +593,25 @@ final class APIClient: @unchecked Sendable {
 
     private func effectivePort(_ url: URL) -> Int? {
         url.port ?? (url.scheme?.lowercased() == "https" ? 443 : 80)
+    }
+
+    private func sha256(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func episodeNumbers(in value: String) -> (season: Int, episode: Int) {
+        guard let expression = try? NSRegularExpression(
+            pattern: #"(?:^|[ ._/-])S(\d{1,3})[ ._-]*E(\d{1,4})(?:$|[ ._/-])"#,
+            options: [.caseInsensitive]
+        ) else { return (0, 0) }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        guard let match = expression.firstMatch(in: value, range: range),
+              let seasonRange = Range(match.range(at: 1), in: value),
+              let episodeRange = Range(match.range(at: 2), in: value)
+        else { return (0, 0) }
+        return (Int(value[seasonRange]) ?? 0, Int(value[episodeRange]) ?? 0)
     }
 
     private func validate(response: URLResponse, data: Data) throws {

@@ -109,7 +109,7 @@ private struct LibraryShelf: View {
     }
 }
 
-private struct LibraryCollectionView: View {
+struct LibraryCollectionView: View {
     @EnvironmentObject private var store: PlayerStore
 
     let location: LibraryLocation

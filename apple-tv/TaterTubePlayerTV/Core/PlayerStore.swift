@@ -27,12 +27,17 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var discoverErrors: [String: String] = [:]
     @Published private(set) var isDiscoverCatalogRefreshing = false
     @Published private(set) var isPreparingDiscovery = false
+    @Published private(set) var recommendationBatch: TaterRecommendationBatch?
+    @Published private(set) var recommendations: [TaterRecommendationItem] = []
+    @Published private(set) var isRecommendationsRefreshing = false
+    @Published private(set) var recommendationsError: String?
     @Published private(set) var isDemo = false
     @Published var errorMessage: String?
     @Published var selectedMedia: MediaItem?
     @Published var isPlaybackPresented = false
 
     let playback = PlaybackCoordinator()
+    let recommendationSpeech = RecommendationSpeechCoordinator()
 
     private let credentials = CredentialStore()
     private var client: APIClient?
@@ -42,6 +47,7 @@ final class PlayerStore: ObservableObject {
     private let liveGuideCacheURL: URL
     private let discoverCatalogCacheURL: URL
     private let discoverPagesCacheDirectory: URL
+    private let recommendationsCacheURL: URL
     private let libraryShuffleSeed = UUID().uuidString
     private var lastLibraryLocation: LibraryLocation?
 
@@ -54,6 +60,7 @@ final class PlayerStore: ObservableObject {
         liveGuideCacheURL = directory.appendingPathComponent("live-guide.json")
         discoverCatalogCacheURL = directory.appendingPathComponent("discover-catalog.json")
         discoverPagesCacheDirectory = directory.appendingPathComponent("discover-pages", isDirectory: true)
+        recommendationsCacheURL = directory.appendingPathComponent("recommendations.json")
         libraryPagesCacheDirectory = directory.appendingPathComponent("library-pages", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: libraryPagesCacheDirectory,
@@ -70,6 +77,8 @@ final class PlayerStore: ObservableObject {
             libraryRows = DemoCatalog.libraryRows
             liveGuide = DemoCatalog.liveGuide
             discoverCategories = DemoCatalog.discoveryCategories
+            recommendationBatch = DemoCatalog.recommendations.batch
+            recommendations = DemoCatalog.recommendations.items
             phase = .ready
         }
     }
@@ -90,6 +99,7 @@ final class PlayerStore: ObservableObject {
         loadCachedLibraryRows()
         loadCachedLiveGuide()
         loadCachedDiscoverCatalog()
+        loadCachedRecommendations()
         phase = .ready
         await refreshHome(showActivity: home == nil)
         await refreshLibraryRows(showActivity: libraryRows.isEmpty)
@@ -132,6 +142,8 @@ final class PlayerStore: ObservableObject {
         libraryRows = DemoCatalog.libraryRows
         liveGuide = DemoCatalog.liveGuide
         discoverCategories = DemoCatalog.discoveryCategories
+        recommendationBatch = DemoCatalog.recommendations.batch
+        recommendations = DemoCatalog.recommendations.items
         libraryPages.removeAll()
         discoverPages.removeAll()
         errorMessage = nil
@@ -194,6 +206,35 @@ final class PlayerStore: ObservableObject {
                 discoverErrors["catalog"] = error.localizedDescription
             }
         }
+    }
+
+    func refreshRecommendations() async {
+        guard !isDemo, !isRecommendationsRefreshing, let client else { return }
+        isRecommendationsRefreshing = true
+        defer { isRecommendationsRefreshing = false }
+        do {
+            let response = try await client.recommendations()
+            recommendationBatch = response.value.batch
+            recommendations = response.value.items.sorted { left, right in
+                if left.rank == right.rank { return left.title < right.title }
+                return left.rank < right.rank
+            }
+            try? response.encodedEnvelope.write(to: recommendationsCacheURL, options: .atomic)
+            recommendationsError = nil
+        } catch {
+            if recommendations.isEmpty {
+                recommendationsError = error.localizedDescription
+            }
+        }
+    }
+
+    func beginRecommendationSpeech(batchID: String) {
+        guard !isDemo, let client else { return }
+        recommendationSpeech.start(batchID: batchID, client: client)
+    }
+
+    func stopRecommendationSpeech() {
+        recommendationSpeech.stop()
     }
 
     func discoverFeedKey(for category: DiscoverCategory) -> String {
@@ -279,7 +320,12 @@ final class PlayerStore: ObservableObject {
         guard let client else { return }
         selectedMedia = nil
         isPlaybackPresented = true
-        await playback.start(item: file.playbackItem, client: client, resume: resume)
+        await playback.start(
+            item: file.playbackItem,
+            client: client,
+            resume: resume,
+            reportsViewing: home?.capabilities.taterLink == true
+        )
     }
 
     func refreshLibraryRows(showActivity: Bool = false) async {
@@ -356,7 +402,12 @@ final class PlayerStore: ObservableObject {
         }
         selectedMedia = nil
         isPlaybackPresented = true
-        await playback.start(item: item, client: client, resume: resume)
+        await playback.start(
+            item: item,
+            client: client,
+            resume: resume,
+            reportsViewing: home?.capabilities.taterLink == true
+        )
     }
 
     func play(_ channel: LiveChannel) async {
@@ -370,6 +421,9 @@ final class PlayerStore: ObservableObject {
         if let lastLibraryLocation {
             await loadLibraryPage(lastLibraryLocation, forceNetwork: true)
         }
+        if home?.capabilities.taterLink == true {
+            await refreshRecommendations()
+        }
     }
 
     func clearProgress(for item: MediaItem) async {
@@ -381,18 +435,23 @@ final class PlayerStore: ObservableObject {
             if let lastLibraryLocation {
                 await loadLibraryPage(lastLibraryLocation, forceNetwork: true)
             }
+            if home?.capabilities.taterLink == true {
+                await refreshRecommendations()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func disconnect() {
+        recommendationSpeech.stop()
         credentials.clear()
         try? FileManager.default.removeItem(at: homeCacheURL)
         try? FileManager.default.removeItem(at: libraryRowsCacheURL)
         try? FileManager.default.removeItem(at: liveGuideCacheURL)
         try? FileManager.default.removeItem(at: discoverCatalogCacheURL)
         try? FileManager.default.removeItem(at: discoverPagesCacheDirectory)
+        try? FileManager.default.removeItem(at: recommendationsCacheURL)
         try? FileManager.default.removeItem(at: libraryPagesCacheDirectory)
         try? FileManager.default.createDirectory(
             at: libraryPagesCacheDirectory,
@@ -417,6 +476,9 @@ final class PlayerStore: ObservableObject {
         discoverPages = [:]
         loadingDiscoverPages = []
         discoverErrors = [:]
+        recommendationBatch = nil
+        recommendations = []
+        recommendationsError = nil
         lastLibraryLocation = nil
         isDemo = false
         errorMessage = nil
@@ -441,6 +503,17 @@ final class PlayerStore: ObservableObject {
     private func loadCachedDiscoverCatalog() {
         guard let client, let data = try? Data(contentsOf: discoverCatalogCacheURL) else { return }
         discoverCategories = (try? client.decodeCachedDiscoverCatalog(data)) ?? []
+    }
+
+    private func loadCachedRecommendations() {
+        guard let client, let data = try? Data(contentsOf: recommendationsCacheURL),
+              let response = try? client.decodeCachedRecommendations(data)
+        else { return }
+        recommendationBatch = response.batch
+        recommendations = response.items.sorted { left, right in
+            if left.rank == right.rank { return left.title < right.title }
+            return left.rank < right.rank
+        }
     }
 
     private func loadCachedDiscoverPage(for key: String) {
