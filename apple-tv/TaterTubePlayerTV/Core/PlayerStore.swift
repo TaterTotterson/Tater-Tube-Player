@@ -21,6 +21,12 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var liveGuide: TubeTVGuide?
     @Published private(set) var isLiveGuideRefreshing = false
     @Published private(set) var liveGuideError: String?
+    @Published private(set) var discoverCategories: [DiscoverCategory] = []
+    @Published private(set) var discoverPages: [String: LibraryPage] = [:]
+    @Published private(set) var loadingDiscoverPages: Set<String> = []
+    @Published private(set) var discoverErrors: [String: String] = [:]
+    @Published private(set) var isDiscoverCatalogRefreshing = false
+    @Published private(set) var isPreparingDiscovery = false
     @Published private(set) var isDemo = false
     @Published var errorMessage: String?
     @Published var selectedMedia: MediaItem?
@@ -34,6 +40,8 @@ final class PlayerStore: ObservableObject {
     private let libraryRowsCacheURL: URL
     private let libraryPagesCacheDirectory: URL
     private let liveGuideCacheURL: URL
+    private let discoverCatalogCacheURL: URL
+    private let discoverPagesCacheDirectory: URL
     private let libraryShuffleSeed = UUID().uuidString
     private var lastLibraryLocation: LibraryLocation?
 
@@ -44,9 +52,15 @@ final class PlayerStore: ObservableObject {
         homeCacheURL = directory.appendingPathComponent("home.json")
         libraryRowsCacheURL = directory.appendingPathComponent("library-rows.json")
         liveGuideCacheURL = directory.appendingPathComponent("live-guide.json")
+        discoverCatalogCacheURL = directory.appendingPathComponent("discover-catalog.json")
+        discoverPagesCacheDirectory = directory.appendingPathComponent("discover-pages", isDirectory: true)
         libraryPagesCacheDirectory = directory.appendingPathComponent("library-pages", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: libraryPagesCacheDirectory,
+            withIntermediateDirectories: true
+        )
+        try? FileManager.default.createDirectory(
+            at: discoverPagesCacheDirectory,
             withIntermediateDirectories: true
         )
 
@@ -55,6 +69,7 @@ final class PlayerStore: ObservableObject {
             home = DemoCatalog.home
             libraryRows = DemoCatalog.libraryRows
             liveGuide = DemoCatalog.liveGuide
+            discoverCategories = DemoCatalog.discoveryCategories
             phase = .ready
         }
     }
@@ -74,6 +89,7 @@ final class PlayerStore: ObservableObject {
         loadCachedHome()
         loadCachedLibraryRows()
         loadCachedLiveGuide()
+        loadCachedDiscoverCatalog()
         phase = .ready
         await refreshHome(showActivity: home == nil)
         await refreshLibraryRows(showActivity: libraryRows.isEmpty)
@@ -115,7 +131,9 @@ final class PlayerStore: ObservableObject {
         home = DemoCatalog.home
         libraryRows = DemoCatalog.libraryRows
         liveGuide = DemoCatalog.liveGuide
+        discoverCategories = DemoCatalog.discoveryCategories
         libraryPages.removeAll()
+        discoverPages.removeAll()
         errorMessage = nil
         phase = .ready
     }
@@ -160,6 +178,108 @@ final class PlayerStore: ObservableObject {
                 liveGuideError = error.localizedDescription
             }
         }
+    }
+
+    func refreshDiscoverCatalog() async {
+        guard !isDemo, !isDiscoverCatalogRefreshing, let client else { return }
+        isDiscoverCatalogRefreshing = true
+        defer { isDiscoverCatalogRefreshing = false }
+        do {
+            let response = try await client.discoverCatalog()
+            discoverCategories = response.value
+            try? response.encodedEnvelope.write(to: discoverCatalogCacheURL, options: .atomic)
+            discoverErrors["catalog"] = nil
+        } catch {
+            if discoverCategories.isEmpty {
+                discoverErrors["catalog"] = error.localizedDescription
+            }
+        }
+    }
+
+    func discoverFeedKey(for category: DiscoverCategory) -> String {
+        "feed|\(category.id.lowercased())"
+    }
+
+    func discoverSearchKey(for title: MediaItem) -> String {
+        let query = (title.searchQuery ?? title.title).lowercased()
+        return "search|\(title.mediaType?.lowercased() ?? "video")|\(query)"
+    }
+
+    func discoverPage(for key: String) -> LibraryPage? {
+        discoverPages[key]
+    }
+
+    func loadDiscoverFeed(_ category: DiscoverCategory, forceNetwork: Bool = false) async {
+        let key = discoverFeedKey(for: category)
+        if isDemo {
+            discoverPages[key] = DemoCatalog.discoveryPage(for: category)
+            return
+        }
+        if discoverPages[key] == nil { loadCachedDiscoverPage(for: key) }
+        guard !loadingDiscoverPages.contains(key), let client else { return }
+        loadingDiscoverPages.insert(key)
+        defer { loadingDiscoverPages.remove(key) }
+        do {
+            let response = try await client.discoverFeed(for: category)
+            if response.value != discoverPages[key] { discoverPages[key] = response.value }
+            try? response.encodedEnvelope.write(to: discoverPageCacheURL(for: key), options: .atomic)
+            discoverErrors[key] = nil
+        } catch {
+            if discoverPages[key] == nil || forceNetwork {
+                discoverErrors[key] = error.localizedDescription
+            }
+        }
+    }
+
+    func searchDiscovery(for title: MediaItem, forceNetwork: Bool = false) async {
+        let key = discoverSearchKey(for: title)
+        if isDemo {
+            discoverPages[key] = DemoCatalog.discoverySearchResults(for: title)
+            return
+        }
+        if discoverPages[key] == nil { loadCachedDiscoverPage(for: key) }
+        guard !loadingDiscoverPages.contains(key), let client else { return }
+        loadingDiscoverPages.insert(key)
+        defer { loadingDiscoverPages.remove(key) }
+        do {
+            let response = try await client.discoverSearch(for: title)
+            if response.value != discoverPages[key] { discoverPages[key] = response.value }
+            try? response.encodedEnvelope.write(to: discoverPageCacheURL(for: key), options: .atomic)
+            discoverErrors[key] = nil
+        } catch {
+            if discoverPages[key] == nil || forceNetwork {
+                discoverErrors[key] = error.localizedDescription
+            }
+        }
+    }
+
+    func prepareDiscovery(
+        release: MediaItem,
+        sourceTitle: MediaItem
+    ) async throws -> [DiscoverPreparedFile] {
+        guard !isDemo, let client else {
+            throw TaterAPIError.server(400, "Pair with your Tater Tube Server to prepare this stream.")
+        }
+        guard !isPreparingDiscovery else {
+            throw TaterAPIError.server(409, "This stream is already being prepared.")
+        }
+        isPreparingDiscovery = true
+        defer { isPreparingDiscovery = false }
+        let files = try await client.prepareDiscoverPlayback(
+            release: release,
+            sourceTitle: sourceTitle
+        )
+        guard !files.isEmpty else {
+            throw TaterAPIError.server(422, "The server did not return a playable file.")
+        }
+        return files
+    }
+
+    func playPreparedDiscovery(_ file: DiscoverPreparedFile, resume: Bool) async {
+        guard let client else { return }
+        selectedMedia = nil
+        isPlaybackPresented = true
+        await playback.start(item: file.playbackItem, client: client, resume: resume)
     }
 
     func refreshLibraryRows(showActivity: Bool = false) async {
@@ -224,6 +344,16 @@ final class PlayerStore: ObservableObject {
             errorMessage = "Pair with your Tater Tube Server to play this title."
             return
         }
+        if item.nzbURL?.isEmpty == false {
+            do {
+                let files = try await prepareDiscovery(release: item, sourceTitle: item)
+                let index = min(max(item.discoverStreamIndex, 0), files.count - 1)
+                await playPreparedDiscovery(files[index], resume: resume)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            return
+        }
         selectedMedia = nil
         isPlaybackPresented = true
         await playback.start(item: item, client: client, resume: resume)
@@ -261,9 +391,15 @@ final class PlayerStore: ObservableObject {
         try? FileManager.default.removeItem(at: homeCacheURL)
         try? FileManager.default.removeItem(at: libraryRowsCacheURL)
         try? FileManager.default.removeItem(at: liveGuideCacheURL)
+        try? FileManager.default.removeItem(at: discoverCatalogCacheURL)
+        try? FileManager.default.removeItem(at: discoverPagesCacheDirectory)
         try? FileManager.default.removeItem(at: libraryPagesCacheDirectory)
         try? FileManager.default.createDirectory(
             at: libraryPagesCacheDirectory,
+            withIntermediateDirectories: true
+        )
+        try? FileManager.default.createDirectory(
+            at: discoverPagesCacheDirectory,
             withIntermediateDirectories: true
         )
         connection = nil
@@ -277,6 +413,10 @@ final class PlayerStore: ObservableObject {
         libraryErrors = [:]
         liveGuide = nil
         liveGuideError = nil
+        discoverCategories = []
+        discoverPages = [:]
+        loadingDiscoverPages = []
+        discoverErrors = [:]
         lastLibraryLocation = nil
         isDemo = false
         errorMessage = nil
@@ -296,6 +436,25 @@ final class PlayerStore: ObservableObject {
     private func loadCachedLiveGuide() {
         guard let client, let data = try? Data(contentsOf: liveGuideCacheURL) else { return }
         liveGuide = try? client.decodeCachedLiveGuide(data)
+    }
+
+    private func loadCachedDiscoverCatalog() {
+        guard let client, let data = try? Data(contentsOf: discoverCatalogCacheURL) else { return }
+        discoverCategories = (try? client.decodeCachedDiscoverCatalog(data)) ?? []
+    }
+
+    private func loadCachedDiscoverPage(for key: String) {
+        guard let client,
+              let data = try? Data(contentsOf: discoverPageCacheURL(for: key)),
+              let page = try? client.decodeCachedLibraryPage(data)
+        else { return }
+        discoverPages[key] = page
+    }
+
+    private func discoverPageCacheURL(for key: String) -> URL {
+        let digest = SHA256.hash(data: Data(key.utf8))
+        let filename = digest.map { String(format: "%02x", $0) }.joined() + ".json"
+        return discoverPagesCacheDirectory.appendingPathComponent(filename)
     }
 
     private func loadCachedLibraryPage(for location: LibraryLocation) {

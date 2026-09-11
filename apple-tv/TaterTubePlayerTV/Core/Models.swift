@@ -192,6 +192,133 @@ struct LibraryRowsResponse: Decodable {
     let rows: [LibraryRow]
 }
 
+struct DiscoverCatalogResponse: Decodable {
+    let categories: [DiscoverCategory]
+
+    var discoveryCategories: [DiscoverCategory] {
+        for category in categories where category.id.lowercased() == "stream" {
+            if let root = category.children.first(where: {
+                $0.type?.lowercased() == "discoverroot"
+            }) {
+                return root.children
+            }
+        }
+        return []
+    }
+}
+
+struct DiscoverCategory: Decodable, Equatable, Identifiable {
+    let id: String
+    let title: String
+    let detail: String?
+    let type: String?
+    let fullTitle: String?
+    let category: String?
+    let time: String?
+    let children: [DiscoverCategory]
+
+    init(
+        id: String,
+        title: String,
+        detail: String? = nil,
+        type: String? = "discover",
+        fullTitle: String? = nil,
+        category: String? = nil,
+        time: String? = nil,
+        children: [DiscoverCategory] = []
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.type = type
+        self.fullTitle = fullTitle
+        self.category = category
+        self.time = time
+        self.children = children
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, detail, type, fullTitle, category, time, children
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Discover"
+        detail = try values.decodeIfPresent(String.self, forKey: .detail)
+        type = try values.decodeIfPresent(String.self, forKey: .type)
+        fullTitle = try values.decodeIfPresent(String.self, forKey: .fullTitle)
+        category = try values.decodeIfPresent(String.self, forKey: .category)
+        time = try values.decodeIfPresent(String.self, forKey: .time)
+        children = try values.decodeIfPresent([DiscoverCategory].self, forKey: .children) ?? []
+        id = try values.decodeFlexibleStringIfPresent(forKey: .id)
+            ?? [type, title].compactMap { $0 }.joined(separator: ":")
+    }
+
+    var artworkName: String {
+        switch id.lowercased() {
+        case "movie:top": return "popular-movies"
+        case let value where value.hasPrefix("movie:year:"): return "new-movies"
+        case "movie:imdbrating": return "featured-movies"
+        case "series:top": return "popular-tv"
+        case let value where value.hasPrefix("series:year:"): return "new-tv"
+        case "series:imdbrating": return "featured-tv"
+        default: return category?.lowercased() == "series" ? "featured-tv" : "featured-movies"
+        }
+    }
+}
+
+struct DiscoverPreparedFile: Identifiable {
+    let id: String
+    let filename: String
+    let playbackItem: MediaItem
+}
+
+struct DiscoverPlaybackResponse: Decodable {
+    let streams: [DiscoverStream]
+    let playStateID: String?
+    let nzbURL: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case streams
+        case playStateID = "_tater_play_state_id"
+        case nzbURL = "_tater_nzb_url"
+    }
+}
+
+struct DiscoverStream: Decodable {
+    let url: String
+    let title: String?
+    let name: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case url
+        case streamURL = "streamUrl"
+        case title
+        case name
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        url = try values.decodeIfPresent(String.self, forKey: .url)
+            ?? values.decodeIfPresent(String.self, forKey: .streamURL)
+            ?? ""
+        title = try values.decodeIfPresent(String.self, forKey: .title)
+        name = try values.decodeIfPresent(String.self, forKey: .name)
+    }
+}
+
+struct DiscoverPlayRequest: Encodable {
+    let nzbURL: String
+    let title: String
+    let category: String
+    let timeout: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case nzbURL = "nzb_url"
+        case title, category, timeout
+    }
+}
+
 struct LibraryLocation: Hashable, Identifiable {
     let categoryID: String
     let title: String
@@ -308,6 +435,11 @@ struct MediaItem: Decodable, Equatable, Identifiable {
     let nzbURL: String?
     let discoverStreamIndex: Int
     let discoverSourceTitle: String?
+    let searchQuery: String?
+    let guid: String?
+    let sizeText: String?
+    let files: String?
+    let grabs: String?
     let date: String?
     let poster: String?
     let backdrop: String?
@@ -348,6 +480,11 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         nzbURL: String? = nil,
         discoverStreamIndex: Int = 0,
         discoverSourceTitle: String? = nil,
+        searchQuery: String? = nil,
+        guid: String? = nil,
+        sizeText: String? = nil,
+        files: String? = nil,
+        grabs: String? = nil,
         date: String? = nil,
         poster: String? = nil,
         backdrop: String? = nil,
@@ -387,6 +524,11 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         self.nzbURL = nzbURL
         self.discoverStreamIndex = discoverStreamIndex
         self.discoverSourceTitle = discoverSourceTitle
+        self.searchQuery = searchQuery
+        self.guid = guid
+        self.sizeText = sizeText
+        self.files = files
+        self.grabs = grabs
         self.date = date
         self.poster = poster
         self.backdrop = backdrop
@@ -433,6 +575,11 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         case nzbURL = "nzbUrl"
         case discoverStreamIndex
         case discoverSourceTitle
+        case searchQuery
+        case guid
+        case sizeText
+        case files
+        case grabs
         case date
         case poster
         case backdrop
@@ -468,6 +615,11 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         nzbURL = try values.decodeIfPresent(String.self, forKey: .nzbURL)
         discoverStreamIndex = try values.decodeIfPresent(Int.self, forKey: .discoverStreamIndex) ?? 0
         discoverSourceTitle = try values.decodeIfPresent(String.self, forKey: .discoverSourceTitle)
+        searchQuery = try values.decodeIfPresent(String.self, forKey: .searchQuery)
+        guid = try values.decodeFlexibleStringIfPresent(forKey: .guid)
+        sizeText = try values.decodeIfPresent(String.self, forKey: .sizeText)
+        files = try values.decodeFlexibleStringIfPresent(forKey: .files)
+        grabs = try values.decodeFlexibleStringIfPresent(forKey: .grabs)
         poster = try values.decodeIfPresent(String.self, forKey: .poster)
         backdrop = try values.decodeIfPresent(String.self, forKey: .backdrop)
         seriesPoster = try values.decodeIfPresent(String.self, forKey: .seriesPoster)
@@ -499,8 +651,10 @@ struct MediaItem: Decodable, Equatable, Identifiable {
             ?? values.decodeFlexibleStringIfPresent(forKey: .ratingKey)
             ?? values.decodeFlexibleStringIfPresent(forKey: .partKey)
             ?? values.decodeFlexibleStringIfPresent(forKey: .key)
+            ?? guid
             ?? path
             ?? streamURL
+            ?? nzbURL
             ?? [mediaType, title, date].compactMap { $0 }.joined(separator: ":")
     }
 }
@@ -1126,6 +1280,78 @@ enum DemoCatalog {
         default:
             return LibraryPage(title: location.title, items: home.recentlyAdded)
         }
+    }
+
+    static let discoveryCategories: [DiscoverCategory] = {
+        let year = Calendar.current.component(.year, from: Date())
+        return [
+            DiscoverCategory(id: "movie:top", title: "Popular Movies", detail: "The movies people are watching now", category: "movie"),
+            DiscoverCategory(id: "movie:year:\(year)", title: "New Movies", detail: "Fresh releases from \(year)", category: "movie"),
+            DiscoverCategory(id: "movie:imdbrating", title: "Featured Movies", detail: "Highly rated movie picks", category: "movie"),
+            DiscoverCategory(id: "series:top", title: "Popular TV", detail: "Series everyone is talking about", category: "series"),
+            DiscoverCategory(id: "series:year:\(year)", title: "New TV", detail: "New series from \(year)", category: "series"),
+            DiscoverCategory(id: "series:imdbrating", title: "Featured TV", detail: "Highly rated shows to discover", category: "series")
+        ]
+    }()
+
+    static func discoveryPage(for category: DiscoverCategory) -> LibraryPage {
+        let isSeries = category.id.lowercased().hasPrefix("series:")
+        let base = isSeries ? demoShows : demoMovies
+        let repeated = base + Array(base.reversed())
+        let items = repeated.enumerated().map { index, item in
+            MediaItem(
+                id: "discover-title:\(category.id):\(index):\(item.id)",
+                title: item.title,
+                type: "discover",
+                subtitle: item.date,
+                summary: item.summary,
+                mediaType: isSeries ? "series" : "movie",
+                category: isSeries ? "TV" : "Movies",
+                categoryID: "discover",
+                discoverSourceTitle: item.title,
+                searchQuery: item.title,
+                date: item.date,
+                poster: item.poster,
+                backdrop: item.backdrop,
+                demoArtworkName: item.demoArtworkName
+            )
+        }
+        return LibraryPage(title: category.title, items: items)
+    }
+
+    static func discoverySearchResults(for title: MediaItem) -> LibraryPage {
+        let normalized = title.title.replacingOccurrences(of: " ", with: ".")
+        let year = title.date ?? "2026"
+        let names = [
+            "\(normalized).\(year).2160p.WEB-DL.DDP5.1.H.265-TATER",
+            "\(normalized).\(year).1080p.BluRay.DTS-HD.MA.5.1-TUBE",
+            "\(normalized).\(year).1080p.WEB-DL.AAC2.0.H.264-TOT"
+        ]
+        return LibraryPage(
+            title: "Choose a release",
+            items: names.enumerated().map { index, name in
+                MediaItem(
+                    id: "demo-release:\(title.id):\(index)",
+                    title: name,
+                    type: "release",
+                    subtitle: index == 0 ? "14.8 GB" : (index == 1 ? "8.2 GB" : "4.6 GB"),
+                    summary: title.summary,
+                    mediaType: title.mediaType,
+                    category: index == 1 ? "Movies > HD" : "Movies > UHD",
+                    categoryID: "discover",
+                    nzbURL: "https://demo.invalid/\(index).nzb",
+                    discoverSourceTitle: title.title,
+                    searchQuery: title.searchQuery,
+                    sizeText: index == 0 ? "14.8 GB" : (index == 1 ? "8.2 GB" : "4.6 GB"),
+                    files: index == 2 ? "1 file" : "3 files",
+                    grabs: index == 0 ? "248 grabs" : "96 grabs",
+                    date: title.date,
+                    poster: title.poster,
+                    backdrop: title.backdrop,
+                    demoArtworkName: title.demoArtworkName
+                )
+            }
+        )
     }
 
     private static let demoMovies = [

@@ -44,6 +44,11 @@ struct LiveGuideResult {
     let encodedEnvelope: Data
 }
 
+struct DiscoverCatalogResult {
+    let value: [DiscoverCategory]
+    let encodedEnvelope: Data
+}
+
 final class APIClient: @unchecked Sendable {
     let serverURL: URL
     let token: String?
@@ -58,7 +63,7 @@ final class APIClient: @unchecked Sendable {
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 20
-        configuration.timeoutIntervalForResource = 60
+        configuration.timeoutIntervalForResource = 330
         configuration.requestCachePolicy = .reloadRevalidatingCacheData
         configuration.urlCache = URLCache(
             memoryCapacity: 64 * 1024 * 1024,
@@ -176,6 +181,115 @@ final class APIClient: @unchecked Sendable {
         )
     }
 
+    func discoverCatalog() async throws -> DiscoverCatalogResult {
+        let data = try await request(path: "/api/tater/usenet/catalog")
+        let response = try decodeEnvelope(DiscoverCatalogResponse.self, from: data)
+        return DiscoverCatalogResult(
+            value: response.discoveryCategories,
+            encodedEnvelope: data
+        )
+    }
+
+    func discoverFeed(for category: DiscoverCategory) async throws -> LibraryPageResult {
+        let path = pathWithQuery(
+            "/api/tater/usenet/discover",
+            items: [URLQueryItem(name: "catalog", value: category.id)]
+        )
+        let data = try await request(path: path)
+        return LibraryPageResult(
+            value: try decodeEnvelope(LibraryPage.self, from: data),
+            encodedEnvelope: data
+        )
+    }
+
+    func discoverSearch(for title: MediaItem) async throws -> LibraryPageResult {
+        let query = (title.searchQuery ?? title.title).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 3 else {
+            throw TaterAPIError.server(400, "This title could not be searched.")
+        }
+        let path = pathWithQuery(
+            "/api/tater/usenet/search",
+            items: [URLQueryItem(name: "q", value: query)]
+        )
+        let data = try await request(path: path)
+        return LibraryPageResult(
+            value: try decodeEnvelope(LibraryPage.self, from: data),
+            encodedEnvelope: data
+        )
+    }
+
+    func prepareDiscoverPlayback(
+        release: MediaItem,
+        sourceTitle: MediaItem
+    ) async throws -> [DiscoverPreparedFile] {
+        guard let nzbURL = release.nzbURL, !nzbURL.isEmpty else {
+            throw TaterAPIError.server(400, "This result does not include an NZB link.")
+        }
+        let requestBody = DiscoverPlayRequest(
+            nzbURL: nzbURL,
+            title: sourceTitle.discoverSourceTitle ?? sourceTitle.title,
+            category: release.category ?? sourceTitle.category ?? "tater-tube",
+            timeout: 300
+        )
+        let data = try await request(
+            path: "/api/tater/usenet/play",
+            method: "POST",
+            body: try JSONEncoder().encode(requestBody),
+            timeout: 315
+        )
+
+        let payload: Data
+        if let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let nested = root["data"] as? [String: Any] {
+            payload = try JSONSerialization.data(withJSONObject: nested)
+        } else {
+            payload = data
+        }
+        // These server-owned state keys intentionally begin with underscores.
+        let response = try JSONDecoder().decode(DiscoverPlaybackResponse.self, from: payload)
+        let safeNzbURL = response.nzbURL ?? nzbURL
+        let sourceName = sourceTitle.discoverSourceTitle ?? sourceTitle.title
+
+        return response.streams.enumerated().compactMap { index, stream in
+            guard !stream.url.isEmpty else { return nil }
+            let filename = stream.title ?? stream.name ?? "Playable file \(index + 1)"
+            let item = MediaItem(
+                id: response.playStateID ?? "\(sourceTitle.id):stream:\(index)",
+                title: sourceName,
+                type: "nzbStream",
+                subtitle: filename,
+                summary: sourceTitle.summary,
+                tagline: sourceTitle.tagline,
+                contentRating: sourceTitle.contentRating,
+                communityRating: sourceTitle.communityRating,
+                mediaType: sourceTitle.mediaType ?? release.mediaType,
+                category: sourceTitle.category ?? release.category,
+                categoryID: "discover",
+                playStateID: response.playStateID ?? release.playStateID ?? sourceTitle.playStateID,
+                nzbURL: safeNzbURL,
+                discoverStreamIndex: index,
+                discoverSourceTitle: sourceName,
+                searchQuery: sourceTitle.searchQuery,
+                guid: sourceTitle.guid,
+                date: sourceTitle.date,
+                poster: sourceTitle.poster ?? release.poster,
+                backdrop: sourceTitle.backdrop ?? release.backdrop,
+                streamURL: stream.url,
+                progressPercent: sourceTitle.progressPercent,
+                viewOffset: sourceTitle.viewOffset,
+                viewOffsetSeconds: sourceTitle.viewOffsetSeconds,
+                duration: sourceTitle.duration,
+                durationSeconds: sourceTitle.durationSeconds,
+                durationDisplay: sourceTitle.durationDisplay
+            )
+            return DiscoverPreparedFile(
+                id: "\(item.id):\(index)",
+                filename: filename,
+                playbackItem: item
+            )
+        }
+    }
+
     func playbackPlan(
         for item: MediaItem,
         capabilities: PlaybackCapabilitiesReport,
@@ -275,6 +389,10 @@ final class APIClient: @unchecked Sendable {
         try decodeEnvelope(TubeTVGuide.self, from: data)
     }
 
+    func decodeCachedDiscoverCatalog(_ data: Data) throws -> [DiscoverCategory] {
+        try decodeEnvelope(DiscoverCatalogResponse.self, from: data).discoveryCategories
+    }
+
     func localArtworkURL(for program: LiveProgram) -> String? {
         if let artwork = program.artworkValue { return artwork }
         guard let categoryID = program.categoryID, !categoryID.isEmpty,
@@ -303,12 +421,14 @@ final class APIClient: @unchecked Sendable {
         path: String,
         method: String = "GET",
         body: Data? = nil,
-        authenticated: Bool = true
+        authenticated: Bool = true,
+        timeout: TimeInterval? = nil
     ) async throws -> Data {
         guard let url = resolvedURL(for: path) else { throw TaterAPIError.invalidResponse }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
+        if let timeout { request.timeoutInterval = timeout }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

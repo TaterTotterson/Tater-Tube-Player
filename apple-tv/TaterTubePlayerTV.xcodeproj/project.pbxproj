@@ -27,6 +27,7 @@
 		A10000000000000000000012 /* MediaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* MediaDetailView.swift */; };
 		A10000000000000000000013 /* NativePlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* NativePlayerView.swift */; };
 		A10000000000000000000014 /* LiveTVView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* LiveTVView.swift */; };
+		A10000000000000000000015 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* DiscoveryView.swift */; };
 		A10000000000000000000020 /* tater-tube-logo-leaning-transparent.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */; };
 		A10000000000000000000021 /* tater-hero-remote.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* tater-hero-remote.png */; };
 		A10000000000000000000022 /* cosmic-drift-poster.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* cosmic-drift-poster.png */; };
@@ -36,6 +37,12 @@
 		A10000000000000000000026 /* northern-lights.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* northern-lights.png */; };
 		A10000000000000000000027 /* orange-county-skies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* orange-county-skies.png */; };
 		A10000000000000000000028 /* after-midnight.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* after-midnight.png */; };
+		A10000000000000000000040 /* popular-movies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000040 /* popular-movies.png */; };
+		A10000000000000000000041 /* new-movies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000041 /* new-movies.png */; };
+		A10000000000000000000042 /* featured-movies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000042 /* featured-movies.png */; };
+		A10000000000000000000043 /* popular-tv.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000043 /* popular-tv.png */; };
+		A10000000000000000000044 /* new-tv.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000044 /* new-tv.png */; };
+		A10000000000000000000045 /* featured-tv.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000045 /* featured-tv.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -60,6 +67,7 @@
 		A20000000000000000000013 /* MediaDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDetailView.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* NativePlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePlayerView.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* LiveTVView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVView.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* DiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryView.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "tater-tube-logo-leaning-transparent.png"; path = "../assets/tater-tube-logo-leaning-transparent.png"; sourceTree = "<group>"; };
 		A20000000000000000000021 /* tater-hero-remote.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "tater-hero-remote.png"; path = "../assets/mascot/tater-hero-remote.png"; sourceTree = "<group>"; };
 		A20000000000000000000022 /* cosmic-drift-poster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "cosmic-drift-poster.png"; path = "../assets/demo/cosmic-drift-poster.png"; sourceTree = "<group>"; };
@@ -69,6 +77,12 @@
 		A20000000000000000000026 /* northern-lights.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "northern-lights.png"; path = "../assets/demo/northern-lights.png"; sourceTree = "<group>"; };
 		A20000000000000000000027 /* orange-county-skies.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "orange-county-skies.png"; path = "../assets/demo/orange-county-skies.png"; sourceTree = "<group>"; };
 		A20000000000000000000028 /* after-midnight.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "after-midnight.png"; path = "../assets/demo/after-midnight.png"; sourceTree = "<group>"; };
+		A20000000000000000000040 /* popular-movies.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "popular-movies.png"; path = "../assets/discovery/popular-movies.png"; sourceTree = "<group>"; };
+		A20000000000000000000041 /* new-movies.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "new-movies.png"; path = "../assets/discovery/new-movies.png"; sourceTree = "<group>"; };
+		A20000000000000000000042 /* featured-movies.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "featured-movies.png"; path = "../assets/discovery/featured-movies.png"; sourceTree = "<group>"; };
+		A20000000000000000000043 /* popular-tv.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "popular-tv.png"; path = "../assets/discovery/popular-tv.png"; sourceTree = "<group>"; };
+		A20000000000000000000044 /* new-tv.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "new-tv.png"; path = "../assets/discovery/new-tv.png"; sourceTree = "<group>"; };
+		A20000000000000000000045 /* featured-tv.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "featured-tv.png"; path = "../assets/discovery/featured-tv.png"; sourceTree = "<group>"; };
 		A20000000000000000000030 /* TaterTubePlayerTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TaterTubePlayerTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -131,6 +145,7 @@
 		A40000000000000000000005 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000016 /* DiscoveryView.swift */,
 				A2000000000000000000000D /* HomeView.swift */,
 				A2000000000000000000000E /* LibraryView.swift */,
 				A20000000000000000000015 /* LiveTVView.swift */,
@@ -147,6 +162,12 @@
 		A40000000000000000000006 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000040 /* popular-movies.png */,
+				A20000000000000000000041 /* new-movies.png */,
+				A20000000000000000000042 /* featured-movies.png */,
+				A20000000000000000000043 /* popular-tv.png */,
+				A20000000000000000000044 /* new-tv.png */,
+				A20000000000000000000045 /* featured-tv.png */,
 				A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */,
 				A20000000000000000000021 /* tater-hero-remote.png */,
 				A20000000000000000000022 /* cosmic-drift-poster.png */,
@@ -226,6 +247,12 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000040 /* popular-movies.png in Resources */,
+				A10000000000000000000041 /* new-movies.png in Resources */,
+				A10000000000000000000042 /* featured-movies.png in Resources */,
+				A10000000000000000000043 /* popular-tv.png in Resources */,
+				A10000000000000000000044 /* new-tv.png in Resources */,
+				A10000000000000000000045 /* featured-tv.png in Resources */,
 				A10000000000000000000020 /* tater-tube-logo-leaning-transparent.png in Resources */,
 				A10000000000000000000021 /* tater-hero-remote.png in Resources */,
 				A10000000000000000000022 /* cosmic-drift-poster.png in Resources */,
@@ -245,6 +272,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000015 /* DiscoveryView.swift in Sources */,
 				A10000000000000000000001 /* TaterTubePlayerTVApp.swift in Sources */,
 				A10000000000000000000002 /* Models.swift in Sources */,
 				A10000000000000000000003 /* CredentialStore.swift in Sources */,

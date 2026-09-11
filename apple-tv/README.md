@@ -12,7 +12,7 @@ expectations.
 - Dark translucent material fallback on tvOS 18–25
 - Pairing credentials stored in the tvOS Keychain
 - Authenticated requests cannot redirect to another host or downgrade HTTPS
-- Cached home response and artwork appear before the background refresh finishes
+- Cached home, library, guide, Discovery, and artwork data appear before background refreshes finish
 - Demo mode uses the same fictional, rights-safe catalog as the Steam store build
 
 Open `TaterTubePlayerTV.xcodeproj` in Xcode and select an Apple TV simulator or a
@@ -38,11 +38,14 @@ channel playback through the existing server stream. The playback core includes
 server capability negotiation, native AVKit playback, subtitles off by default,
 system audio/subtitle selection, resume, on-demand progress reporting,
 completion handling, and automatic season-to-season episode continuation.
+Discovery includes the six server-configured movie and TV collections, bundled
+Tater artwork, cached title feeds and searches, complete release filenames,
+multi-file selection, native playback, viewing history, and resumable Continue
+Watching entries.
 
-The remaining Steam behavior will arrive in this order:
+The remaining Steam behavior is:
 
-1. Discovery search, result selection, resume, and viewing history
-2. Tater Picks, recommendation reasons, and the server-generated spoken message
+1. Tater Picks, recommendation reasons, and the server-generated spoken message
 
 Apple TV requests an MPEG-TS-compatible output only when AVKit cannot consume a
 source container directly. Compatible video and audio tracks are repackaged

@@ -46,6 +46,16 @@ struct MediaDetailView: View {
 
                     Spacer(minLength: 10)
 
+                    if store.isPreparingDiscovery {
+                        HStack(spacing: 14) {
+                            ProgressView()
+                                .tint(TaterTheme.orange)
+                            Text("Preparing your Discover stream…")
+                                .font(.system(size: 21, weight: .semibold, design: .rounded))
+                                .foregroundStyle(TaterTheme.secondaryText)
+                        }
+                    }
+
                     HStack(spacing: 20) {
                         if item.resumeOffsetMS > 0 {
                             Button {
@@ -53,6 +63,7 @@ struct MediaDetailView: View {
                             } label: {
                                 Label("Resume", systemImage: "play.fill")
                             }
+                            .disabled(!hasPlayableSource || store.isDemo || store.isPreparingDiscovery)
                         }
 
                         Button {
@@ -60,7 +71,7 @@ struct MediaDetailView: View {
                         } label: {
                             Label(item.resumeOffsetMS > 0 ? "Start Over" : "Play", systemImage: "play")
                         }
-                        .disabled(item.streamURL?.isEmpty != false || store.isDemo)
+                        .disabled(!hasPlayableSource || store.isDemo || store.isPreparingDiscovery)
 
                         if item.resumeOffsetMS > 0 {
                             Button(role: .destructive) {
@@ -69,6 +80,7 @@ struct MediaDetailView: View {
                                 Image(systemName: "arrow.counterclockwise")
                                     .accessibilityLabel("Clear watch progress")
                             }
+                            .disabled(store.isDemo || store.isPreparingDiscovery)
                         }
 
                         Button("Close") { dismiss() }
@@ -110,6 +122,10 @@ struct MediaDetailView: View {
 
     private var detailBackdrop: String? {
         item.backdrop ?? item.episodeStill ?? item.seasonPoster ?? item.seriesPoster ?? item.poster
+    }
+
+    private var hasPlayableSource: Bool {
+        item.streamURL?.isEmpty == false || item.nzbURL?.isEmpty == false
     }
 }
 

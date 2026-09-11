@@ -2,9 +2,11 @@ import SwiftUI
 
 struct MainShellView: View {
     @EnvironmentObject private var store: PlayerStore
-    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--live")
-        ? 2
-        : (ProcessInfo.processInfo.arguments.contains("--library") ? 1 : 0)
+    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--discover")
+        ? 3
+        : (ProcessInfo.processInfo.arguments.contains("--live")
+            ? 2
+            : (ProcessInfo.processInfo.arguments.contains("--library") ? 1 : 0))
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -23,11 +25,7 @@ struct MainShellView: View {
             }
 
             if store.home?.capabilities.newznab == true {
-                ComingSoonView(
-                    icon: "sparkles.tv.fill",
-                    title: "Discover",
-                    message: "Discovery search and resumable streaming are coming into this native client next."
-                )
+                DiscoveryView()
                 .tabItem { Label("Discover", systemImage: "sparkles.tv.fill") }
                 .tag(3)
             }
@@ -55,6 +53,18 @@ struct MainShellView: View {
             NativePlayerScreen()
                 .environmentObject(store)
         }
+        .alert("Tater Tube Player", isPresented: storeErrorIsPresented) {
+            Button("OK", role: .cancel) { store.errorMessage = nil }
+        } message: {
+            Text(store.errorMessage ?? "Something went wrong.")
+        }
+    }
+
+    private var storeErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { store.errorMessage != nil },
+            set: { if !$0 { store.errorMessage = nil } }
+        )
     }
 }
 
