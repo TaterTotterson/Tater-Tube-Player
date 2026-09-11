@@ -1814,13 +1814,16 @@ ApplicationWindow {
         playbackControlsTimer.restart()
     }
 
-    function savePlaybackState(completed) {
+    function savePlaybackState(completed, playbackActive) {
         if (!playbackOpen || playbackIsLive || !playbackItem)
             return
+        var active = playbackActive === undefined ? completed !== true
+                                                   : playbackActive === true
         serverClient.savePlaybackProgress(playbackItem,
                                           Math.round(playbackPositionMs()),
                                           Math.round(playbackDurationMs()),
-                                          completed === true)
+                                          completed === true,
+                                          active)
     }
 
     function reportViewingHistory(state) {
@@ -1875,10 +1878,14 @@ ApplicationWindow {
     function closePlayback() {
         if (!playbackOpen)
             return
+
+        var completed = !playbackIsLive
+                && (playbackEnded || ViewingHistory.nearPlaybackEnd(
+                        playbackPositionMs(), playbackDurationMs()))
         if (!playbackEnded)
-            savePlaybackState(false)
+            savePlaybackState(completed, false)
         sampleViewingHistory()
-        finishViewingHistory(playbackEnded ? "completed" : "stopped")
+        finishViewingHistory(completed ? "completed" : "stopped")
         stopPlaybackEngine()
         playbackOpen = false
         playbackPlanPending = false
@@ -2036,7 +2043,7 @@ ApplicationWindow {
     function handlePlaybackEnd() {
         if (playbackEnded)
             return
-        savePlaybackState(true)
+        savePlaybackState(true, false)
         finishViewingHistory(playbackIsLive ? "stopped" : "completed")
         playbackEnded = true
         playbackControlsVisible = true
@@ -2053,6 +2060,14 @@ ApplicationWindow {
             serverClient.prepareNextEpisode(playbackItem)
             return
         }
+
+        var discoveryPlayback = categoryId.toLowerCase() === "discover"
+                || String(playbackItem && playbackItem.nzbUrl
+                          ? playbackItem.nzbUrl : "").trim().length > 0
+        if (!playbackIsLive && discoveryPlayback) {
+            Qt.callLater(function() { root.closePlayback() })
+            return
+        }
         playbackStatusMessage = "Finished"
     }
 
@@ -2062,6 +2077,7 @@ ApplicationWindow {
         playbackNextEpisodePending = false
         if (retryWithCompatibleStream(errorString))
             return
+        savePlaybackState(false, false)
         finishViewingHistory("stopped")
         playbackStatusMessage = ""
         playbackError = errorString && errorString.length > 0
@@ -2649,7 +2665,7 @@ ApplicationWindow {
         root.sampleViewingHistory()
         root.finishViewingHistory(root.playbackEnded ? "completed" : "stopped")
         if (root.playbackOpen && !root.playbackEnded)
-            root.savePlaybackState(false)
+            root.savePlaybackState(false, false)
         root.stopPlaybackEngine()
     }
 
@@ -5386,8 +5402,9 @@ ApplicationWindow {
         interval: 15000
         repeat: true
         running: root.playbackOpen && !root.playbackIsLive
-                 && root.playbackEnginePlaying
-        onTriggered: root.savePlaybackState(false)
+                 && root.playbackHasVideoFrame
+                 && root.playbackError.length === 0
+        onTriggered: root.savePlaybackState(false, true)
     }
 
     Timer {

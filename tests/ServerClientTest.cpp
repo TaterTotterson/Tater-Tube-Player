@@ -610,6 +610,7 @@ void ServerClientTest::postsPlaybackProgress()
     QVERIFY(requests.contains("\"durationMs\":60000"));
     QVERIFY(requests.contains("\"path\":\"Test Movie.mkv\""));
     QVERIFY(requests.contains("\"positionMs\":12345"));
+    QVERIFY(requests.contains("\"playbackActive\":true"));
     QTRY_VERIFY_WITH_TIMEOUT(!client.homeLoading(), 3000);
     QCOMPARE(client.continueWatching().size(), 1);
     QCOMPARE(client.continueWatching().constFirst().toMap()
@@ -623,6 +624,7 @@ void ServerClientTest::postsPlaybackProgress()
         {QStringLiteral("sourceIndex"), 0},
         {QStringLiteral("path"), QStringLiteral("Test Movie.mkv")},
     }, 60000, 60000, true);
+    QTRY_VERIFY_WITH_TIMEOUT(requests.contains("\"playbackActive\":false"), 3000);
     QCOMPARE(client.continueWatching().size(), 0);
     client.refreshHome();
     QTRY_VERIFY_WITH_TIMEOUT(!client.homeLoading(), 3000);

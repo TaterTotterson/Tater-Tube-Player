@@ -141,7 +141,8 @@ public:
                                                    const QVariantMap &capabilities,
                                                    int audioTrack);
     Q_INVOKABLE void savePlaybackProgress(const QVariantMap &item, qint64 positionMs,
-                                          qint64 durationMs, bool completed = false);
+                                          qint64 durationMs, bool completed = false,
+                                          bool playbackActive = true);
     Q_INVOKABLE void prepareNextEpisode(const QVariantMap &item);
     Q_INVOKABLE void clearPlaybackProgress(const QVariantMap &item);
     Q_INVOKABLE QString playbackTranscodeUrl(const QString &streamUrl,

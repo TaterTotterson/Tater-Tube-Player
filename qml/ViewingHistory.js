@@ -10,6 +10,20 @@ function observedWatchMs(previousTime, previousPosition, now, position, playing)
     return Math.min(elapsed, advanced, 1500)
 }
 
+function nearPlaybackEnd(position, duration) {
+    var safePosition = Math.max(0, Number(position) || 0)
+    var safeDuration = Math.max(0, Number(duration) || 0)
+    if (safeDuration <= 0)
+        return false
+    var remaining = safeDuration - safePosition
+    if (safeDuration < 300000)
+        return remaining <= 10000
+    // Treat the final 5% as credits/end matter, with sensible bounds for
+    // unusually short or long videos.
+    var threshold = Math.max(30000, Math.min(300000, safeDuration * 0.05))
+    return remaining <= threshold
+}
+
 function isInterstitial(program) {
     var kind = String(program.kind || program.mediaType || "").toLowerCase()
     return kind === "commercial" || kind === "commercial_break"

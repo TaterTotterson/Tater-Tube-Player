@@ -1614,7 +1614,8 @@ void ServerClient::forgetServer()
 }
 
 void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 positionMs,
-                                        qint64 durationMs, bool completed)
+                                        qint64 durationMs, bool completed,
+                                        bool playbackActive)
 {
     if (!paired())
         return;
@@ -1655,6 +1656,7 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
         {QStringLiteral("positionMs"), static_cast<double>(qMax<qint64>(0, positionMs))},
         {QStringLiteral("durationMs"), static_cast<double>(qMax<qint64>(0, durationMs))},
         {QStringLiteral("completed"), completed},
+        {QStringLiteral("playbackActive"), playbackActive && !completed},
     };
 
     QNetworkRequest request{QUrl(endpointUrl(m_serverUrl, "/api/tater/playstate"))};
@@ -1665,7 +1667,17 @@ void ServerClient::savePlaybackProgress(const QVariantMap &item, qint64 position
                          QNetworkRequest::NoLessSafeRedirectPolicy);
     QNetworkReply *reply = m_network.post(
         request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, completed] {
+        const bool succeeded = taterReplySucceeded(reply);
+        reply->deleteLater();
+        if (!succeeded || !completed)
+            return;
+        // The server may advance a completed episode to the next episode in
+        // the same series. Refresh only after the completed state is saved so
+        // Continue Watching immediately reflects that server-side decision.
+        refreshHome();
+        refreshLibraryRows();
+    });
 }
 
 void ServerClient::prepareNextEpisode(const QVariantMap &item)

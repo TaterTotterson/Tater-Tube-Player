@@ -8,6 +8,7 @@ class ViewingHistoryTest final : public QObject
 private slots:
     void initTestCase();
     void countsPlaybackWithoutCountingSeeksStallsOrSleep();
+    void marksPlaybackCompleteNearTheEnd();
     void followsLiveProgramsAndSkipsCommercialBreaks();
     void rejectsExpiredHomeGuideEntries();
     void keepsPausedLiveProgramWhenBroadcastGuideAdvances();
@@ -44,6 +45,22 @@ void ViewingHistoryTest::countsPlaybackWithoutCountingSeeksStallsOrSleep()
     QCOMPARE(engine.evaluate("observedWatchMs(1000, 5000, 2000, 1000, true)").toInt(), 0);
     QCOMPARE(engine.evaluate("observedWatchMs(1000, 5000, 2000, 6000, false)").toInt(), 0);
     QCOMPARE(engine.evaluate("observedWatchMs(1000, 5000, 3601000, 3605000, true)").toInt(), 0);
+}
+
+void ViewingHistoryTest::marksPlaybackCompleteNearTheEnd()
+{
+    // A two-hour movie uses the five-minute upper bound.
+    QVERIFY(!engine.evaluate("nearPlaybackEnd(6840000, 7200000)").toBool());
+    QVERIFY(engine.evaluate("nearPlaybackEnd(6900000, 7200000)").toBool());
+
+    // A half-hour episode uses five percent (90 seconds), allowing the server
+    // to advance the show while keeping its next episode in Continue Watching.
+    QVERIFY(!engine.evaluate("nearPlaybackEnd(1709000, 1800000)").toBool());
+    QVERIFY(engine.evaluate("nearPlaybackEnd(1710000, 1800000)").toBool());
+
+    QVERIFY(!engine.evaluate("nearPlaybackEnd(229000, 240000)").toBool());
+    QVERIFY(engine.evaluate("nearPlaybackEnd(230000, 240000)").toBool());
+    QVERIFY(!engine.evaluate("nearPlaybackEnd(1000, 0)").toBool());
 }
 
 void ViewingHistoryTest::followsLiveProgramsAndSkipsCommercialBreaks()
