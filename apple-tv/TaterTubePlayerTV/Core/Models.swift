@@ -159,12 +159,144 @@ struct LibraryEntry: Decodable, Equatable, Identifiable {
     }
 }
 
+struct LibraryRow: Decodable, Equatable, Identifiable {
+    let title: String
+    let entry: LibraryEntry
+    let items: [MediaItem]
+
+    var id: String { entry.id.isEmpty ? title : entry.id }
+}
+
+struct LibraryPage: Decodable, Equatable {
+    let title: String
+    let items: [MediaItem]
+
+    init(title: String, items: [MediaItem]) {
+        self.title = title
+        self.items = items
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case title
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Library"
+        items = try values.decodeIfPresent([MediaItem].self, forKey: .items) ?? []
+    }
+}
+
+struct LibraryRowsResponse: Decodable {
+    let rows: [LibraryRow]
+}
+
+struct LibraryLocation: Hashable, Identifiable {
+    let categoryID: String
+    let title: String
+    let sourceIndex: Int
+    let path: String
+    let continueWatching: Bool
+    let backdrop: String?
+    let poster: String?
+    let summary: String?
+    let mediaType: String?
+    let demoArtworkName: String?
+
+    var id: String { cacheKey }
+
+    var cacheKey: String {
+        [categoryID, String(sourceIndex), path, continueWatching ? "continue" : "browse"]
+            .joined(separator: "|")
+    }
+
+    static let allMovies = LibraryLocation(
+        categoryID: "local-discover:movies",
+        title: "All Movies",
+        sourceIndex: -1,
+        path: "",
+        continueWatching: false,
+        backdrop: nil,
+        poster: nil,
+        summary: nil,
+        mediaType: "movie",
+        demoArtworkName: nil
+    )
+
+    static let allShows = LibraryLocation(
+        categoryID: "local-discover:series",
+        title: "All TV Shows",
+        sourceIndex: -1,
+        path: "",
+        continueWatching: false,
+        backdrop: nil,
+        poster: nil,
+        summary: nil,
+        mediaType: "show",
+        demoArtworkName: nil
+    )
+
+    init(
+        categoryID: String,
+        title: String,
+        sourceIndex: Int = -1,
+        path: String = "",
+        continueWatching: Bool = false,
+        backdrop: String? = nil,
+        poster: String? = nil,
+        summary: String? = nil,
+        mediaType: String? = nil,
+        demoArtworkName: String? = nil
+    ) {
+        self.categoryID = categoryID
+        self.title = title
+        self.sourceIndex = sourceIndex
+        self.path = path
+        self.continueWatching = continueWatching
+        self.backdrop = backdrop
+        self.poster = poster
+        self.summary = summary
+        self.mediaType = mediaType
+        self.demoArtworkName = demoArtworkName
+    }
+
+    init(entry: LibraryEntry) {
+        categoryID = entry.id
+        title = entry.title
+        sourceIndex = -1
+        path = ""
+        continueWatching = entry.type?.lowercased() == "continue"
+        backdrop = nil
+        poster = nil
+        summary = nil
+        mediaType = nil
+        demoArtworkName = nil
+    }
+
+    init(item: MediaItem, parent: LibraryLocation) {
+        categoryID = item.categoryID ?? parent.categoryID
+        title = item.title
+        sourceIndex = item.sourceIndex
+        path = item.path ?? ""
+        continueWatching = false
+        backdrop = item.backdrop ?? parent.backdrop
+        poster = item.seriesPoster ?? item.seasonPoster ?? item.poster ?? parent.poster
+        summary = item.summary ?? parent.summary
+        mediaType = item.mediaType
+        demoArtworkName = item.demoArtworkName ?? parent.demoArtworkName
+    }
+}
+
 struct MediaItem: Decodable, Equatable, Identifiable {
     let id: String
     let title: String
     let type: String?
     let subtitle: String?
     let summary: String?
+    let tagline: String?
+    let contentRating: String?
+    let communityRating: Double?
     let mediaType: String?
     let category: String?
     let categoryID: String?
@@ -179,12 +311,21 @@ struct MediaItem: Decodable, Equatable, Identifiable {
     let date: String?
     let poster: String?
     let backdrop: String?
+    let seriesPoster: String?
+    let seasonPoster: String?
+    let episodeStill: String?
     let streamURL: String?
     let progressPercent: Double?
     let viewOffset: Int64?
     let viewOffsetSeconds: Double?
     let duration: Int64?
     let durationSeconds: Double?
+    let durationDisplay: String?
+    let leafCount: Int
+    let seasonCount: Int
+    let episodeCount: Int
+    let resumeTitle: String?
+    let resumeItem: ResumeMediaItem?
     let demoArtworkName: String?
 
     init(
@@ -193,6 +334,9 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         type: String? = nil,
         subtitle: String? = nil,
         summary: String? = nil,
+        tagline: String? = nil,
+        contentRating: String? = nil,
+        communityRating: Double? = nil,
         mediaType: String? = nil,
         category: String? = nil,
         categoryID: String? = nil,
@@ -207,12 +351,21 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         date: String? = nil,
         poster: String? = nil,
         backdrop: String? = nil,
+        seriesPoster: String? = nil,
+        seasonPoster: String? = nil,
+        episodeStill: String? = nil,
         streamURL: String? = nil,
         progressPercent: Double? = nil,
         viewOffset: Int64? = nil,
         viewOffsetSeconds: Double? = nil,
         duration: Int64? = nil,
         durationSeconds: Double? = nil,
+        durationDisplay: String? = nil,
+        leafCount: Int = 0,
+        seasonCount: Int = 0,
+        episodeCount: Int = 0,
+        resumeTitle: String? = nil,
+        resumeItem: ResumeMediaItem? = nil,
         demoArtworkName: String? = nil
     ) {
         self.id = id
@@ -220,6 +373,9 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         self.type = type
         self.subtitle = subtitle
         self.summary = summary
+        self.tagline = tagline
+        self.contentRating = contentRating
+        self.communityRating = communityRating
         self.mediaType = mediaType
         self.category = category
         self.categoryID = categoryID
@@ -234,12 +390,21 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         self.date = date
         self.poster = poster
         self.backdrop = backdrop
+        self.seriesPoster = seriesPoster
+        self.seasonPoster = seasonPoster
+        self.episodeStill = episodeStill
         self.streamURL = streamURL
         self.progressPercent = progressPercent
         self.viewOffset = viewOffset
         self.viewOffsetSeconds = viewOffsetSeconds
         self.duration = duration
         self.durationSeconds = durationSeconds
+        self.durationDisplay = durationDisplay
+        self.leafCount = leafCount
+        self.seasonCount = seasonCount
+        self.episodeCount = episodeCount
+        self.resumeTitle = resumeTitle
+        self.resumeItem = resumeItem
         self.demoArtworkName = demoArtworkName
     }
 
@@ -254,6 +419,9 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         case summary
         case overview
         case description
+        case tagline
+        case contentRating
+        case communityRating
         case mediaType
         case category
         case categoryID = "categoryId"
@@ -268,12 +436,21 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         case date
         case poster
         case backdrop
+        case seriesPoster
+        case seasonPoster
+        case episodeStill
         case streamURL = "streamUrl"
         case progressPercent
         case viewOffset
         case viewOffsetSeconds
         case duration
         case durationSeconds
+        case durationDisplay
+        case leafCount
+        case seasonCount
+        case episodeCount
+        case resumeTitle
+        case resumeItem
     }
 
     init(from decoder: Decoder) throws {
@@ -293,17 +470,29 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         discoverSourceTitle = try values.decodeIfPresent(String.self, forKey: .discoverSourceTitle)
         poster = try values.decodeIfPresent(String.self, forKey: .poster)
         backdrop = try values.decodeIfPresent(String.self, forKey: .backdrop)
+        seriesPoster = try values.decodeIfPresent(String.self, forKey: .seriesPoster)
+        seasonPoster = try values.decodeIfPresent(String.self, forKey: .seasonPoster)
+        episodeStill = try values.decodeIfPresent(String.self, forKey: .episodeStill)
         streamURL = try values.decodeIfPresent(String.self, forKey: .streamURL)
         subtitle = try values.decodeIfPresent(String.self, forKey: .subtitle)
         summary = try values.decodeIfPresent(String.self, forKey: .summary)
             ?? values.decodeIfPresent(String.self, forKey: .overview)
             ?? values.decodeIfPresent(String.self, forKey: .description)
+        tagline = try values.decodeIfPresent(String.self, forKey: .tagline)
+        contentRating = try values.decodeIfPresent(String.self, forKey: .contentRating)
+        communityRating = try values.decodeIfPresent(Double.self, forKey: .communityRating)
         date = try values.decodeIfPresent(String.self, forKey: .date)
         progressPercent = try values.decodeIfPresent(Double.self, forKey: .progressPercent)
         viewOffset = try values.decodeFlexibleInt64IfPresent(forKey: .viewOffset)
         viewOffsetSeconds = try values.decodeIfPresent(Double.self, forKey: .viewOffsetSeconds)
         duration = try values.decodeFlexibleInt64IfPresent(forKey: .duration)
         durationSeconds = try values.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        durationDisplay = try values.decodeIfPresent(String.self, forKey: .durationDisplay)
+        leafCount = try values.decodeIfPresent(Int.self, forKey: .leafCount) ?? 0
+        seasonCount = try values.decodeIfPresent(Int.self, forKey: .seasonCount) ?? 0
+        episodeCount = try values.decodeIfPresent(Int.self, forKey: .episodeCount) ?? 0
+        resumeTitle = try values.decodeIfPresent(String.self, forKey: .resumeTitle)
+        resumeItem = try values.decodeIfPresent(ResumeMediaItem.self, forKey: .resumeItem)
         demoArtworkName = nil
         id = try values.decodeFlexibleStringIfPresent(forKey: .id)
             ?? values.decodeFlexibleStringIfPresent(forKey: .playStateID)
@@ -313,6 +502,104 @@ struct MediaItem: Decodable, Equatable, Identifiable {
             ?? path
             ?? streamURL
             ?? [mediaType, title, date].compactMap { $0 }.joined(separator: ":")
+    }
+}
+
+struct ResumeMediaItem: Decodable, Equatable {
+    let id: String
+    let title: String
+    let type: String?
+    let summary: String?
+    let mediaType: String?
+    let categoryID: String?
+    let sourceIndex: Int
+    let path: String?
+    let playStateID: String?
+    let seriesStateID: String?
+    let seriesTitle: String?
+    let poster: String?
+    let backdrop: String?
+    let seriesPoster: String?
+    let seasonPoster: String?
+    let episodeStill: String?
+    let streamURL: String?
+    let progressPercent: Double?
+    let viewOffset: Int64?
+    let viewOffsetSeconds: Double?
+    let duration: Int64?
+    let durationSeconds: Double?
+    let durationDisplay: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, key, ratingKey, partKey, title, type, summary, overview, description
+        case mediaType, categoryID = "categoryId", sourceIndex, path
+        case playStateID = "playStateId", seriesStateID = "seriesStateId", seriesTitle
+        case poster, backdrop, seriesPoster, seasonPoster, episodeStill
+        case streamURL = "streamUrl", progressPercent, viewOffset, viewOffsetSeconds
+        case duration, durationSeconds, durationDisplay
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        title = try values.decode(String.self, forKey: .title)
+        type = try values.decodeIfPresent(String.self, forKey: .type)
+        mediaType = try values.decodeIfPresent(String.self, forKey: .mediaType)
+        categoryID = try values.decodeIfPresent(String.self, forKey: .categoryID)
+        sourceIndex = try values.decodeIfPresent(Int.self, forKey: .sourceIndex) ?? 0
+        path = try values.decodeIfPresent(String.self, forKey: .path)
+        playStateID = try values.decodeFlexibleStringIfPresent(forKey: .playStateID)
+        seriesStateID = try values.decodeFlexibleStringIfPresent(forKey: .seriesStateID)
+        seriesTitle = try values.decodeIfPresent(String.self, forKey: .seriesTitle)
+        poster = try values.decodeIfPresent(String.self, forKey: .poster)
+        backdrop = try values.decodeIfPresent(String.self, forKey: .backdrop)
+        seriesPoster = try values.decodeIfPresent(String.self, forKey: .seriesPoster)
+        seasonPoster = try values.decodeIfPresent(String.self, forKey: .seasonPoster)
+        episodeStill = try values.decodeIfPresent(String.self, forKey: .episodeStill)
+        streamURL = try values.decodeIfPresent(String.self, forKey: .streamURL)
+        summary = try values.decodeIfPresent(String.self, forKey: .summary)
+            ?? values.decodeIfPresent(String.self, forKey: .overview)
+            ?? values.decodeIfPresent(String.self, forKey: .description)
+        progressPercent = try values.decodeIfPresent(Double.self, forKey: .progressPercent)
+        viewOffset = try values.decodeFlexibleInt64IfPresent(forKey: .viewOffset)
+        viewOffsetSeconds = try values.decodeIfPresent(Double.self, forKey: .viewOffsetSeconds)
+        duration = try values.decodeFlexibleInt64IfPresent(forKey: .duration)
+        durationSeconds = try values.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        durationDisplay = try values.decodeIfPresent(String.self, forKey: .durationDisplay)
+        id = try values.decodeFlexibleStringIfPresent(forKey: .id)
+            ?? values.decodeFlexibleStringIfPresent(forKey: .playStateID)
+            ?? values.decodeFlexibleStringIfPresent(forKey: .ratingKey)
+            ?? values.decodeFlexibleStringIfPresent(forKey: .partKey)
+            ?? values.decodeFlexibleStringIfPresent(forKey: .key)
+            ?? path
+            ?? [mediaType, title].compactMap { $0 }.joined(separator: ":")
+    }
+
+    var mediaItem: MediaItem {
+        MediaItem(
+            id: id,
+            title: title,
+            type: type,
+            summary: summary,
+            mediaType: mediaType,
+            categoryID: categoryID,
+            sourceIndex: sourceIndex,
+            path: path,
+            playStateID: playStateID,
+            seriesStateID: seriesStateID,
+            seriesTitle: seriesTitle,
+            poster: poster,
+            backdrop: backdrop,
+            seriesPoster: seriesPoster,
+            seasonPoster: seasonPoster,
+            episodeStill: episodeStill,
+            streamURL: streamURL,
+            progressPercent: progressPercent,
+            viewOffset: viewOffset,
+            viewOffsetSeconds: viewOffsetSeconds,
+            duration: duration,
+            durationSeconds: durationSeconds,
+            durationDisplay: durationDisplay
+        )
     }
 }
 
@@ -484,4 +771,97 @@ enum DemoCatalog {
             LibraryEntry(id: "local:tv", title: "TV Shows", type: "local")
         ]
     )
+
+    static let libraryRows: [LibraryRow] = [
+        LibraryRow(
+            title: "Continue Watching",
+            entry: LibraryEntry(id: "", title: "Continue Watching", type: "continue"),
+            items: home.continueWatching
+        ),
+        LibraryRow(
+            title: "Recently Added",
+            entry: LibraryEntry(id: "local-discover:recent", title: "Recently Added", type: "localDiscover"),
+            items: home.recentlyAdded
+        ),
+        LibraryRow(
+            title: "Movies",
+            entry: LibraryEntry(id: "local-discover:movies", title: "Movies", type: "localDiscover"),
+            items: demoMovies
+        ),
+        LibraryRow(
+            title: "Series",
+            entry: LibraryEntry(id: "local-discover:series", title: "Series", type: "localDiscover"),
+            items: demoShows
+        )
+    ]
+
+    static func libraryPage(for location: LibraryLocation) -> LibraryPage {
+        if location.continueWatching {
+            return LibraryPage(title: "Continue Watching", items: home.continueWatching)
+        }
+        switch location.categoryID {
+        case "local-discover:movies":
+            return LibraryPage(title: "All Movies", items: demoMovies)
+        case "local-discover:series":
+            return LibraryPage(title: "All TV Shows", items: demoShows)
+        default:
+            break
+        }
+
+        switch location.path {
+        case "Harbor Street":
+            return LibraryPage(title: "Harbor Street", items: demoSeasons)
+        case "Harbor Street/Season 1":
+            return LibraryPage(title: "Season 1", items: demoEpisodes(season: 1))
+        case "Harbor Street/Season 2":
+            return LibraryPage(title: "Season 2", items: demoEpisodes(season: 2))
+        default:
+            return LibraryPage(title: location.title, items: home.recentlyAdded)
+        }
+    }
+
+    private static let demoMovies = [
+        MediaItem(id: "demo-movie-cosmic", title: "Cosmic Drift", summary: "A lone explorer follows an impossible signal beyond the mapped stars.", mediaType: "movie", categoryID: "local:movies", path: "Cosmic Drift (2026)/Cosmic Drift.mkv", date: "2026", progressPercent: 38, demoArtworkName: "cosmic-drift-poster"),
+        MediaItem(id: "demo-movie-winter", title: "The Long Winter", summary: "A final supply run becomes a race across a frozen frontier.", mediaType: "movie", categoryID: "local:movies", path: "The Long Winter (2025)/The Long Winter.mkv", date: "2025", demoArtworkName: "the-long-winter"),
+        MediaItem(id: "demo-movie-neon", title: "Neon Nights", summary: "A midnight drive through a city that never quite sleeps.", mediaType: "movie", categoryID: "local:movies", path: "Neon Nights (2026)/Neon Nights.mkv", date: "2026", demoArtworkName: "neon-nights"),
+        MediaItem(id: "demo-movie-orange", title: "Orange County Skies", summary: "One last coastal drive changes the road ahead.", mediaType: "movie", categoryID: "local:movies", path: "Orange County Skies (2025)/Orange County Skies.mkv", date: "2025", demoArtworkName: "orange-county-skies")
+    ]
+
+    private static let demoShows = [
+        MediaItem(id: "demo-show-harbor", title: "Harbor Street", summary: "A close-knit harbor town finds a new beginning after the storm.", mediaType: "show", categoryID: "local:tv", path: "Harbor Street", date: "2024", seasonCount: 2, episodeCount: 16, demoArtworkName: "harbor-street"),
+        MediaItem(id: "demo-show-north", title: "Northern Lights", summary: "Two old friends return north and uncover what the quiet kept hidden.", mediaType: "show", categoryID: "local:tv", path: "Northern Lights", date: "2024", seasonCount: 3, episodeCount: 24, demoArtworkName: "northern-lights"),
+        MediaItem(id: "demo-show-midnight", title: "After Midnight", summary: "A late-night radio signal carries secrets from across the valley.", mediaType: "show", categoryID: "local:tv", path: "After Midnight", date: "2023", seasonCount: 1, episodeCount: 8, demoArtworkName: "after-midnight")
+    ]
+
+    private static let demoSeasons = [
+        MediaItem(id: "demo-harbor-s1", title: "Season 1", mediaType: "season", categoryID: "local:tv", path: "Harbor Street/Season 1", episodeCount: 8, demoArtworkName: "harbor-street"),
+        MediaItem(id: "demo-harbor-s2", title: "Season 2", mediaType: "season", categoryID: "local:tv", path: "Harbor Street/Season 2", progressPercent: 46, episodeCount: 8, resumeTitle: "S02E04 Safe Harbor", demoArtworkName: "harbor-street")
+    ]
+
+    private static func demoEpisodes(season: Int) -> [MediaItem] {
+        (1...8).map { episode in
+            let watched = season == 2 && episode < 4
+            let current = season == 2 && episode == 4
+            return MediaItem(
+                id: "demo-harbor-s\(season)e\(episode)",
+                title: String(format: "S%02dE%02d %@", season, episode, episodeTitles[(episode - 1) % episodeTitles.count]),
+                summary: "The harbor crew follows a new lead while the tide changes around them.",
+                mediaType: "episode",
+                categoryID: "local:tv",
+                path: String(format: "Harbor Street/Season %d/Harbor Street S%02dE%02d.mkv", season, season, episode),
+                seriesStateID: "demo-harbor-series",
+                seriesTitle: "Harbor Street",
+                progressPercent: current ? 46 : (watched ? 100 : nil),
+                viewOffsetSeconds: current ? 1240 : nil,
+                durationSeconds: 2700,
+                durationDisplay: "45 min",
+                demoArtworkName: "harbor-street"
+            )
+        }
+    }
+
+    private static let episodeTitles = [
+        "Low Tide", "The Lantern", "Old Maps", "Safe Harbor",
+        "North Wind", "Night Watch", "The Crossing", "Home Water"
+    ]
 }

@@ -2,14 +2,17 @@ import SwiftUI
 
 struct MainShellView: View {
     @EnvironmentObject private var store: PlayerStore
+    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--library") ? 1 : 0
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             HomeView()
                 .tabItem { Label("Home", systemImage: "house.fill") }
+                .tag(0)
 
             LibraryView()
                 .tabItem { Label("Library", systemImage: "rectangle.stack.fill") }
+                .tag(1)
 
             if store.home?.capabilities.tubeTV == true {
                 ComingSoonView(
@@ -18,6 +21,7 @@ struct MainShellView: View {
                     message: "The native guide and channel playback are the next parity milestone."
                 )
                 .tabItem { Label("Live TV", systemImage: "tv.fill") }
+                .tag(2)
             }
 
             if store.home?.capabilities.newznab == true {
@@ -27,6 +31,7 @@ struct MainShellView: View {
                     message: "Discovery search and resumable streaming are coming into this native client next."
                 )
                 .tabItem { Label("Discover", systemImage: "sparkles.tv.fill") }
+                .tag(3)
             }
 
             if store.home?.capabilities.taterLink == true {
@@ -36,10 +41,12 @@ struct MainShellView: View {
                     message: "Tater's recommendations and spoken group message will use the existing server endpoints."
                 )
                 .tabItem { Label("Picks", systemImage: "wand.and.stars") }
+                .tag(4)
             }
 
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                .tag(5)
         }
         .tint(TaterTheme.orange)
         .sheet(item: $store.selectedMedia) { item in

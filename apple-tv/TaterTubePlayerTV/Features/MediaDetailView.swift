@@ -8,13 +8,13 @@ struct MediaDetailView: View {
 
     var body: some View {
         ZStack {
-            ArtworkView(remoteValue: item.backdrop ?? item.poster, demoName: item.demoArtworkName)
+            ArtworkView(remoteValue: detailBackdrop, demoName: item.demoArtworkName)
                 .ignoresSafeArea()
                 .overlay(Color.black.opacity(0.64))
                 .blur(radius: 8)
 
             HStack(spacing: 42) {
-                ArtworkView(remoteValue: item.poster, demoName: item.demoArtworkName)
+                ArtworkView(remoteValue: detailPoster, demoName: item.demoArtworkName)
                     .frame(width: 330, height: 490)
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
 
@@ -27,6 +27,14 @@ struct MediaDetailView: View {
                         Text(metadata)
                             .font(.system(size: 23, weight: .bold, design: .rounded))
                             .foregroundStyle(TaterTheme.orange)
+                    }
+
+                    if let tagline = item.tagline, !tagline.isEmpty {
+                        Text(tagline)
+                            .font(.system(size: 25, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.88))
+                            .italic()
+                            .lineLimit(2)
                     }
 
                     if let summary = item.summary, !summary.isEmpty {
@@ -77,13 +85,31 @@ struct MediaDetailView: View {
     }
 
     private var metadataLine: String? {
-        [item.mediaType?.uppercased(), item.date]
+        var values = [item.mediaType?.uppercased(), item.date, item.contentRating]
+        if let rating = item.communityRating, rating > 0 {
+            values.append(String(format: "★ %.1f", rating))
+        }
+        if let category = item.category, !category.isEmpty {
+            values.append(category)
+        }
+        return values
             .compactMap { value in
                 guard let value, !value.isEmpty else { return nil }
                 return value
             }
             .joined(separator: "  •  ")
             .nilIfEmpty
+    }
+
+    private var detailPoster: String? {
+        if item.mediaType?.lowercased() == "episode" {
+            return item.seasonPoster ?? item.seriesPoster ?? item.poster
+        }
+        return item.poster ?? item.seriesPoster ?? item.seasonPoster
+    }
+
+    private var detailBackdrop: String? {
+        item.backdrop ?? item.episodeStill ?? item.seasonPoster ?? item.seriesPoster ?? item.poster
     }
 }
 

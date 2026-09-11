@@ -29,6 +29,16 @@ struct HomeResponse {
     let encodedEnvelope: Data
 }
 
+struct LibraryRowsResult {
+    let value: [LibraryRow]
+    let encodedEnvelope: Data
+}
+
+struct LibraryPageResult {
+    let value: LibraryPage
+    let encodedEnvelope: Data
+}
+
 final class APIClient: @unchecked Sendable {
     let serverURL: URL
     let token: String?
@@ -113,6 +123,44 @@ final class APIClient: @unchecked Sendable {
     func home() async throws -> HomeResponse {
         let data = try await request(path: "/api/v1/player/home?include_live=0")
         return HomeResponse(value: try decodeEnvelope(PlayerHome.self, from: data), encodedEnvelope: data)
+    }
+
+    func libraryRows(shuffleSeed: String) async throws -> LibraryRowsResult {
+        let path = pathWithQuery(
+            "/api/v1/player/library",
+            items: [URLQueryItem(name: "shuffle_seed", value: shuffleSeed)]
+        )
+        let data = try await request(path: path)
+        let response = try decodeEnvelope(LibraryRowsResponse.self, from: data)
+        return LibraryRowsResult(value: response.rows, encodedEnvelope: data)
+    }
+
+    func libraryPage(at location: LibraryLocation, shuffleSeed: String) async throws -> LibraryPageResult {
+        if location.continueWatching {
+            let data = try await request(path: "/api/tater/playstate/continue")
+            let page = try decodeEnvelope(LibraryPage.self, from: data)
+            return LibraryPageResult(value: page, encodedEnvelope: data)
+        }
+
+        var query = [
+            URLQueryItem(name: "category_id", value: location.categoryID),
+            URLQueryItem(name: "title", value: location.title)
+        ]
+        if location.sourceIndex >= 0 {
+            query.append(URLQueryItem(name: "source", value: String(location.sourceIndex)))
+        }
+        if !location.path.isEmpty {
+            query.append(URLQueryItem(name: "path", value: location.path))
+        }
+        if location.categoryID.hasPrefix("local-discover:") {
+            query.append(URLQueryItem(name: "full", value: "1"))
+            query.append(URLQueryItem(name: "shuffle_seed", value: shuffleSeed))
+        }
+        let data = try await request(path: pathWithQuery("/api/tater/usenet/items", items: query))
+        return LibraryPageResult(
+            value: try decodeEnvelope(LibraryPage.self, from: data),
+            encodedEnvelope: data
+        )
     }
 
     func playbackPlan(
@@ -200,6 +248,21 @@ final class APIClient: @unchecked Sendable {
 
     func decodeCachedHome(_ data: Data) throws -> PlayerHome {
         try decodeEnvelope(PlayerHome.self, from: data)
+    }
+
+    func decodeCachedLibraryRows(_ data: Data) throws -> [LibraryRow] {
+        try decodeEnvelope(LibraryRowsResponse.self, from: data).rows
+    }
+
+    func decodeCachedLibraryPage(_ data: Data) throws -> LibraryPage {
+        try decodeEnvelope(LibraryPage.self, from: data)
+    }
+
+    private func pathWithQuery(_ path: String, items: [URLQueryItem]) -> String {
+        var components = URLComponents()
+        components.path = path
+        components.queryItems = items
+        return components.string ?? path
     }
 
     private func request(

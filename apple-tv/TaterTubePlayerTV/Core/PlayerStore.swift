@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 @MainActor
@@ -12,6 +13,11 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var home: PlayerHome?
     @Published private(set) var connection: SavedConnection?
     @Published private(set) var isRefreshing = false
+    @Published private(set) var isLibraryRefreshing = false
+    @Published private(set) var libraryRows: [LibraryRow] = []
+    @Published private(set) var libraryPages: [String: LibraryPage] = [:]
+    @Published private(set) var loadingLibraryPages: Set<String> = []
+    @Published private(set) var libraryErrors: [String: String] = [:]
     @Published private(set) var isDemo = false
     @Published var errorMessage: String?
     @Published var selectedMedia: MediaItem?
@@ -22,16 +28,27 @@ final class PlayerStore: ObservableObject {
     private let credentials = CredentialStore()
     private var client: APIClient?
     private let homeCacheURL: URL
+    private let libraryRowsCacheURL: URL
+    private let libraryPagesCacheDirectory: URL
+    private let libraryShuffleSeed = UUID().uuidString
+    private var lastLibraryLocation: LibraryLocation?
 
     init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         let directory = caches.appendingPathComponent("TaterTubePlayerTV", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         homeCacheURL = directory.appendingPathComponent("home.json")
+        libraryRowsCacheURL = directory.appendingPathComponent("library-rows.json")
+        libraryPagesCacheDirectory = directory.appendingPathComponent("library-pages", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: libraryPagesCacheDirectory,
+            withIntermediateDirectories: true
+        )
 
         if ProcessInfo.processInfo.arguments.contains("--demo") {
             isDemo = true
             home = DemoCatalog.home
+            libraryRows = DemoCatalog.libraryRows
             phase = .ready
         }
     }
@@ -49,8 +66,10 @@ final class PlayerStore: ObservableObject {
         connection = saved
         client = APIClient(serverURL: saved.serverURL, token: saved.token)
         loadCachedHome()
+        loadCachedLibraryRows()
         phase = .ready
         await refreshHome(showActivity: home == nil)
+        await refreshLibraryRows(showActivity: libraryRows.isEmpty)
     }
 
     func pair(serverAddress: String, pin: String) async {
@@ -70,6 +89,7 @@ final class PlayerStore: ObservableObject {
             isDemo = false
             phase = .ready
             await refreshHome(showActivity: true)
+            await refreshLibraryRows(showActivity: true)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -80,6 +100,8 @@ final class PlayerStore: ObservableObject {
         client = nil
         isDemo = true
         home = DemoCatalog.home
+        libraryRows = DemoCatalog.libraryRows
+        libraryPages.removeAll()
         errorMessage = nil
         phase = .ready
     }
@@ -105,6 +127,59 @@ final class PlayerStore: ObservableObject {
         return try await client.artworkData(from: value)
     }
 
+    func refreshLibraryRows(showActivity: Bool = false) async {
+        guard !isDemo, let client else { return }
+        if showActivity { isLibraryRefreshing = true }
+        defer { isLibraryRefreshing = false }
+
+        do {
+            let response = try await client.libraryRows(shuffleSeed: libraryShuffleSeed)
+            if response.value != libraryRows {
+                libraryRows = response.value
+            }
+            try? response.encodedEnvelope.write(to: libraryRowsCacheURL, options: .atomic)
+            errorMessage = nil
+        } catch {
+            if libraryRows.isEmpty {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func libraryPage(for location: LibraryLocation) -> LibraryPage? {
+        libraryPages[location.cacheKey]
+    }
+
+    func loadLibraryPage(_ location: LibraryLocation, forceNetwork: Bool = false) async {
+        let key = location.cacheKey
+        lastLibraryLocation = location
+
+        if isDemo {
+            libraryPages[key] = DemoCatalog.libraryPage(for: location)
+            return
+        }
+
+        if libraryPages[key] == nil {
+            loadCachedLibraryPage(for: location)
+        }
+        guard !loadingLibraryPages.contains(key), let client else { return }
+
+        loadingLibraryPages.insert(key)
+        defer { loadingLibraryPages.remove(key) }
+        do {
+            let response = try await client.libraryPage(at: location, shuffleSeed: libraryShuffleSeed)
+            if response.value != libraryPages[key] {
+                libraryPages[key] = response.value
+            }
+            try? response.encodedEnvelope.write(to: libraryPageCacheURL(for: location), options: .atomic)
+            libraryErrors[key] = nil
+        } catch {
+            if libraryPages[key] == nil || forceNetwork {
+                libraryErrors[key] = error.localizedDescription
+            }
+        }
+    }
+
     func openDetails(for item: MediaItem) {
         selectedMedia = item
     }
@@ -123,6 +198,9 @@ final class PlayerStore: ObservableObject {
         await playback.stop()
         isPlaybackPresented = false
         await refreshHome()
+        if let lastLibraryLocation {
+            await loadLibraryPage(lastLibraryLocation, forceNetwork: true)
+        }
     }
 
     func clearProgress(for item: MediaItem) async {
@@ -131,6 +209,9 @@ final class PlayerStore: ObservableObject {
             try await client.clearPlayState(for: item)
             selectedMedia = nil
             await refreshHome()
+            if let lastLibraryLocation {
+                await loadLibraryPage(lastLibraryLocation, forceNetwork: true)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -139,11 +220,22 @@ final class PlayerStore: ObservableObject {
     func disconnect() {
         credentials.clear()
         try? FileManager.default.removeItem(at: homeCacheURL)
+        try? FileManager.default.removeItem(at: libraryRowsCacheURL)
+        try? FileManager.default.removeItem(at: libraryPagesCacheDirectory)
+        try? FileManager.default.createDirectory(
+            at: libraryPagesCacheDirectory,
+            withIntermediateDirectories: true
+        )
         connection = nil
         client = nil
         selectedMedia = nil
         isPlaybackPresented = false
         home = nil
+        libraryRows = []
+        libraryPages = [:]
+        loadingLibraryPages = []
+        libraryErrors = [:]
+        lastLibraryLocation = nil
         isDemo = false
         errorMessage = nil
         phase = .pairing
@@ -152,5 +244,24 @@ final class PlayerStore: ObservableObject {
     private func loadCachedHome() {
         guard let client, let data = try? Data(contentsOf: homeCacheURL) else { return }
         home = try? client.decodeCachedHome(data)
+    }
+
+    private func loadCachedLibraryRows() {
+        guard let client, let data = try? Data(contentsOf: libraryRowsCacheURL) else { return }
+        libraryRows = (try? client.decodeCachedLibraryRows(data)) ?? []
+    }
+
+    private func loadCachedLibraryPage(for location: LibraryLocation) {
+        guard let client,
+              let data = try? Data(contentsOf: libraryPageCacheURL(for: location)),
+              let page = try? client.decodeCachedLibraryPage(data)
+        else { return }
+        libraryPages[location.cacheKey] = page
+    }
+
+    private func libraryPageCacheURL(for location: LibraryLocation) -> URL {
+        let digest = SHA256.hash(data: Data(location.cacheKey.utf8))
+        let filename = digest.map { String(format: "%02x", $0) }.joined() + ".json"
+        return libraryPagesCacheDirectory.appendingPathComponent(filename)
     }
 }

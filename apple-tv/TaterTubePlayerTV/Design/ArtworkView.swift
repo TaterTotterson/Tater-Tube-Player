@@ -33,11 +33,37 @@ struct ArtworkView: View {
         .task(id: remoteValue) {
             image = nil
             guard let remoteValue, !remoteValue.isEmpty else { return }
+            if let cached = ArtworkMemoryCache.shared.image(for: remoteValue) {
+                image = cached
+                return
+            }
             if let data = try? await store.artworkData(for: remoteValue),
                let loaded = UIImage(data: data) {
+                ArtworkMemoryCache.shared.insert(loaded, for: remoteValue)
                 image = loaded
             }
         }
+    }
+}
+
+@MainActor
+private final class ArtworkMemoryCache {
+    static let shared = ArtworkMemoryCache()
+
+    private let images = NSCache<NSString, UIImage>()
+
+    private init() {
+        images.countLimit = 300
+        images.totalCostLimit = 320 * 1024 * 1024
+    }
+
+    func image(for key: String) -> UIImage? {
+        images.object(forKey: key as NSString)
+    }
+
+    func insert(_ image: UIImage, for key: String) {
+        let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+        images.setObject(image, forKey: key as NSString, cost: cost)
     }
 }
 
