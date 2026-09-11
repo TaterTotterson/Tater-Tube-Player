@@ -17,7 +17,7 @@ dedicated Steamworks link fields for the website and support URLs.
 - Price: `Free`
 - Primary language: English
 - Initial platform: SteamOS / 64-bit Linux
-- Tater Tube Server requirement: version 1.4.40 or newer
+- Tater Tube Server requirement: version 1.4.46 or newer
 
 ## Short description
 
@@ -46,7 +46,7 @@ Watch the Tube TV channels configured on your server in a familiar guide. Your o
 
 Play the best version for the screen
 
-The player reports its display, decoder, and audio capabilities to your server. Tater Tube Server can direct play compatible media, convert only the audio or video track that needs it, or create a fully compatible stream when required. HDR content is preserved when the playback path supports it and converted for SDR displays when it does not.
+The player reports its display, decoder, and audio capabilities to your server. Tater Tube Server can direct play compatible media, convert only the audio or video track that needs it, or create a fully compatible stream when required.
 
 When media includes alternate audio or subtitle tracks, compact overlay controls let you cycle them without leaving playback. The player prefers the best available non-commentary English audio track by default.
 
@@ -68,7 +68,6 @@ When Tater Link is configured on your server, Tater can prepare a short collecti
 - Tube TV channel guide
 - User-configured station IDs, bumpers, and break content
 - Capability-aware direct play and selective transcoding
-- HDR-aware playback planning
 - Optional Tater Picks recommendations and narration
 - Search across titles loaded from the paired server
 
@@ -97,7 +96,7 @@ own review. We can state that the interface is designed for Steam Deck.
 - Graphics: OpenGL 3.3 or Vulkan-capable graphics
 - Network: Broadband network connection
 - Storage: 1 GB available space
-- Additional notes: Requires an accessible Tater Tube Server 1.4.40 or newer. Hardware video decoding is recommended.
+- Additional notes: Requires an accessible Tater Tube Server 1.4.46 or newer. Hardware video decoding is recommended.
 
 ### Recommended
 
