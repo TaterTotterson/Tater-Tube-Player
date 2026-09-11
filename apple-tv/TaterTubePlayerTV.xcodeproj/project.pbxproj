@@ -1,0 +1,357 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* TaterTubePlayerTVApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* TaterTubePlayerTVApp.swift */; };
+		A10000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* Models.swift */; };
+		A10000000000000000000003 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* CredentialStore.swift */; };
+		A10000000000000000000004 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* APIClient.swift */; };
+		A10000000000000000000005 /* PlayerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* PlayerStore.swift */; };
+		A10000000000000000000006 /* TaterTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* TaterTheme.swift */; };
+		A10000000000000000000007 /* TaterGlassSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* TaterGlassSurface.swift */; };
+		A10000000000000000000008 /* ArtworkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* ArtworkView.swift */; };
+		A10000000000000000000009 /* MediaCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* MediaCardView.swift */; };
+		A1000000000000000000000A /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* RootView.swift */; };
+		A1000000000000000000000B /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* PairingView.swift */; };
+		A1000000000000000000000C /* MainShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* MainShellView.swift */; };
+		A1000000000000000000000D /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* HomeView.swift */; };
+		A1000000000000000000000E /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* LibraryView.swift */; };
+		A1000000000000000000000F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* SettingsView.swift */; };
+		A10000000000000000000020 /* tater-tube-logo-leaning-transparent.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */; };
+		A10000000000000000000021 /* tater-hero-remote.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* tater-hero-remote.png */; };
+		A10000000000000000000022 /* cosmic-drift-poster.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* cosmic-drift-poster.png */; };
+		A10000000000000000000023 /* harbor-street.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* harbor-street.png */; };
+		A10000000000000000000024 /* the-long-winter.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* the-long-winter.png */; };
+		A10000000000000000000025 /* neon-nights.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* neon-nights.png */; };
+		A10000000000000000000026 /* northern-lights.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* northern-lights.png */; };
+		A10000000000000000000027 /* orange-county-skies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* orange-county-skies.png */; };
+		A10000000000000000000028 /* after-midnight.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* after-midnight.png */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* TaterTubePlayerTVApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaterTubePlayerTVApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* PlayerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* TaterTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaterTheme.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* TaterGlassSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaterGlassSurface.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* ArtworkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkView.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* MediaCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCardView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000B /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000C /* MainShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainShellView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000D /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000E /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "tater-tube-logo-leaning-transparent.png"; path = "../assets/tater-tube-logo-leaning-transparent.png"; sourceTree = "<group>"; };
+		A20000000000000000000021 /* tater-hero-remote.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "tater-hero-remote.png"; path = "../assets/mascot/tater-hero-remote.png"; sourceTree = "<group>"; };
+		A20000000000000000000022 /* cosmic-drift-poster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "cosmic-drift-poster.png"; path = "../assets/demo/cosmic-drift-poster.png"; sourceTree = "<group>"; };
+		A20000000000000000000023 /* harbor-street.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "harbor-street.png"; path = "../assets/demo/harbor-street.png"; sourceTree = "<group>"; };
+		A20000000000000000000024 /* the-long-winter.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "the-long-winter.png"; path = "../assets/demo/the-long-winter.png"; sourceTree = "<group>"; };
+		A20000000000000000000025 /* neon-nights.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "neon-nights.png"; path = "../assets/demo/neon-nights.png"; sourceTree = "<group>"; };
+		A20000000000000000000026 /* northern-lights.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "northern-lights.png"; path = "../assets/demo/northern-lights.png"; sourceTree = "<group>"; };
+		A20000000000000000000027 /* orange-county-skies.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "orange-county-skies.png"; path = "../assets/demo/orange-county-skies.png"; sourceTree = "<group>"; };
+		A20000000000000000000028 /* after-midnight.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "after-midnight.png"; path = "../assets/demo/after-midnight.png"; sourceTree = "<group>"; };
+		A20000000000000000000030 /* TaterTubePlayerTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TaterTubePlayerTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000002 /* TaterTubePlayerTV */,
+				A40000000000000000000006 /* Resources */,
+				A40000000000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A40000000000000000000002 /* TaterTubePlayerTV */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* TaterTubePlayerTVApp.swift */,
+				A40000000000000000000003 /* Core */,
+				A40000000000000000000004 /* Design */,
+				A40000000000000000000005 /* Features */,
+				A20000000000000000000010 /* Info.plist */,
+			);
+			path = TaterTubePlayerTV;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000003 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000004 /* APIClient.swift */,
+				A20000000000000000000003 /* CredentialStore.swift */,
+				A20000000000000000000002 /* Models.swift */,
+				A20000000000000000000005 /* PlayerStore.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000004 /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000008 /* ArtworkView.swift */,
+				A20000000000000000000009 /* MediaCardView.swift */,
+				A20000000000000000000007 /* TaterGlassSurface.swift */,
+				A20000000000000000000006 /* TaterTheme.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000005 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000D /* HomeView.swift */,
+				A2000000000000000000000E /* LibraryView.swift */,
+				A2000000000000000000000C /* MainShellView.swift */,
+				A2000000000000000000000B /* PairingView.swift */,
+				A2000000000000000000000A /* RootView.swift */,
+				A2000000000000000000000F /* SettingsView.swift */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000006 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */,
+				A20000000000000000000021 /* tater-hero-remote.png */,
+				A20000000000000000000022 /* cosmic-drift-poster.png */,
+				A20000000000000000000023 /* harbor-street.png */,
+				A20000000000000000000024 /* the-long-winter.png */,
+				A20000000000000000000025 /* neon-nights.png */,
+				A20000000000000000000026 /* northern-lights.png */,
+				A20000000000000000000027 /* orange-county-skies.png */,
+				A20000000000000000000028 /* after-midnight.png */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000030 /* TaterTubePlayerTV.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* TaterTubePlayerTV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A90000000000000000000002 /* Build configuration list for PBXNativeTarget "TaterTubePlayerTV" */;
+			buildPhases = (
+				A30000000000000000000002 /* Sources */,
+				A30000000000000000000001 /* Frameworks */,
+				A30000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TaterTubePlayerTV;
+			productName = TaterTubePlayerTV;
+			productReference = A20000000000000000000030 /* TaterTubePlayerTV.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A60000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					A50000000000000000000001 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+				};
+			};
+			buildConfigurationList = A90000000000000000000001 /* Build configuration list for PBXProject "TaterTubePlayerTV" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A40000000000000000000001;
+			productRefGroup = A40000000000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50000000000000000000001 /* TaterTubePlayerTV */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A30000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000020 /* tater-tube-logo-leaning-transparent.png in Resources */,
+				A10000000000000000000021 /* tater-hero-remote.png in Resources */,
+				A10000000000000000000022 /* cosmic-drift-poster.png in Resources */,
+				A10000000000000000000023 /* harbor-street.png in Resources */,
+				A10000000000000000000024 /* the-long-winter.png in Resources */,
+				A10000000000000000000025 /* neon-nights.png in Resources */,
+				A10000000000000000000026 /* northern-lights.png in Resources */,
+				A10000000000000000000027 /* orange-county-skies.png in Resources */,
+				A10000000000000000000028 /* after-midnight.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A30000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* TaterTubePlayerTVApp.swift in Sources */,
+				A10000000000000000000002 /* Models.swift in Sources */,
+				A10000000000000000000003 /* CredentialStore.swift in Sources */,
+				A10000000000000000000004 /* APIClient.swift in Sources */,
+				A10000000000000000000005 /* PlayerStore.swift in Sources */,
+				A10000000000000000000006 /* TaterTheme.swift in Sources */,
+				A10000000000000000000007 /* TaterGlassSurface.swift in Sources */,
+				A10000000000000000000008 /* ArtworkView.swift in Sources */,
+				A10000000000000000000009 /* MediaCardView.swift in Sources */,
+				A1000000000000000000000A /* RootView.swift in Sources */,
+				A1000000000000000000000B /* PairingView.swift in Sources */,
+				A1000000000000000000000C /* MainShellView.swift in Sources */,
+				A1000000000000000000000D /* HomeView.swift in Sources */,
+				A1000000000000000000000E /* LibraryView.swift in Sources */,
+				A1000000000000000000000F /* SettingsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A80000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)");
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A80000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A80000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TaterTubePlayerTV/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tater Tube Player";
+				TVOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Debug;
+		};
+		A80000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TaterTubePlayerTV/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tater Tube Player";
+				TVOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A90000000000000000000001 /* Build configuration list for PBXProject "TaterTubePlayerTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A80000000000000000000001 /* Debug */,
+				A80000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A90000000000000000000002 /* Build configuration list for PBXNativeTarget "TaterTubePlayerTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A80000000000000000000003 /* Debug */,
+				A80000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A60000000000000000000001 /* Project object */;
+}

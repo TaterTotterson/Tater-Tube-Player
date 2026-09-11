@@ -28,9 +28,10 @@ Tater Tube Server is required and is not included. Tater Tube Player does not
 include movies, television programs, live channels, or other media.
 
 This repository contains the official Tater Tube Player family. The Qt client
-at the repository root targets Steam and Steam Deck first; native `apple-tv/`
-and `google-tv/` clients will be added here as those platforms begin. Shared
-API contracts, design assets, demo content, and release policy stay together.
+at the repository root targets Steam and Steam Deck, and the native SwiftUI
+Apple TV client lives in `apple-tv/`. A native `google-tv/` client will join it
+when that platform begins. Shared API contracts, design assets, demo content,
+and release policy stay together.
 
 The Player is intentionally independent from the GPL-licensed retro player: no
 source code, emulator cores, or ROM content from that client is included here.
@@ -143,12 +144,20 @@ The development launcher is:
 Steam as a non-Steam application while testing a local development build in
 Gaming Mode.
 
+### Apple TV development
+
+The Apple TV edition requires Xcode 26 or newer and targets tvOS 18 or newer.
+Open `apple-tv/TaterTubePlayerTV.xcodeproj` in Xcode, then select an Apple TV
+simulator or a development Apple TV. It uses native Liquid Glass on tvOS 26
+and a dark translucent material on older supported tvOS releases. See
+[`apple-tv/README.md`](apple-tv/README.md) for the current parity roadmap.
+
 ## Security and privacy
 
-The paired-player token is stored in the current operating-system user's Qt
-settings file. On Linux, the Player restricts that file to the user (`0600`).
-The token is sent only to the paired Tater Tube Server and is never
-forwarded across HTTP redirects.
+On Steam, the paired-player token is stored in the current operating-system
+user's Qt settings file; Linux restricts that file to the user (`0600`). Apple
+TV stores it in the device Keychain. The token is sent only to the paired Tater
+Tube Server and is never forwarded across HTTP redirects.
 
 Tater Picks is optional and hidden unless Tater Link is configured. The Player
 communicates with the user's Tater Tube Server rather than directly with an AI
@@ -156,10 +165,9 @@ provider. See [PRIVACY.md](PRIVACY.md) for the complete data-flow description.
 
 ## Platform direction
 
-The current client targets Steam and Steam Deck. Future native Apple TV and
-Google TV clients can share the same server contracts, design assets, and
-product behavior from this repository while using each platform's native media
-framework.
+The current clients target Steam, Steam Deck, and Apple TV. A future native
+Google TV client will share the same server contracts, design assets, and
+product behavior while using Android's native media framework.
 
 ## License
 
@@ -167,9 +175,10 @@ Tater Tube Player is open-source software licensed under the
 [Apache License 2.0](LICENSE). The Tater Tube name, logo, and mascot remain
 protected brand identifiers; see [TRADEMARKS.md](TRADEMARKS.md).
 
-Release builds dynamically link Qt under LGPLv3. Qt, FFmpeg, SDL, mpv, and
-other third-party components retain their respective licenses. Notices, source
-availability, and Qt relinking instructions are provided in
+Steam release builds dynamically link Qt under LGPLv3. Qt, FFmpeg, SDL, mpv,
+and other third-party components retain their respective licenses. The native
+Apple TV target does not use Qt or mpv. Notices, source availability, and Qt
+relinking instructions for the Steam edition are provided in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
 [docs/SOURCE_CODE.md](docs/SOURCE_CODE.md), and
 [docs/RELINKING_QT.md](docs/RELINKING_QT.md).
