@@ -2,7 +2,9 @@ import SwiftUI
 
 struct MainShellView: View {
     @EnvironmentObject private var store: PlayerStore
-    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--library") ? 1 : 0
+    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--live")
+        ? 2
+        : (ProcessInfo.processInfo.arguments.contains("--library") ? 1 : 0)
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -15,11 +17,7 @@ struct MainShellView: View {
                 .tag(1)
 
             if store.home?.capabilities.tubeTV == true {
-                ComingSoonView(
-                    icon: "tv.fill",
-                    title: "Live TV",
-                    message: "The native guide and channel playback are the next parity milestone."
-                )
+                LiveTVView()
                 .tabItem { Label("Live TV", systemImage: "tv.fill") }
                 .tag(2)
             }

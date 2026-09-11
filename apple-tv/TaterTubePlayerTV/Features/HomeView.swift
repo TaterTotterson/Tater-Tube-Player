@@ -77,7 +77,7 @@ struct HomeView: View {
                 LazyHStack(alignment: .top, spacing: 28) {
                     ForEach(channels) { channel in
                         Button {
-                            // Live guide playback is implemented in the guide milestone.
+                            Task { await store.play(channel) }
                         } label: { LiveChannelCardView(channel: channel) }
                             .buttonStyle(.card)
                     }

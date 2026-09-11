@@ -26,6 +26,7 @@
 		A10000000000000000000011 /* PlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* PlaybackCoordinator.swift */; };
 		A10000000000000000000012 /* MediaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* MediaDetailView.swift */; };
 		A10000000000000000000013 /* NativePlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* NativePlayerView.swift */; };
+		A10000000000000000000014 /* LiveTVView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* LiveTVView.swift */; };
 		A10000000000000000000020 /* tater-tube-logo-leaning-transparent.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */; };
 		A10000000000000000000021 /* tater-hero-remote.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* tater-hero-remote.png */; };
 		A10000000000000000000022 /* cosmic-drift-poster.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* cosmic-drift-poster.png */; };
@@ -58,6 +59,7 @@
 		A20000000000000000000012 /* PlaybackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackCoordinator.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* MediaDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDetailView.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* NativePlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePlayerView.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* LiveTVView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVView.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* tater-tube-logo-leaning-transparent.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "tater-tube-logo-leaning-transparent.png"; path = "../assets/tater-tube-logo-leaning-transparent.png"; sourceTree = "<group>"; };
 		A20000000000000000000021 /* tater-hero-remote.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "tater-hero-remote.png"; path = "../assets/mascot/tater-hero-remote.png"; sourceTree = "<group>"; };
 		A20000000000000000000022 /* cosmic-drift-poster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "cosmic-drift-poster.png"; path = "../assets/demo/cosmic-drift-poster.png"; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 			children = (
 				A2000000000000000000000D /* HomeView.swift */,
 				A2000000000000000000000E /* LibraryView.swift */,
+				A20000000000000000000015 /* LiveTVView.swift */,
 				A2000000000000000000000C /* MainShellView.swift */,
 				A20000000000000000000013 /* MediaDetailView.swift */,
 				A20000000000000000000014 /* NativePlayerView.swift */,
@@ -261,6 +264,7 @@
 				A10000000000000000000011 /* PlaybackCoordinator.swift in Sources */,
 				A10000000000000000000012 /* MediaDetailView.swift in Sources */,
 				A10000000000000000000013 /* NativePlayerView.swift in Sources */,
+				A10000000000000000000014 /* LiveTVView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

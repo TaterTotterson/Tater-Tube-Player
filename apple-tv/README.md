@@ -32,16 +32,17 @@ content and artwork, adaptive navigation, server capability-based sections, and
 demo mode. The native library now includes complete movie and TV browsing,
 naturally sorted seasons and episodes, dedicated artwork fallbacks, contextual
 resume actions, live watch progress, lazy grids for large collections, and a
-disk-backed page and artwork cache. The playback core includes server capability
-negotiation, native AVKit playback, subtitles off by default, system
-audio/subtitle selection, resume, live progress reporting, completion handling,
-and automatic season-to-season episode continuation.
+disk-backed page and artwork cache. Tube TV includes a cached native guide,
+authenticated channel logos, live progress and commercial-break timing, and
+channel playback through the existing server stream. The playback core includes
+server capability negotiation, native AVKit playback, subtitles off by default,
+system audio/subtitle selection, resume, on-demand progress reporting,
+completion handling, and automatic season-to-season episode continuation.
 
 The remaining Steam behavior will arrive in this order:
 
-1. Tube TV guide, channel transitions, and Tater playback details
-2. Discovery search, result selection, resume, and viewing history
-3. Tater Picks, recommendation reasons, and the server-generated spoken message
+1. Discovery search, result selection, resume, and viewing history
+2. Tater Picks, recommendation reasons, and the server-generated spoken message
 
 Apple TV requests an MPEG-TS-compatible output only when AVKit cannot consume a
 source container directly. Compatible video and audio tracks are repackaged

@@ -62,7 +62,7 @@ final class PlaybackCoordinator: ObservableObject {
         }
 
         let completed = state == .finished || isNearEnd
-        if !isCompleting {
+        if !isCompleting, !item.isLiveChannel {
             await saveProgress(item: item, completed: completed, active: false)
         }
         cleanupPlayer()
@@ -117,7 +117,9 @@ final class PlaybackCoordinator: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = true
         player.play()
         state = .playing
-        await saveProgress(item: item, completed: false, active: true)
+        if !item.isLiveChannel {
+            await saveProgress(item: item, completed: false, active: true)
+        }
     }
 
     private func applyInitialMediaSelection(
@@ -169,6 +171,12 @@ final class PlaybackCoordinator: ObservableObject {
     private func handlePlaybackEnd() async {
         guard !isCompleting, let item = currentItem, let client else { return }
         isCompleting = true
+        if item.isLiveChannel {
+            state = .finished
+            shouldDismiss = true
+            UIApplication.shared.isIdleTimerDisabled = false
+            return
+        }
         await saveProgress(item: item, completed: true, active: false)
 
         if item.mediaType?.lowercased() == "episode",
@@ -186,7 +194,7 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     private func saveProgress(item: MediaItem, completed: Bool, active: Bool) async {
-        guard let client else { return }
+        guard !item.isLiveChannel, let client else { return }
         if progressSaveInFlight {
             // Routine heartbeats may be coalesced, but a stop/completion update
             // must win so Continue Watching is correct as soon as playback exits.
@@ -257,6 +265,10 @@ private enum PlaybackError: LocalizedError {
 }
 
 extension MediaItem {
+    var isLiveChannel: Bool {
+        ["channel", "live", "tube_tv", "tubetv"].contains(mediaType?.lowercased() ?? "")
+    }
+
     var resumeOffsetMS: Int64 {
         if let viewOffset, viewOffset > 0 { return viewOffset }
         if let viewOffsetSeconds, viewOffsetSeconds > 0 {

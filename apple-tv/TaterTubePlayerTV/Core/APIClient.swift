@@ -39,6 +39,11 @@ struct LibraryPageResult {
     let encodedEnvelope: Data
 }
 
+struct LiveGuideResult {
+    let value: TubeTVGuide
+    let encodedEnvelope: Data
+}
+
 final class APIClient: @unchecked Sendable {
     let serverURL: URL
     let token: String?
@@ -163,6 +168,14 @@ final class APIClient: @unchecked Sendable {
         )
     }
 
+    func liveGuide() async throws -> LiveGuideResult {
+        let data = try await request(path: "/api/tater/tv/lineup?window=player")
+        return LiveGuideResult(
+            value: try decodeEnvelope(TubeTVGuide.self, from: data),
+            encodedEnvelope: data
+        )
+    }
+
     func playbackPlan(
         for item: MediaItem,
         capabilities: PlaybackCapabilitiesReport,
@@ -256,6 +269,27 @@ final class APIClient: @unchecked Sendable {
 
     func decodeCachedLibraryPage(_ data: Data) throws -> LibraryPage {
         try decodeEnvelope(LibraryPage.self, from: data)
+    }
+
+    func decodeCachedLiveGuide(_ data: Data) throws -> TubeTVGuide {
+        try decodeEnvelope(TubeTVGuide.self, from: data)
+    }
+
+    func localArtworkURL(for program: LiveProgram) -> String? {
+        if let artwork = program.artworkValue { return artwork }
+        guard let categoryID = program.categoryID, !categoryID.isEmpty,
+              let path = program.path, !path.isEmpty
+        else { return nil }
+        return pathWithQuery(
+            "/api/v1/player/artwork/local",
+            items: [
+                URLQueryItem(name: "category_id", value: categoryID),
+                URLQueryItem(name: "source", value: String(program.sourceIndex)),
+                URLQueryItem(name: "path", value: path),
+                URLQueryItem(name: "thumbnail", value: "poster"),
+                URLQueryItem(name: "player_token", value: token)
+            ]
+        )
     }
 
     private func pathWithQuery(_ path: String, items: [URLQueryItem]) -> String {

@@ -18,6 +18,9 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var libraryPages: [String: LibraryPage] = [:]
     @Published private(set) var loadingLibraryPages: Set<String> = []
     @Published private(set) var libraryErrors: [String: String] = [:]
+    @Published private(set) var liveGuide: TubeTVGuide?
+    @Published private(set) var isLiveGuideRefreshing = false
+    @Published private(set) var liveGuideError: String?
     @Published private(set) var isDemo = false
     @Published var errorMessage: String?
     @Published var selectedMedia: MediaItem?
@@ -30,6 +33,7 @@ final class PlayerStore: ObservableObject {
     private let homeCacheURL: URL
     private let libraryRowsCacheURL: URL
     private let libraryPagesCacheDirectory: URL
+    private let liveGuideCacheURL: URL
     private let libraryShuffleSeed = UUID().uuidString
     private var lastLibraryLocation: LibraryLocation?
 
@@ -39,6 +43,7 @@ final class PlayerStore: ObservableObject {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         homeCacheURL = directory.appendingPathComponent("home.json")
         libraryRowsCacheURL = directory.appendingPathComponent("library-rows.json")
+        liveGuideCacheURL = directory.appendingPathComponent("live-guide.json")
         libraryPagesCacheDirectory = directory.appendingPathComponent("library-pages", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: libraryPagesCacheDirectory,
@@ -49,6 +54,7 @@ final class PlayerStore: ObservableObject {
             isDemo = true
             home = DemoCatalog.home
             libraryRows = DemoCatalog.libraryRows
+            liveGuide = DemoCatalog.liveGuide
             phase = .ready
         }
     }
@@ -67,9 +73,13 @@ final class PlayerStore: ObservableObject {
         client = APIClient(serverURL: saved.serverURL, token: saved.token)
         loadCachedHome()
         loadCachedLibraryRows()
+        loadCachedLiveGuide()
         phase = .ready
         await refreshHome(showActivity: home == nil)
         await refreshLibraryRows(showActivity: libraryRows.isEmpty)
+        if home?.capabilities.tubeTV == true {
+            await refreshLiveGuide(showActivity: liveGuide == nil)
+        }
     }
 
     func pair(serverAddress: String, pin: String) async {
@@ -90,6 +100,9 @@ final class PlayerStore: ObservableObject {
             phase = .ready
             await refreshHome(showActivity: true)
             await refreshLibraryRows(showActivity: true)
+            if home?.capabilities.tubeTV == true {
+                await refreshLiveGuide(showActivity: true)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -101,6 +114,7 @@ final class PlayerStore: ObservableObject {
         isDemo = true
         home = DemoCatalog.home
         libraryRows = DemoCatalog.libraryRows
+        liveGuide = DemoCatalog.liveGuide
         libraryPages.removeAll()
         errorMessage = nil
         phase = .ready
@@ -125,6 +139,27 @@ final class PlayerStore: ObservableObject {
     func artworkData(for value: String) async throws -> Data {
         guard let client else { throw TaterAPIError.invalidResponse }
         return try await client.artworkData(from: value)
+    }
+
+    func guideArtworkURL(for program: LiveProgram) -> String? {
+        client?.localArtworkURL(for: program) ?? program.artworkValue
+    }
+
+    func refreshLiveGuide(showActivity: Bool = false) async {
+        guard !isDemo, !isLiveGuideRefreshing, let client else { return }
+        isLiveGuideRefreshing = true
+        defer { isLiveGuideRefreshing = false }
+
+        do {
+            let response = try await client.liveGuide()
+            liveGuide = response.value
+            try? response.encodedEnvelope.write(to: liveGuideCacheURL, options: .atomic)
+            liveGuideError = nil
+        } catch {
+            if liveGuide == nil {
+                liveGuideError = error.localizedDescription
+            }
+        }
     }
 
     func refreshLibraryRows(showActivity: Bool = false) async {
@@ -194,6 +229,10 @@ final class PlayerStore: ObservableObject {
         await playback.start(item: item, client: client, resume: resume)
     }
 
+    func play(_ channel: LiveChannel) async {
+        await play(channel.playbackItem, resume: false)
+    }
+
     func stopPlayback() async {
         await playback.stop()
         isPlaybackPresented = false
@@ -221,6 +260,7 @@ final class PlayerStore: ObservableObject {
         credentials.clear()
         try? FileManager.default.removeItem(at: homeCacheURL)
         try? FileManager.default.removeItem(at: libraryRowsCacheURL)
+        try? FileManager.default.removeItem(at: liveGuideCacheURL)
         try? FileManager.default.removeItem(at: libraryPagesCacheDirectory)
         try? FileManager.default.createDirectory(
             at: libraryPagesCacheDirectory,
@@ -235,6 +275,8 @@ final class PlayerStore: ObservableObject {
         libraryPages = [:]
         loadingLibraryPages = []
         libraryErrors = [:]
+        liveGuide = nil
+        liveGuideError = nil
         lastLibraryLocation = nil
         isDemo = false
         errorMessage = nil
@@ -249,6 +291,11 @@ final class PlayerStore: ObservableObject {
     private func loadCachedLibraryRows() {
         guard let client, let data = try? Data(contentsOf: libraryRowsCacheURL) else { return }
         libraryRows = (try? client.decodeCachedLibraryRows(data)) ?? []
+    }
+
+    private func loadCachedLiveGuide() {
+        guard let client, let data = try? Data(contentsOf: liveGuideCacheURL) else { return }
+        liveGuide = try? client.decodeCachedLiveGuide(data)
     }
 
     private func loadCachedLibraryPage(for location: LibraryLocation) {
