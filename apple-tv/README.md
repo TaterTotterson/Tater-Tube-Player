@@ -14,6 +14,7 @@ expectations.
 - Authenticated requests cannot redirect to another host or downgrade HTTPS
 - Cached home, library, guide, Discovery, and artwork data appear before background refreshes finish
 - Demo mode uses the same fictional, rights-safe catalog as the Steam store build
+- Apple TV-native hero shortcuts and shelf destination cards preserve the Steam browsing workflows
 
 Open `TaterTubePlayerTV.xcodeproj` in Xcode and select an Apple TV simulator or a
 development Apple TV. The project does not require Qt or any other third-party
@@ -36,7 +37,8 @@ disk-backed page and artwork cache. Tube TV includes a cached native guide,
 authenticated channel logos, live progress and commercial-break timing, and
 channel playback through the existing server stream. The playback core includes
 server capability negotiation, native AVKit playback, subtitles off by default,
-system audio/subtitle selection, resume, on-demand progress reporting,
+Tater-styled playback details and timeline, audio/subtitle selection, resume,
+remote seeking and play/pause, on-demand progress reporting,
 completion handling, and automatic season-to-season episode continuation.
 Discovery includes the six server-configured movie and TV collections, bundled
 Tater artwork, cached title feeds and searches, complete release filenames,

@@ -19,7 +19,16 @@ struct RootView: View {
             case .pairing:
                 PairingView()
             case .ready:
+#if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--overlay-preview") {
+                    NativePlayerScreen()
+                        .onAppear { store.playback.configureOverlayPreview() }
+                } else {
+                    MainShellView()
+                }
+#else
                 MainShellView()
+#endif
             }
         }
         .task { await store.start() }

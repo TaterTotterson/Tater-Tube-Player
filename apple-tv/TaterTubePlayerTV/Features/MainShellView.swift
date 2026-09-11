@@ -12,11 +12,11 @@ struct MainShellView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            HomeView()
+            HomeView(selectedTab: $selectedTab)
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(0)
 
-            LibraryView()
+            LibraryView(selectedTab: $selectedTab)
                 .tabItem { Label("Library", systemImage: "rectangle.stack.fill") }
                 .tag(1)
 

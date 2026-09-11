@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibraryView: View {
     @EnvironmentObject private var store: PlayerStore
+    @Binding var selectedTab: Int
 
     var body: some View {
         NavigationStack {
@@ -57,6 +58,28 @@ struct LibraryView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(TaterTheme.orange.opacity(0.82))
+
+            if store.home?.capabilities.newznab == true {
+                Button { selectedTab = 3 } label: {
+                    Label("Discover", systemImage: "sparkles.tv.fill")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 72)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.white.opacity(0.15))
+            }
+
+            if store.home?.capabilities.taterLink == true {
+                Button { selectedTab = 4 } label: {
+                    Label("Tater Picks", systemImage: "wand.and.stars")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 72)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.white.opacity(0.15))
+            }
         }
         .padding(30)
         .taterGlass(cornerRadius: 30)
