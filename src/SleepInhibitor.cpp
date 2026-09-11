@@ -8,7 +8,9 @@
 #include <QDBusObjectPath>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
+#include <QDBusUnixFileDescriptor>
 #include <QVariantMap>
+#include <unistd.h>
 #endif
 
 SleepInhibitor::SleepInhibitor(QObject *parent)
@@ -37,6 +39,10 @@ void SleepInhibitor::acquire()
 {
     const quint64 generation = ++m_generation;
 #if defined(Q_OS_LINUX)
+    // The portal covers Gamescope's display-idle policy while logind protects
+    // the machine from suspending. Holding both is intentional: SteamOS may
+    // expose only one of these policies to a containerized Steam application.
+    acquireLogindInhibit(generation);
     const QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.isConnected()) {
         acquireScreenSaverFallback(generation);
@@ -57,14 +63,13 @@ void SleepInhibitor::acquire()
     // Portal flags: inhibit suspend (4) and idle/screensaver activation (8).
     request << QString{} << quint32{12} << options;
     auto *watcher = new QDBusPendingCallWatcher(bus.asyncCall(request), this);
+    acquireScreenSaverFallback(generation);
     connect(watcher, &QDBusPendingCallWatcher::finished, this,
             [this, watcher, generation] {
         const QDBusPendingReply<QDBusObjectPath> reply = *watcher;
         watcher->deleteLater();
-        if (reply.isError()) {
-            acquireScreenSaverFallback(generation);
+        if (reply.isError())
             return;
-        }
         const QString path = reply.value().path();
         if (!m_active || generation != m_generation) {
             closePortalRequest(path);
@@ -88,6 +93,51 @@ void SleepInhibitor::release()
         releaseScreenSaverCookie(m_screenSaverCookie);
         m_screenSaverCookie = 0;
     }
+#if defined(Q_OS_LINUX)
+    if (m_logindFileDescriptor >= 0) {
+        ::close(m_logindFileDescriptor);
+        m_logindFileDescriptor = -1;
+    }
+#endif
+}
+
+void SleepInhibitor::acquireLogindInhibit(quint64 generation)
+{
+#if defined(Q_OS_LINUX)
+    const QDBusConnection bus = QDBusConnection::systemBus();
+    if (!bus.isConnected())
+        return;
+    QDBusMessage request = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.login1"),
+        QStringLiteral("/org/freedesktop/login1"),
+        QStringLiteral("org.freedesktop.login1.Manager"),
+        QStringLiteral("Inhibit"));
+    request << QStringLiteral("idle:sleep")
+            << QStringLiteral("Tater Tube Player")
+            << QStringLiteral("Video playback")
+            << QStringLiteral("block");
+    auto *watcher = new QDBusPendingCallWatcher(bus.asyncCall(request), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this,
+            [this, watcher, generation] {
+        QDBusPendingReply<QDBusUnixFileDescriptor> reply = *watcher;
+        watcher->deleteLater();
+        if (reply.isError())
+            return;
+        QDBusUnixFileDescriptor descriptor = reply.value();
+        const int fd = descriptor.takeFileDescriptor();
+        if (fd < 0)
+            return;
+        if (!m_active || generation != m_generation) {
+            ::close(fd);
+            return;
+        }
+        if (m_logindFileDescriptor >= 0)
+            ::close(m_logindFileDescriptor);
+        m_logindFileDescriptor = fd;
+    });
+#else
+    Q_UNUSED(generation)
+#endif
 }
 
 void SleepInhibitor::acquireScreenSaverFallback(quint64 generation)

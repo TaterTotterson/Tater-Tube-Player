@@ -53,6 +53,7 @@ ApplicationWindow {
     property string playbackError: ""
     property string playbackStatusMessage: ""
     property string playbackQuality: "Direct play"
+    property string playbackResolution: ""
     property bool playbackControlsVisible: true
     property bool playbackEnded: false
     property bool playbackNextEpisodePending: false
@@ -81,12 +82,10 @@ ApplicationWindow {
         mpvPlayer.available ? mpvPlayer.buffering
                             : mediaPlayer.mediaStatus === MediaPlayer.StalledMedia
 
-    onPlaybackEnginePlayingChanged: {
-        sleepInhibitor.active = playbackOpen && playbackEnginePlaying
-    }
-
     onPlaybackOpenChanged: {
-        sleepInhibitor.active = playbackOpen && playbackEnginePlaying
+        // Keep the display awake for the full playback session, including
+        // buffering, track changes, seeks, and pauses between episodes.
+        sleepInhibitor.active = playbackOpen
     }
     readonly property int initialLibraryCardBatch: 48
     readonly property int libraryMaterializeBatch: 24
@@ -721,7 +720,7 @@ ApplicationWindow {
     function openLibraryEntry(item) {
         if (!item)
             return
-        if (item.streamUrl) {
+        if (item.streamUrl || item.nzbUrl) {
             openDetails(item, mediaLabel(item))
         } else if (!demoMode && (item.categoryId || item.path)) {
             libraryVisibleLimit = initialLibraryCardBatch
@@ -1543,8 +1542,13 @@ ApplicationWindow {
             prefix = "VIDEO TRANSCODE"
         else if (playbackUsingAudioTranscode)
             prefix = "AUDIO TRANSCODE"
-        return prefix + (playbackQuality.length > 0
-                         ? "  •  " + playbackQuality : "")
+        var details = []
+        if ((playbackUsingFallback || playbackUsingVideoTranscode)
+                && playbackResolution.length > 0)
+            details.push(playbackResolution)
+        if (playbackQuality.length > 0)
+            details.push(playbackQuality)
+        return prefix + (details.length > 0 ? "  •  " + details.join("  •  ") : "")
     }
 
     function refreshNativePlaybackOverlay() {
@@ -1696,6 +1700,7 @@ ApplicationWindow {
         playbackError = ""
         playbackStatusMessage = playbackIsLive ? "Tuning your channel…" : "Opening your media…"
         playbackQuality = playbackIsLive ? "Live HLS" : "Direct play"
+        playbackResolution = ""
         playbackEnded = false
         playbackNextEpisodePending = false
         playbackControlsVisible = true
@@ -1726,6 +1731,7 @@ ApplicationWindow {
         playbackUsingVideoTranscode = false
         playbackPlanUrl = ""
         playbackSourceVideoRange = "sdr"
+        playbackResolution = ""
         if (compatiblePlayback) {
             playbackUsingAudioTranscode = true
             playbackBaseOffsetMs = Math.max(0, playbackPendingResumeMs)
@@ -1775,6 +1781,7 @@ ApplicationWindow {
                                           || (plan.source && plan.source.video_range)
                                           || "sdr")
         playbackQuality = String(plan.quality_label || "Direct play")
+        playbackResolution = String(plan.resolution_label || "")
         playbackError = ""
         playbackHasVideoFrame = false
 
@@ -1906,6 +1913,7 @@ ApplicationWindow {
         playbackError = ""
         playbackStatusMessage = "Optimizing video and audio for your Steam Deck…"
         playbackQuality = "Video H.264 • Audio AAC"
+        playbackResolution = ""
         playbackHasVideoFrame = false
         stopPlaybackEngine()
         var fallbackBase = playbackPlanUrl.length > 0
@@ -4634,7 +4642,7 @@ ApplicationWindow {
                             ? (index < 9 ? "0" + (index + 1) : String(index + 1))
                             : "›"
                     badge: media && media.resumeTitle ? "IN PROGRESS" : ""
-                    artSource: media && media.poster ? media.poster : ""
+                    artSource: root.detailsArtworkSource(media)
                     artworkViewport: libraryGridView
                     artworkScrollOffset: libraryGridView.contentY
                     artworkPreloadMargin: libraryGridView.height * 0.8

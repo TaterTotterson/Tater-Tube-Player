@@ -21,6 +21,7 @@ signals:
 private:
     void acquire();
     void release();
+    void acquireLogindInhibit(quint64 generation);
     void acquireScreenSaverFallback(quint64 generation);
     static void closePortalRequest(const QString &path);
     static void releaseScreenSaverCookie(quint32 cookie);
@@ -29,4 +30,5 @@ private:
     quint64 m_generation = 0;
     QString m_portalRequestPath;
     quint32 m_screenSaverCookie = 0;
+    int m_logindFileDescriptor = -1;
 };
