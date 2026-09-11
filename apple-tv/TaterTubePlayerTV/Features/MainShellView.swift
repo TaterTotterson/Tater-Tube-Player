@@ -35,13 +35,21 @@ struct MainShellView: View {
                     title: "Tater Picks",
                     message: "Tater's recommendations and spoken group message will use the existing server endpoints."
                 )
-                .tabItem { Label("Tater Picks", systemImage: "wand.and.stars") }
+                .tabItem { Label("Picks", systemImage: "wand.and.stars") }
             }
 
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
         .tint(TaterTheme.orange)
+        .sheet(item: $store.selectedMedia) { item in
+            MediaDetailView(item: item)
+                .environmentObject(store)
+        }
+        .fullScreenCover(isPresented: $store.isPlaybackPresented) {
+            NativePlayerScreen()
+                .environmentObject(store)
+        }
     }
 }
 

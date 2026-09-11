@@ -14,6 +14,10 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var isDemo = false
     @Published var errorMessage: String?
+    @Published var selectedMedia: MediaItem?
+    @Published var isPlaybackPresented = false
+
+    let playback = PlaybackCoordinator()
 
     private let credentials = CredentialStore()
     private var client: APIClient?
@@ -101,11 +105,44 @@ final class PlayerStore: ObservableObject {
         return try await client.artworkData(from: value)
     }
 
+    func openDetails(for item: MediaItem) {
+        selectedMedia = item
+    }
+
+    func play(_ item: MediaItem, resume: Bool) async {
+        guard !isDemo, let client else {
+            errorMessage = "Pair with your Tater Tube Server to play this title."
+            return
+        }
+        selectedMedia = nil
+        isPlaybackPresented = true
+        await playback.start(item: item, client: client, resume: resume)
+    }
+
+    func stopPlayback() async {
+        await playback.stop()
+        isPlaybackPresented = false
+        await refreshHome()
+    }
+
+    func clearProgress(for item: MediaItem) async {
+        guard let client else { return }
+        do {
+            try await client.clearPlayState(for: item)
+            selectedMedia = nil
+            await refreshHome()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func disconnect() {
         credentials.clear()
         try? FileManager.default.removeItem(at: homeCacheURL)
         connection = nil
         client = nil
+        selectedMedia = nil
+        isPlaybackPresented = false
         home = nil
         isDemo = false
         errorMessage = nil

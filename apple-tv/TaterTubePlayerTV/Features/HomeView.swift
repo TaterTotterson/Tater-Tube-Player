@@ -76,7 +76,9 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 28) {
                     ForEach(channels) { channel in
-                        Button { } label: { LiveChannelCardView(channel: channel) }
+                        Button {
+                            // Live guide playback is implemented in the guide milestone.
+                        } label: { LiveChannelCardView(channel: channel) }
                             .buttonStyle(.card)
                     }
                 }
@@ -89,6 +91,8 @@ struct HomeView: View {
 }
 
 struct MediaShelf: View {
+    @EnvironmentObject private var store: PlayerStore
+
     let title: String
     let items: [MediaItem]
 
@@ -100,7 +104,9 @@ struct MediaShelf: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 28) {
                     ForEach(items) { item in
-                        Button { } label: { MediaCardView(item: item) }
+                        Button {
+                            store.openDetails(for: item)
+                        } label: { MediaCardView(item: item) }
                             .buttonStyle(.card)
                     }
                 }

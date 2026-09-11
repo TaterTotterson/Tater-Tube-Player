@@ -162,82 +162,228 @@ struct LibraryEntry: Decodable, Equatable, Identifiable {
 struct MediaItem: Decodable, Equatable, Identifiable {
     let id: String
     let title: String
+    let type: String?
     let subtitle: String?
     let summary: String?
     let mediaType: String?
+    let category: String?
+    let categoryID: String?
+    let sourceIndex: Int
+    let path: String?
+    let playStateID: String?
+    let seriesStateID: String?
+    let seriesTitle: String?
+    let nzbURL: String?
+    let discoverStreamIndex: Int
+    let discoverSourceTitle: String?
     let date: String?
     let poster: String?
     let backdrop: String?
     let streamURL: String?
     let progressPercent: Double?
     let viewOffset: Int64?
+    let viewOffsetSeconds: Double?
     let duration: Int64?
+    let durationSeconds: Double?
     let demoArtworkName: String?
 
     init(
         id: String,
         title: String,
+        type: String? = nil,
         subtitle: String? = nil,
         summary: String? = nil,
         mediaType: String? = nil,
+        category: String? = nil,
+        categoryID: String? = nil,
+        sourceIndex: Int = 0,
+        path: String? = nil,
+        playStateID: String? = nil,
+        seriesStateID: String? = nil,
+        seriesTitle: String? = nil,
+        nzbURL: String? = nil,
+        discoverStreamIndex: Int = 0,
+        discoverSourceTitle: String? = nil,
         date: String? = nil,
         poster: String? = nil,
         backdrop: String? = nil,
         streamURL: String? = nil,
         progressPercent: Double? = nil,
         viewOffset: Int64? = nil,
+        viewOffsetSeconds: Double? = nil,
         duration: Int64? = nil,
+        durationSeconds: Double? = nil,
         demoArtworkName: String? = nil
     ) {
         self.id = id
         self.title = title
+        self.type = type
         self.subtitle = subtitle
         self.summary = summary
         self.mediaType = mediaType
+        self.category = category
+        self.categoryID = categoryID
+        self.sourceIndex = sourceIndex
+        self.path = path
+        self.playStateID = playStateID
+        self.seriesStateID = seriesStateID
+        self.seriesTitle = seriesTitle
+        self.nzbURL = nzbURL
+        self.discoverStreamIndex = discoverStreamIndex
+        self.discoverSourceTitle = discoverSourceTitle
         self.date = date
         self.poster = poster
         self.backdrop = backdrop
         self.streamURL = streamURL
         self.progressPercent = progressPercent
         self.viewOffset = viewOffset
+        self.viewOffsetSeconds = viewOffsetSeconds
         self.duration = duration
+        self.durationSeconds = durationSeconds
         self.demoArtworkName = demoArtworkName
     }
 
     private enum CodingKeys: String, CodingKey {
         case id
+        case key
+        case ratingKey
+        case partKey
         case title
+        case type
         case subtitle
         case summary
         case overview
+        case description
         case mediaType
+        case category
+        case categoryID = "categoryId"
+        case sourceIndex
+        case path
+        case playStateID = "playStateId"
+        case seriesStateID = "seriesStateId"
+        case seriesTitle
+        case nzbURL = "nzbUrl"
+        case discoverStreamIndex
+        case discoverSourceTitle
         case date
         case poster
         case backdrop
         case streamURL = "streamUrl"
         case progressPercent
         case viewOffset
+        case viewOffsetSeconds
         case duration
+        case durationSeconds
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         title = try values.decode(String.self, forKey: .title)
+        type = try values.decodeIfPresent(String.self, forKey: .type)
         mediaType = try values.decodeIfPresent(String.self, forKey: .mediaType)
+        category = try values.decodeIfPresent(String.self, forKey: .category)
+        categoryID = try values.decodeIfPresent(String.self, forKey: .categoryID)
+        sourceIndex = try values.decodeIfPresent(Int.self, forKey: .sourceIndex) ?? 0
+        path = try values.decodeIfPresent(String.self, forKey: .path)
+        playStateID = try values.decodeFlexibleStringIfPresent(forKey: .playStateID)
+        seriesStateID = try values.decodeFlexibleStringIfPresent(forKey: .seriesStateID)
+        seriesTitle = try values.decodeIfPresent(String.self, forKey: .seriesTitle)
+        nzbURL = try values.decodeIfPresent(String.self, forKey: .nzbURL)
+        discoverStreamIndex = try values.decodeIfPresent(Int.self, forKey: .discoverStreamIndex) ?? 0
+        discoverSourceTitle = try values.decodeIfPresent(String.self, forKey: .discoverSourceTitle)
         poster = try values.decodeIfPresent(String.self, forKey: .poster)
         backdrop = try values.decodeIfPresent(String.self, forKey: .backdrop)
         streamURL = try values.decodeIfPresent(String.self, forKey: .streamURL)
         subtitle = try values.decodeIfPresent(String.self, forKey: .subtitle)
         summary = try values.decodeIfPresent(String.self, forKey: .summary)
             ?? values.decodeIfPresent(String.self, forKey: .overview)
+            ?? values.decodeIfPresent(String.self, forKey: .description)
         date = try values.decodeIfPresent(String.self, forKey: .date)
         progressPercent = try values.decodeIfPresent(Double.self, forKey: .progressPercent)
         viewOffset = try values.decodeFlexibleInt64IfPresent(forKey: .viewOffset)
+        viewOffsetSeconds = try values.decodeIfPresent(Double.self, forKey: .viewOffsetSeconds)
         duration = try values.decodeFlexibleInt64IfPresent(forKey: .duration)
+        durationSeconds = try values.decodeIfPresent(Double.self, forKey: .durationSeconds)
         demoArtworkName = nil
         id = try values.decodeFlexibleStringIfPresent(forKey: .id)
+            ?? values.decodeFlexibleStringIfPresent(forKey: .playStateID)
+            ?? values.decodeFlexibleStringIfPresent(forKey: .ratingKey)
+            ?? values.decodeFlexibleStringIfPresent(forKey: .partKey)
+            ?? values.decodeFlexibleStringIfPresent(forKey: .key)
+            ?? path
+            ?? streamURL
             ?? [mediaType, title, date].compactMap { $0 }.joined(separator: ":")
     }
+}
+
+struct PlaybackPlan: Decodable, Equatable {
+    let streamURL: String
+    let mode: String
+    let videoMode: String
+    let audioMode: String
+    let videoCodec: String?
+    let audioCodec: String?
+    let qualityLabel: String
+    let reason: String?
+    let resolutionLabel: String?
+    let outputContainer: String?
+    let selectedAudioTrack: Int
+    let source: PlaybackMediaInfo
+
+    private enum CodingKeys: String, CodingKey {
+        case streamURL = "streamUrl"
+        case mode
+        case videoMode
+        case audioMode
+        case videoCodec
+        case audioCodec
+        case qualityLabel
+        case reason
+        case resolutionLabel
+        case outputContainer
+        case selectedAudioTrack
+        case source
+    }
+}
+
+struct PlaybackMediaInfo: Decodable, Equatable {
+    let container: String?
+    let videoCodec: String?
+    let width: Int?
+    let height: Int?
+    let videoRange: String?
+    let audioCodec: String?
+    let audioChannels: Int?
+    let audioTracks: [PlaybackAudioTrack]?
+}
+
+struct PlaybackAudioTrack: Decodable, Equatable, Identifiable {
+    var id: Int { index }
+    let index: Int
+    let streamIndex: Int?
+    let codec: String?
+    let channels: Int?
+    let language: String?
+    let title: String?
+    let isDefault: Bool?
+    let commentary: Bool?
+    let descriptive: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case index
+        case streamIndex
+        case codec
+        case channels
+        case language
+        case title
+        case isDefault = "default"
+        case commentary
+        case descriptive
+    }
+}
+
+struct NextEpisodeResponse: Decodable {
+    let item: MediaItem?
 }
 
 struct LiveChannel: Decodable, Equatable, Identifiable {

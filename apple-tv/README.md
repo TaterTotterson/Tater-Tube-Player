@@ -22,17 +22,29 @@ runtime.
 Add `--demo` to the scheme's launch arguments to start directly in the fictional
 demo catalog without pairing to a server.
 
+See [`APP_STORE_REVIEW.md`](APP_STORE_REVIEW.md) for the local-network ATS
+justification and the review-access checklist.
+
 ## Feature-parity roadmap
 
-The first native milestone includes pairing, persistent credentials, cached home
-content, adaptive navigation, server capability-based sections, and demo mode.
-The next milestones bring over the existing Steam behavior in this order:
+The native foundation includes pairing, persistent credentials, cached home
+content and artwork, adaptive navigation, server capability-based sections, and
+demo mode. The playback core now includes server capability negotiation, native
+AVKit playback, subtitles off by default, system audio/subtitle selection,
+resume, live progress reporting, completion handling, and automatic
+season-to-season episode continuation.
 
-1. Playback-session negotiation, progress reporting, and native AVKit playback
-2. Movies, series, seasons, episodes, resume, and next-episode playback
-3. Tube TV guide, channel transitions, and playback overlays
-4. Discovery search, result selection, resume, and viewing history
-5. Tater Picks, recommendation reasons, and the server-generated spoken message
+The remaining Steam behavior will arrive in this order:
+
+1. Full movie, series, season, and episode browsing
+2. Tube TV guide, channel transitions, and Tater playback details
+3. Discovery search, result selection, resume, and viewing history
+4. Tater Picks, recommendation reasons, and the server-generated spoken message
+
+Apple TV requests an MPEG-TS-compatible output only when AVKit cannot consume a
+source container directly. Compatible video and audio tracks are repackaged
+without re-encoding; the server still converts only the incompatible track when
+one needs conversion.
 
 The server contract remains backward compatible. tvOS-specific capability fields
 will be additive so the existing Steam and retro players keep their current paths.
