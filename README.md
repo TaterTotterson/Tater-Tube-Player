@@ -1,87 +1,120 @@
+<p align="center">
+  <img src="./assets/tater-tube-logo-leaning-transparent.png" alt="Tater Tube" width="560" />
+</p>
+
+<p align="center">
+  <a href="https://tatertube.tv">
+    <img alt="Visit Tater Tube" src="https://img.shields.io/badge/Tater%20Tube-Visit%20Website-F28C28?style=for-the-badge&logo=googlechrome&logoColor=white" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/TaterTotterson/tater-tube-server">
+    <img alt="Get Tater Tube Server" src="https://img.shields.io/badge/Tater%20Tube%20Server-View%20on%20GitHub-24292F?style=for-the-badge&logo=github&logoColor=white" />
+  </a>
+  <a href="https://discord.gg/w52namKyXT">
+    <img alt="Join the Tater community on Discord" src="https://img.shields.io/badge/Discord-Join%20the%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
+  </a>
+</p>
+
 # Tater Tube Player
 
-Tater Tube Player is a modern, artwork-first television and desktop player for
-[Tater Tube Server](https://github.com/TaterTotterson/tater-tube-server).
+Tater Tube Player is the modern, couch-friendly client for
+[Tater Tube Server](https://github.com/TaterTotterson/tater-tube-server). Pair
+it with a six-digit code, browse with a controller or remote, and play the
+movies, shows, and personal Tube TV channels served from your own collection.
+
+Tater Tube Server is required and is not included. Tater Tube Player does not
+include movies, television programs, live channels, or other media.
 
 This repository contains the official Tater Tube Player family. The Qt client
 at the repository root targets Steam and Steam Deck first; native `apple-tv/`
 and `google-tv/` clients will be added here as those platforms begin. Shared
 API contracts, design assets, demo content, and release policy stay together.
 
-The Player is intentionally independent
-from the GPL-licensed retro player: no source code from that client is copied
-here. Existing Tater Tube applications keep their current names and behavior.
+The Player is intentionally independent from the GPL-licensed retro player: no
+source code, emulator cores, or ROM content from that client is included here.
+Existing Tater Tube applications keep their current names and behavior.
 
 ![Modern Tater Tube home screen](docs/screenshots/home.png)
 
-## Product direction
+## Highlights
 
-- Tater Tube Server only; no Plex, Emby, or Jellyfin integrations
-- Steam and Steam Deck first
-- Native Apple TV and Google TV clients after the server contract stabilizes
-- Grey, graphite, white, and Tater orange visual system
-- Poster and backdrop artwork, Continue Watching, search, and details
-- Tube TV channels, guide data, user-supplied commercial breaks, and bumpers
-- Tater recommendations and narration through Tater Tube Server
+- Artwork-rich Home and Library shelves with Continue Watching, Recently
+  Added, genres, all movies, and all television series.
+- Show, season, and episode views with viewing progress, resume support,
+  automatic next-episode playback, and season-to-season continuation.
+- A couch-friendly Tube TV guide for server-generated and user-created
+  channels, including channel artwork, schedule progress, commercial breaks,
+  station IDs, spots, and Tater bumpers.
+- Optional Discovery browsing when Newznab streaming is configured on the
+  user's server. Partially watched Discovery titles can be resumed from
+  Continue Watching.
+- Optional Tater Picks recommendations, explanations, and voice briefing when
+  the user separately configures Tater Link.
+- A compact playback overlay with progress, playback-path details, subtitle
+  selection, and alternate audio-track selection. Subtitles start off by
+  default.
+- Controller-first navigation with held D-pad scrolling, page jumps, Back, and
+  a slide-out navigation rail. Touch and keyboard input remain available.
+- Resolution-aware rendering for the Steam Deck display and connected 1080p,
+  1440p, or 4K televisions.
+- Persistent content and artwork caches so shelves appear immediately while
+  changed content refreshes in the background.
+- A deterministic demo mode with fictional content for review, screenshots,
+  and visual development.
 
-## Current milestone
-
-The current milestone is a Steam Deck-ready browsing and playback prototype
-with:
-
-- a couch-friendly modern home screen;
-- a Home-only navigation strip plus an edge-triggered slide-out menu for TV remotes;
-- keyboard, controller, and remote-visible focus states, including held D-pad
-  repeat and trigger/shoulder page jumps; the Steam Software app's automatic
-  WASD controller layout is also understood without user configuration;
-- native fullscreen rendering with resolution-aware UI scaling for the Steam
-  Deck panel and connected 1080p, 1440p, or 4K televisions;
-- Tater Tube Server URL and six-digit PIN pairing;
-- prototype persistence for the server address and player token;
-- live Continue Watching, Recently Added, and Tube TV home rows from
-  `/api/v1/player/home`;
-- full-screen direct playback for local movies and episodes;
-- server-backed Library browsing across local collections, discovery filters,
-  folders, shows, and seasons, with virtualized complete collections and
-  viewport-prioritized artwork loading;
-- a refreshable Live TV lineup with channel now/next information and one-click
-  tuning;
-- capability-aware playback planning for the active screen and audio output;
-- independent video and audio decisions: direct play, audio-only conversion,
-  video-only conversion, or full H.264/AAC conversion;
-- Tube TV HLS playback that preserves server-scheduled commercials, spots,
-  bumpers, and station IDs;
-- play/pause, 10-second seeking, volume, back, and auto-hiding playback controls
-  for Steam Input, keyboard, and touch;
-- compact, navigation-free playback-overlay controls: X cycles alternate audio
-  tracks and Y cycles subtitles after either button reveals the overlay, with
-  the best non-commentary English audio selected by default;
-- resume-position loading and periodic playback progress updates;
-- local poster discovery for media-adjacent `poster`, `folder`, `cover`, and
-  title-matched JPG, PNG, or WebP files;
-- a deterministic demo mode for visual development and screenshots.
-
-The content shown in demo mode is fictional placeholder data. Normal paired
-mode uses the versioned Tater Tube Server player API.
+Normal paired mode uses authenticated, versioned Tater Tube Server player APIs.
+The content shown in demo mode is fictional placeholder data.
 
 The pairing surface is captured in
 [`docs/screenshots/pairing.png`](docs/screenshots/pairing.png).
 
-## Build
+## Playback and transcoding
+
+Before playback, the Player reports the active display resolution, decoder,
+audio output, channel count, and detected HDMI capabilities. Tater Tube Server
+then chooses the least destructive compatible path:
+
+- direct play when both tracks are compatible;
+- copy the video and convert only the audio;
+- convert only the video and preserve compatible audio; or
+- convert both tracks when required.
+
+The Steam build uses a separately replaceable, LGPL-compatible mpv executable
+for playback. It selects the best non-commentary English audio track by default,
+allows audio and subtitle tracks to be changed during playback, and requests
+encoded HDMI audio passthrough only for formats reported by the connected
+display. Unsupported audio is decoded or converted instead.
+
+Tube TV remains scheduled by the server, so transitions between programs,
+commercials, spots, bumpers, and station IDs stay synchronized across players.
+The Player reports live and on-demand progress back to the server for resume
+state, Continue Watching, playback history, and the server dashboard.
+
+## Server compatibility
+
+Tater Tube Player connects only to Tater Tube Server; it does not connect to
+Plex, Emby, or Jellyfin. Tater Tube Server 1.4.46 or newer is recommended for
+the complete current Player feature set.
+
+The modern `/api/v1/player/*` routes are separate from the compatibility routes
+used by the original Tater Tube players.
+
+## Build from source
 
 Requirements:
 
 - CMake 3.24+
 - Qt 6.8+ with Quick, Quick Controls, QML, Multimedia, Network, and Test
 - A C++20 compiler
-- Tater Tube Server with the `/api/v1/player/home` endpoint
-- Tater Tube Server 1.4.40+ for the complete first Steam release feature set
+- Tater Tube Server for paired operation
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/tater-tube-player --demo                         # Windows/Linux
+./build/tater-tube-player --demo                         # Linux
 ./build/tater-tube-player.app/Contents/MacOS/tater-tube-player --demo  # macOS
 ```
 
@@ -93,13 +126,12 @@ QT_QPA_PLATFORM=offscreen \
   --demo --screenshot=build/home.png
 ```
 
-### Steam Deck development build
+### Steam Deck development
 
-For early hardware testing, the player can run from an isolated Arch Distrobox
-without unlocking SteamOS. Create a container named `tater-player-build` with
-CMake, Ninja, Qt 6 (including Qt Multimedia), FFmpeg, PulseAudio client
-libraries, SDL2, and a C++ compiler, then configure the Deck build at
-`~/Tater-Tube-Player/build-deck`.
+The release on Steam is packaged as a self-contained Linux build and does not
+require a development container. For source development on a Steam Deck, the
+project can also be built in an isolated Arch Distrobox containing CMake,
+Ninja, Qt 6, FFmpeg, PulseAudio client libraries, SDL2, and a C++ compiler.
 
 The development launcher is:
 
@@ -108,46 +140,36 @@ The development launcher is:
 ```
 
 `packaging/linux/com.taterassistant.TaterTubePlayer.desktop` can be added to
-Steam as a non-Steam game for Gaming Mode and Steam Input testing. This
-Distrobox launcher is only for development; the Steam release will ship a
-self-contained runtime and will not require Distrobox.
+Steam as a non-Steam application while testing a local development build in
+Gaming Mode.
 
-The Deck launcher forwards SteamOS's PipeWire/Pulse audio socket into the
-development container. The player follows changes to the system's default
-audio output, reports the active display, decoder, channel, and output
-capabilities to Tater Tube Server, and asks the server for the least destructive
-playback path. The server can preserve both tracks, convert only audio, convert
-only video while preserving audio, or convert both tracks. If a selective path
-fails during playback, the player retries with a full H.264/AAC transcode.
-
-The display report also includes HDR10, HDR10+, HLG, and Dolby Vision support
-read from the connected display's EDID on Linux. HDR is only advertised as an
-active direct-play path when both the display and the playback transport confirm
-it. Otherwise the server tone-maps HDR video to SDR while preserving compatible
-audio. This avoids washed-out HDR on SDR outputs and gives native Apple TV and
-Google TV clients the same display-aware contract.
-
-The Steam release uses the separately replaceable LGPL-only mpv playback
-engine. It decodes supported audio to PCM when needed and advertises encoded
-HDMI bitstream formats only when the connected display reports them. The Qt
-Multimedia fallback decodes supported audio to PCM and does not claim encoded
-passthrough. The same versioned capability contract can be implemented by the
-future native Apple TV and Google TV players.
+## Security and privacy
 
 The paired-player token is stored in the current operating-system user's Qt
-settings file. On Linux, the player forces that file to user-read/write only
-(`0600`). The token is sent only to the paired Tater Tube Server and is never
+settings file. On Linux, the Player restricts that file to the user (`0600`).
+The token is sent only to the paired Tater Tube Server and is never
 forwarded across HTTP redirects.
 
-## Licensing status
+Tater Picks is optional and hidden unless Tater Link is configured. The Player
+communicates with the user's Tater Tube Server rather than directly with an AI
+provider. See [PRIVACY.md](PRIVACY.md) for the complete data-flow description.
+
+## Platform direction
+
+The current client targets Steam and Steam Deck. Future native Apple TV and
+Google TV clients can share the same server contracts, design assets, and
+product behavior from this repository while using each platform's native media
+framework.
+
+## License
 
 Tater Tube Player is open-source software licensed under the
 [Apache License 2.0](LICENSE). The Tater Tube name, logo, and mascot remain
 protected brand identifiers; see [TRADEMARKS.md](TRADEMARKS.md).
 
-Release builds dynamically link Qt under LGPLv3. Qt, FFmpeg, SDL, and other
-third-party components retain their own licenses. Their notices, source and
-relinking requirements are documented in
+Release builds dynamically link Qt under LGPLv3. Qt, FFmpeg, SDL, mpv, and
+other third-party components retain their respective licenses. Notices, source
+availability, and Qt relinking instructions are provided in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
 [docs/SOURCE_CODE.md](docs/SOURCE_CODE.md), and
 [docs/RELINKING_QT.md](docs/RELINKING_QT.md).
