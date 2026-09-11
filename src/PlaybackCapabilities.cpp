@@ -333,6 +333,8 @@ QSize PlaybackCapabilities::normalizedDisplaySizeFromModes(const QByteArray &mod
 {
     static const QRegularExpression modePattern(
         QStringLiteral(R"(^\s*(\d+)x(\d+)\s*$)"));
+    QSize largest;
+    qint64 largestArea = 0;
     for (const QByteArray &line : modes.split('\n')) {
         const QRegularExpressionMatch match = modePattern.match(
             QString::fromLatin1(line));
@@ -342,10 +344,16 @@ QSize PlaybackCapabilities::normalizedDisplaySizeFromModes(const QByteArray &mod
         bool heightValid = false;
         const int width = match.captured(1).toInt(&widthValid);
         const int height = match.captured(2).toInt(&heightValid);
-        if (widthValid && heightValid && width > 0 && height > 0)
-            return QSize(std::max(width, height), std::min(width, height));
+        if (!widthValid || !heightValid || width <= 0 || height <= 0)
+            continue;
+
+        const qint64 area = static_cast<qint64>(width) * height;
+        if (area > largestArea) {
+            largest = QSize(std::max(width, height), std::min(width, height));
+            largestArea = area;
+        }
     }
-    return {};
+    return largest;
 }
 
 QStringList PlaybackCapabilities::hdrFormatsFromEdid(const QByteArray &edid)

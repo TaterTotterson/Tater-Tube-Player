@@ -87,6 +87,9 @@ void PlaybackCapabilitiesTest::normalizesPhysicalDisplayModes()
     QCOMPARE(PlaybackCapabilities::normalizedDisplaySizeFromModes(
                  QByteArrayLiteral("3840x2160\n1920x1080\n")),
              QSize(3840, 2160));
+    QCOMPARE(PlaybackCapabilities::normalizedDisplaySizeFromModes(
+                 QByteArrayLiteral("1920x1080\n4096x2160\n3840x2160\n")),
+             QSize(4096, 2160));
     QVERIFY(!PlaybackCapabilities::normalizedDisplaySizeFromModes(
                  QByteArrayLiteral("not-a-mode\n")).isValid());
 }
