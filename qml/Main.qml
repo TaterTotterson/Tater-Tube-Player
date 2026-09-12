@@ -107,6 +107,10 @@ ApplicationWindow {
     property string recommendationSpeechPlaybackError: ""
     property int focusedRecommendationIndex: 0
     property bool componentReady: false
+    property var pairingInputTarget: null
+    readonly property bool pairingReady:
+        String(serverField.text || "").trim().length > 0
+        && String(pinField.text || "").length === 6
     readonly property bool textEntryFocused:
         root.activeFocusItem === serverField
         || root.activeFocusItem === pinField
@@ -2112,8 +2116,100 @@ ApplicationWindow {
             Qt.callLater(function() { target.forceActiveFocus() })
     }
 
+    function focusPairingInput(field, enterKeyboard) {
+        if (!field)
+            return
+        pairingInputTarget = field
+        pairingKeyboard.numericMode = field === pinField
+        if (enterKeyboard === true)
+            pairingKeyboard.focusFirstKey()
+        else
+            field.forceActiveFocus()
+    }
+
+    function insertPairingText(value) {
+        var target = pairingInputTarget
+        if (!target)
+            return
+        var inserted = String(value || "")
+        if (target === pinField)
+            inserted = inserted.replace(/[^0-9]/g, "")
+        if (inserted.length === 0)
+            return
+
+        var current = String(target.text || "")
+        var start = Number(target.selectionStart)
+        var end = Number(target.selectionEnd)
+        if (start < 0 || end < 0 || start === end) {
+            start = Math.max(0, Number(target.cursorPosition || 0))
+            end = start
+        } else if (start > end) {
+            var swap = start
+            start = end
+            end = swap
+        }
+        var maximum = Number(target.maximumLength || 0)
+        if (maximum > 0) {
+            var available = maximum - (current.length - (end - start))
+            inserted = inserted.slice(0, Math.max(0, available))
+        }
+        if (inserted.length === 0)
+            return
+        target.text = current.slice(0, start) + inserted + current.slice(end)
+        target.cursorPosition = start + inserted.length
+    }
+
+    function backspacePairingText() {
+        var target = pairingInputTarget
+        if (!target)
+            return
+        var current = String(target.text || "")
+        var start = Number(target.selectionStart)
+        var end = Number(target.selectionEnd)
+        if (start >= 0 && end >= 0 && start !== end) {
+            if (start > end) {
+                var swap = start
+                start = end
+                end = swap
+            }
+        } else {
+            end = Math.max(0, Number(target.cursorPosition || 0))
+            start = Math.max(0, end - 1)
+        }
+        if (start === end)
+            return
+        target.text = current.slice(0, start) + current.slice(end)
+        target.cursorPosition = start
+    }
+
+    function clearPairingText() {
+        if (!pairingInputTarget)
+            return
+        pairingInputTarget.text = ""
+        pairingInputTarget.cursorPosition = 0
+    }
+
+    function submitPairing() {
+        if (serverClient.busy)
+            return
+        if (String(serverField.text || "").trim().length === 0) {
+            focusPairingInput(serverField, true)
+            return
+        }
+        if (String(pinField.text || "").length !== 6) {
+            focusPairingInput(pinField, true)
+            return
+        }
+        serverClient.pair(serverField.text, pinField.text)
+    }
+
     function goBack() {
-        if (sideMenuOpen) {
+        if (pairingOverlay.visible) {
+            if (root.isDescendant(root.activeFocusItem, pairingKeyboard)
+                    && pairingInputTarget)
+                pairingInputTarget.forceActiveFocus()
+            return
+        } else if (sideMenuOpen) {
             closeSideMenu(true)
         } else if (playbackOpen) {
             closePlayback()
@@ -2439,9 +2535,11 @@ ApplicationWindow {
         var item = root.activeFocusItem
         if (!item)
             return
-        if (typeof item.activate === "function") {
+        if (item === serverField || item === pinField) {
+            root.focusPairingInput(item, true)
+        } else if (typeof item.activate === "function") {
             item.activate()
-        } else if (item === serverField || item === pinField || item === searchField) {
+        } else if (item === searchField) {
             item.forceActiveFocus()
             Qt.inputMethod.show()
         }
@@ -5702,53 +5800,79 @@ ApplicationWindow {
             if (visible) {
                 root.sideMenuOpen = false
                 root.sideMenuReturnFocus = null
-                Qt.callLater(function() { serverField.forceActiveFocus() })
+                root.pairingInputTarget = serverField
+                pairingKeyboard.numericMode = false
+                Qt.callLater(function() { root.focusPairingInput(serverField, false) })
+            } else {
+                root.pairingInputTarget = null
             }
         }
 
         Rectangle {
+            id: pairingCard
             anchors.centerIn: parent
-            width: 620
-            height: 560
+            width: Math.min(1120, pairingOverlay.width - 48)
+            height: Math.min(660, pairingOverlay.height - 40)
             radius: 28
             color: "#202328"
             border.width: 1
             border.color: "#484d53"
 
-            Image {
-                anchors.horizontalCenter: parent.horizontalCenter
+            Rectangle {
+                anchors.left: parent.left
+                anchors.leftMargin: 456
                 anchors.top: parent.top
-                anchors.topMargin: 24
-                width: 122
-                height: 122
-                source: "../assets/mascot/tater-wave.png"
-                fillMode: Image.PreserveAspectFit
+                anchors.topMargin: 30
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 30
+                width: 1
+                color: "#3b4046"
             }
 
             Column {
+                id: pairingForm
+                width: 374
+                anchors.horizontalCenter: undefined
                 anchors.left: parent.left
-                anchors.right: parent.right
+                anchors.leftMargin: 41
                 anchors.top: parent.top
-                anchors.topMargin: 150
-                anchors.leftMargin: 60
-                anchors.rightMargin: 60
-                spacing: 15
+                anchors.topMargin: 26
+                spacing: 11
+
+                Image {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 104
+                    height: 104
+                    source: "../assets/mascot/tater-wave.png"
+                    fillMode: Image.PreserveAspectFit
+                }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Welcome to Tater Tube Player"
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    text: "Welcome to Tater Tube"
                     color: root.textPrimary
-                    font.pixelSize: 29
+                    font.pixelSize: 27
                     font.weight: Font.Bold
                 }
 
                 Text {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
-                    text: "Pair this screen with Tater Tube Server to bring in your library and channels."
+                    text: "Pair this screen with your server to bring your library and live channels home."
                     color: root.textSecondary
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 15
+                    font.pixelSize: 14
+                }
+
+                Text {
+                    width: parent.width
+                    topPadding: 5
+                    text: "SERVER ADDRESS"
+                    color: root.orangeBright
+                    font.pixelSize: 11
+                    font.weight: Font.Bold
+                    font.letterSpacing: 1.2
                 }
 
                 TextField {
@@ -5760,12 +5884,32 @@ ApplicationWindow {
                     placeholderTextColor: "#7f858b"
                     font.pixelSize: 16
                     selectByMouse: true
+                    onActiveFocusChanged: {
+                        if (activeFocus) {
+                            root.pairingInputTarget = serverField
+                            pairingKeyboard.numericMode = false
+                        }
+                    }
+                    onAccepted: root.focusPairingInput(serverField, true)
                     background: Rectangle {
                         radius: 14
                         color: "#16181c"
-                        border.width: serverField.activeFocus ? 2 : 1
-                        border.color: serverField.activeFocus ? root.orange : "#41464c"
+                        border.width: serverField.activeFocus
+                                      || root.pairingInputTarget === serverField ? 2 : 1
+                        border.color: serverField.activeFocus
+                                      || root.pairingInputTarget === serverField
+                                      ? root.orange : "#41464c"
                     }
+                }
+
+                Text {
+                    width: parent.width
+                    topPadding: 3
+                    text: "PAIRING CODE"
+                    color: root.orangeBright
+                    font.pixelSize: 11
+                    font.weight: Font.Bold
+                    font.letterSpacing: 1.2
                 }
 
                 TextField {
@@ -5779,16 +5923,26 @@ ApplicationWindow {
                     font.letterSpacing: 4
                     maximumLength: 6
                     inputMethodHints: Qt.ImhDigitsOnly
+                    validator: RegularExpressionValidator { regularExpression: /^[0-9]{0,6}$/ }
                     horizontalAlignment: Text.AlignHCenter
+                    onActiveFocusChanged: {
+                        if (activeFocus) {
+                            root.pairingInputTarget = pinField
+                            pairingKeyboard.numericMode = true
+                        }
+                    }
                     background: Rectangle {
                         radius: 14
                         color: "#16181c"
-                        border.width: pinField.activeFocus ? 2 : 1
-                        border.color: pinField.activeFocus ? root.orange : "#41464c"
+                        border.width: pinField.activeFocus
+                                      || root.pairingInputTarget === pinField ? 2 : 1
+                        border.color: pinField.activeFocus
+                                      || root.pairingInputTarget === pinField
+                                      ? root.orange : "#41464c"
                     }
-                    onAccepted: {
-                        serverClient.pair(serverField.text, text)
-                    }
+                    onAccepted: root.pairingReady
+                                ? root.submitPairing()
+                                : root.focusPairingInput(pinField, true)
                 }
 
                 Text {
@@ -5806,11 +5960,38 @@ ApplicationWindow {
                     width: 220
                     text: serverClient.busy ? "Pairing…" : "Pair this screen"
                     primary: true
-                    onClicked: {
-                        if (!serverClient.busy)
-                            serverClient.pair(serverField.text, pinField.text)
-                    }
+                    enabled: !serverClient.busy && root.pairingReady
+                    opacity: enabled ? 1 : 0.42
+                    onClicked: root.submitPairing()
                 }
+
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    text: "Select a field to begin typing."
+                    color: "#777d83"
+                    font.pixelSize: 12
+                }
+            }
+
+            OnScreenKeyboard {
+                id: pairingKeyboard
+                anchors.left: parent.left
+                anchors.leftMargin: 490
+                anchors.right: parent.right
+                anchors.rightMargin: 36
+                anchors.verticalCenter: parent.verticalCenter
+                height: implicitHeight
+                doneEnabled: root.pairingReady && !serverClient.busy
+                accentColor: root.orange
+                accentBrightColor: root.orangeBright
+                textColor: root.textPrimary
+                secondaryTextColor: root.textSecondary
+                onTextRequested: value => root.insertPairingText(value)
+                onBackspaceRequested: root.backspacePairingText()
+                onClearRequested: root.clearPairingText()
+                onNextRequested: root.focusPairingInput(pinField, true)
+                onDoneRequested: root.submitPairing()
             }
         }
     }
