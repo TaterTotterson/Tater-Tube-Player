@@ -2397,6 +2397,11 @@ ApplicationWindow {
     }
 
     function moveFocus(horizontal, vertical) {
+        if (pairingOverlay.visible
+                && root.isDescendant(root.activeFocusItem, pairingKeyboard)) {
+            return pairingKeyboard.moveFocus(horizontal, vertical)
+        }
+
         if (libraryVirtualBrowser.visible && !sideMenuOpen && !detailsOpen
                 && !pairingOverlay.visible) {
             var gridCurrent = root.activeFocusItem

@@ -12,6 +12,7 @@ FocusScope {
     property color accentBrightColor: "#ff964f"
     property color textColor: "#f6f6f3"
     property color secondaryTextColor: "#aaafb4"
+    property var focusedKey: null
 
     signal textRequested(string text)
     signal backspaceRequested()
@@ -66,6 +67,79 @@ FocusScope {
         })
     }
 
+    function focusRepeaterKey(repeater, index) {
+        if (!repeater || index < 0 || index >= repeater.count)
+            return false
+        var key = repeater.itemAt(index)
+        if (!key || !key.enabled)
+            return false
+        key.forceActiveFocus()
+        return true
+    }
+
+    function moveFocus(horizontal, vertical) {
+        var key = focusedKey
+        if (!key || !key.activeFocus) {
+            focusFirstKey()
+            return true
+        }
+
+        var group = String(key.navigationGroup || "")
+        var index = Number(key.navigationIndex)
+
+        if (group === "address") {
+            var addressColumn = index % 10
+            var addressRow = Math.floor(index / 10)
+            if (horizontal < 0 && addressColumn > 0)
+                focusRepeaterKey(addressGrid, index - 1)
+            else if (horizontal > 0 && addressColumn < 9)
+                focusRepeaterKey(addressGrid, index + 1)
+            else if (vertical < 0 && addressRow > 0)
+                focusRepeaterKey(addressGrid, index - 10)
+            else if (vertical > 0 && addressRow < 3)
+                focusRepeaterKey(addressGrid, index + 10)
+            else if (vertical > 0)
+                focusRepeaterKey(addressActionKeys,
+                                 Math.round(addressColumn * 5 / 9))
+            return true
+        }
+
+        if (group === "address-action") {
+            if (horizontal < 0 && index > 0)
+                focusRepeaterKey(addressActionKeys, index - 1)
+            else if (horizontal > 0 && index < addressActionKeys.count - 1)
+                focusRepeaterKey(addressActionKeys, index + 1)
+            else if (vertical < 0)
+                focusRepeaterKey(addressGrid,
+                                 30 + Math.round(index * 9 / 5))
+            return true
+        }
+
+        if (group === "number") {
+            var numberColumn = index % 3
+            var numberRow = Math.floor(index / 3)
+            if (horizontal < 0 && numberColumn > 0)
+                focusRepeaterKey(numberPad, index - 1)
+            else if (horizontal > 0 && numberColumn < 2)
+                focusRepeaterKey(numberPad, index + 1)
+            else if (vertical < 0 && numberRow > 0)
+                focusRepeaterKey(numberPad, index - 3)
+            else if (vertical > 0 && numberRow < 3)
+                focusRepeaterKey(numberPad, index + 3)
+            else if (vertical > 0 && doneKey.enabled)
+                doneKey.forceActiveFocus()
+            return true
+        }
+
+        if (group === "done") {
+            if (vertical < 0)
+                focusRepeaterKey(numberPad, 10)
+            return true
+        }
+
+        return true
+    }
+
     component KeyboardKey: FocusScope {
         id: keyControl
 
@@ -73,6 +147,8 @@ FocusScope {
         property string keyValue: ""
         property string keyAction: ""
         property bool primary: false
+        property string navigationGroup: ""
+        property int navigationIndex: -1
 
         activeFocusOnTab: true
 
@@ -86,6 +162,10 @@ FocusScope {
         Keys.onReturnPressed: event => { activate(); event.accepted = true }
         Keys.onEnterPressed: event => { activate(); event.accepted = true }
         Keys.onSpacePressed: event => { activate(); event.accepted = true }
+        onActiveFocusChanged: {
+            if (activeFocus)
+                keyboard.focusedKey = keyControl
+        }
 
         Rectangle {
             anchors.fill: parent
@@ -183,10 +263,13 @@ FocusScope {
 
                         KeyboardKey {
                             required property string modelData
+                            required property int index
                             width: (addressGridLayout.width - 9 * addressGridLayout.columnSpacing) / 10
                             height: 55
                             keyLabel: modelData.toUpperCase()
                             keyValue: modelData
+                            navigationGroup: "address"
+                            navigationIndex: index
                         }
                     }
                 }
@@ -198,16 +281,20 @@ FocusScope {
                     columnSpacing: 7
 
                     Repeater {
+                        id: addressActionKeys
                         model: keyboard.addressActions
 
                         KeyboardKey {
                             required property var modelData
+                            required property int index
                             width: (addressActionLayout.width - 5 * addressActionLayout.columnSpacing) / 6
                             height: 58
                             keyLabel: String(modelData.label || "")
                             keyValue: String(modelData.value || "")
                             keyAction: String(modelData.action || "")
                             primary: modelData.primary === true
+                            navigationGroup: "address-action"
+                            navigationIndex: index
                         }
                     }
                 }
@@ -234,22 +321,27 @@ FocusScope {
 
                         KeyboardKey {
                             required property var modelData
+                            required property int index
                             width: (numberPadLayout.width - 2 * numberPadLayout.columnSpacing) / 3
                             height: 62
                             keyLabel: String(modelData.label || "")
                             keyValue: String(modelData.value || "")
                             keyAction: String(modelData.action || "")
+                            navigationGroup: "number"
+                            navigationIndex: index
                         }
                     }
                 }
 
                 KeyboardKey {
+                    id: doneKey
                     width: parent.width
                     height: 58
                     keyLabel: "PAIR THIS SCREEN"
                     keyAction: "done"
                     primary: true
                     enabled: keyboard.doneEnabled
+                    navigationGroup: "done"
                 }
             }
         }
