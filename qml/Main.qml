@@ -111,10 +111,7 @@ ApplicationWindow {
     readonly property bool pairingReady:
         String(serverField.text || "").trim().length > 0
         && String(pinField.text || "").length === 6
-    readonly property bool textEntryFocused:
-        root.activeFocusItem === serverField
-        || root.activeFocusItem === pinField
-        || root.activeFocusItem === searchField
+    readonly property bool textEntryFocused: root.activeFocusItem === searchField
 
     onNativePlaybackActiveChanged: {
         if (nativePlaybackActive) {
@@ -5883,7 +5880,9 @@ ApplicationWindow {
                     color: root.textPrimary
                     placeholderTextColor: "#7f858b"
                     font.pixelSize: 16
-                    selectByMouse: true
+                    readOnly: true
+                    selectByMouse: false
+                    cursorVisible: false
                     onActiveFocusChanged: {
                         if (activeFocus) {
                             root.pairingInputTarget = serverField
@@ -5921,6 +5920,9 @@ ApplicationWindow {
                     placeholderTextColor: "#7f858b"
                     font.pixelSize: 18
                     font.letterSpacing: 4
+                    readOnly: true
+                    selectByMouse: false
+                    cursorVisible: false
                     maximumLength: 6
                     inputMethodHints: Qt.ImhDigitsOnly
                     validator: RegularExpressionValidator { regularExpression: /^[0-9]{0,6}$/ }
@@ -5968,7 +5970,7 @@ ApplicationWindow {
                 Text {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
-                    text: "Select a field to begin typing."
+                    text: "Select Address or Code, then use the keyboard."
                     color: "#777d83"
                     font.pixelSize: 12
                 }
