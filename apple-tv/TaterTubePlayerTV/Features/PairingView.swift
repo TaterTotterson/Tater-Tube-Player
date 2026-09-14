@@ -54,7 +54,7 @@ struct PairingView: View {
                 }
 
                 HStack(spacing: 22) {
-                    Button {
+                    TaterActionButton(prominent: true) {
                         isPairing = true
                         Task {
                             await store.pair(serverAddress: serverAddress, pin: pin)
@@ -65,10 +65,10 @@ struct PairingView: View {
                     }
                     .disabled(isPairing || serverAddress.isEmpty || pin.count != 6)
 
-                    Button("Try Demo") { store.enterDemo() }
+                    TaterActionButton(action: { store.enterDemo() }) {
+                        Text("Try Demo")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(TaterTheme.orange)
             }
             .padding(54)
             .frame(width: 700)

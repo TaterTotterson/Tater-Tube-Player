@@ -90,6 +90,8 @@ ApplicationWindow {
     readonly property int initialLibraryCardBatch: 48
     readonly property int libraryMaterializeBatch: 24
     property int libraryVisibleLimit: initialLibraryCardBatch
+    property string pendingLibraryFocusPath: ""
+    property int pendingLibraryFocusAttempts: 0
     property int discoverVisibleLimit: 60
     property bool sideMenuOpen: false
     property var sideMenuReturnFocus: null
@@ -219,6 +221,9 @@ ApplicationWindow {
     function itemMeta(item) {
         if (!item)
             return ""
+        var recentLabel = Navigation.recentlyAddedLabel(item)
+        if (recentLabel.length > 0)
+            return recentLabel
         var parts = []
         if (item.date)
             parts.push(item.date)
@@ -677,6 +682,9 @@ ApplicationWindow {
     function showCardMeta(item) {
         if (!item)
             return "SHOW"
+        var recentLabel = Navigation.recentlyAddedLabel(item)
+        if (recentLabel.length > 0)
+            return recentLabel
         if (item.resumeTitle)
             return "Continue " + item.resumeTitle
         var seasons = Number(item.seasonCount || 0)
@@ -721,6 +729,23 @@ ApplicationWindow {
     function openLibraryEntry(item) {
         if (!item)
             return
+        var recentAction = Navigation.recentlyAddedAction(item)
+        if (recentAction.kind === "details") {
+            openDetails(recentAction.item, mediaLabel(recentAction.item))
+            return
+        }
+        if (recentAction.kind === "browse") {
+            pendingLibraryFocusPath = String(recentAction.focusPath || "")
+            pendingLibraryFocusAttempts = 0
+            libraryVisibleLimit = initialLibraryCardBatch
+            if (currentPage !== "library")
+                showPage("library")
+            serverClient.browseLibraryItem(recentAction.item)
+            resetLibraryScrollPosition()
+            return
+        }
+        pendingLibraryFocusPath = ""
+        pendingLibraryFocusAttempts = 0
         if (item.streamUrl || item.nzbUrl) {
             openDetails(item, mediaLabel(item))
         } else if (!demoMode && (item.categoryId || item.path)) {
@@ -2519,6 +2544,36 @@ ApplicationWindow {
         return true
     }
 
+    function focusPendingRecentlyAddedEpisode() {
+        if (pendingLibraryFocusPath.length === 0
+                || currentPage !== "library" || serverClient.libraryLoading
+                || libraryBrowseStage() !== "episodes")
+            return false
+        var items = displayedLibraryItems()
+        var targetIndex = -1
+        for (var i = 0; i < items.length; ++i) {
+            if (String(items[i] && items[i].path || "")
+                    === pendingLibraryFocusPath) {
+                targetIndex = i
+                break
+            }
+        }
+        if (targetIndex < 0) {
+            pendingLibraryFocusPath = ""
+            pendingLibraryFocusAttempts = 0
+            return false
+        }
+        libraryVisibleLimit = Math.max(libraryVisibleLimit, targetIndex + 1)
+        var target = episodeRepeater.itemAt(targetIndex)
+        if (!target)
+            return false
+        target.forceActiveFocus()
+        revealFocusedItem(target)
+        pendingLibraryFocusPath = ""
+        pendingLibraryFocusAttempts = 0
+        return true
+    }
+
     function navigateLeft() {
         if (sideMenuOpen)
             return
@@ -2632,6 +2687,25 @@ ApplicationWindow {
                          root.libraryVisibleLimit + root.libraryMaterializeBatch)
     }
 
+    Timer {
+        id: pendingLibraryFocusTimer
+        interval: 30
+        repeat: false
+        onTriggered: {
+            if (root.focusPendingRecentlyAddedEpisode())
+                return
+            ++root.pendingLibraryFocusAttempts
+            if (root.pendingLibraryFocusPath.length > 0
+                    && root.pendingLibraryFocusAttempts < 12)
+                restart()
+            else if (root.pendingLibraryFocusPath.length > 0) {
+                root.pendingLibraryFocusPath = ""
+                root.pendingLibraryFocusAttempts = 0
+                root.focusFirstSectionControl()
+            }
+        }
+    }
+
     Connections {
         target: gamepadInput
         function onNavigateLeft() {
@@ -2675,6 +2749,13 @@ ApplicationWindow {
         target: serverClient
         function onLibraryChanged() {
             sectionPage.syncLibraryArtwork()
+            if (root.currentPage === "library"
+                    && !serverClient.libraryLoading
+                    && root.pendingLibraryFocusPath.length > 0) {
+                root.pendingLibraryFocusAttempts = 0
+                pendingLibraryFocusTimer.restart()
+                return
+            }
             var current = root.activeFocusItem
             var currentOnLibraryPage = current
                     && (root.isDescendant(current, sectionScroller.contentItem)
@@ -3856,6 +3937,7 @@ ApplicationWindow {
                             rowSpacing: 18
 
                             Repeater {
+                                id: episodeRepeater
                                 model: Math.min(root.libraryVisibleLimit,
                                                 root.displayedLibraryItems().length)
 

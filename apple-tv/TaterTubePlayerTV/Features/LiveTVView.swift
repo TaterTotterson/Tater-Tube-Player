@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LiveTVView: View {
     @EnvironmentObject private var store: PlayerStore
+    @Binding var selectedTab: Int
     @State private var clock = Date()
 
     private var guide: TubeTVGuide? {
@@ -11,6 +12,40 @@ struct LiveTVView: View {
     }
 
     var body: some View {
+        Group {
+            if store.isPlaybackPresented {
+                // A full guide contains many artwork-backed rows and a one-second
+                // clock. Do not keep rendering it behind full-screen playback.
+                Color.black
+                    .ignoresSafeArea()
+            } else {
+                guideContent
+            }
+        }
+        .onExitCommand { selectedTab = 0 }
+        .task(id: store.isPlaybackPresented) {
+            guard !store.isPlaybackPresented else { return }
+            clock = Date()
+            if !store.isDemo {
+                await store.refreshLiveGuide(showActivity: guide == nil)
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { break }
+                clock = Date()
+            }
+        }
+        .task(id: store.isPlaybackPresented) {
+            guard !store.isDemo, !store.isPlaybackPresented else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled, !store.isPlaybackPresented else { break }
+                await store.refreshLiveGuide()
+            }
+        }
+    }
+
+    private var guideContent: some View {
         ZStack {
             GuideGlowBackground()
 
@@ -57,31 +92,16 @@ struct LiveTVView: View {
                         .font(.system(size: 24, weight: .medium, design: .rounded))
                         .foregroundStyle(TaterTheme.secondaryText)
                         .multilineTextAlignment(.center)
-                    Button("Try Again") { Task { await store.refreshLiveGuide(showActivity: true) } }
-                        .buttonStyle(.borderedProminent)
-                        .tint(TaterTheme.orange)
+                    TaterActionButton(
+                        prominent: true,
+                        action: { Task { await store.refreshLiveGuide(showActivity: true) } }
+                    ) {
+                        Text("Try Again")
+                    }
                 }
                 .padding(52)
                 .frame(maxWidth: 780)
                 .taterGlass(cornerRadius: 34)
-            }
-        }
-        .task {
-            if !store.isDemo {
-                await store.refreshLiveGuide(showActivity: guide == nil)
-            }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard !Task.isCancelled else { break }
-                clock = Date()
-            }
-        }
-        .task {
-            guard !store.isDemo else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
-                guard !Task.isCancelled else { break }
-                await store.refreshLiveGuide()
             }
         }
     }
@@ -147,7 +167,7 @@ private struct LiveGuideRow: View {
             }
         }
         .frame(height: 226)
-        .clipped()
+        .focusSection()
     }
 
     private func isCurrent(_ program: LiveProgram, index: Int) -> Bool {
@@ -170,8 +190,9 @@ private struct GuideFocusButton<Label: View>: View {
     }
 
     var body: some View {
-        Button(action: action) { label }
-            .buttonStyle(.plain)
+        label
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .focusable()
             .focused($isFocused)
             .focusEffectDisabled()
             .scaleEffect(isFocused ? 1.025 : 1)
@@ -181,6 +202,8 @@ private struct GuideFocusButton<Label: View>: View {
             }
             .shadow(color: isFocused ? TaterTheme.orange.opacity(0.34) : .clear, radius: 20)
             .animation(.easeOut(duration: 0.16), value: isFocused)
+            .onTapGesture(perform: action)
+            .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -230,7 +253,7 @@ private struct ChannelSelectorCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(height: 226)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .taterGlass(cornerRadius: 24, interactive: true)
+        .taterGlass(cornerRadius: 24)
     }
 }
 
@@ -291,7 +314,7 @@ private struct LiveProgramCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(height: 226)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .taterGlass(cornerRadius: 24, interactive: true)
+        .taterGlass(cornerRadius: 24)
     }
 
     private var timeLabel: String {

@@ -3,86 +3,115 @@ import SwiftUI
 struct LibraryView: View {
     @EnvironmentObject private var store: PlayerStore
     @Binding var selectedTab: Int
+    @State private var navigationPath: [LibraryLocation] = []
+    @State private var topFocusRequest = 0
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 LibraryGlowBackground()
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 54) {
-                        collectionBar
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 54) {
+                            collectionBar
 
-                        ForEach(displayRows) { row in
-                            LibraryShelf(row: row)
+                            ForEach(displayRows) { row in
+                                LibraryShelf(
+                                    row: row,
+                                    onNavigate: { navigationPath.append($0) }
+                                )
+                            }
+
+                            if displayRows.isEmpty && !store.isLibraryRefreshing {
+                                LibraryEmptyState(
+                                    title: "Your library is ready for a scan",
+                                    message: "Movies, shows, and collections from your Tater Tube Server will appear here."
+                                )
+                            }
                         }
-
-                        if displayRows.isEmpty && !store.isLibraryRefreshing {
-                            LibraryEmptyState(
-                                title: "Your library is ready for a scan",
-                                message: "Movies, shows, and collections from your Tater Tube Server will appear here."
-                            )
+                        .padding(.horizontal, 78)
+                        .padding(.top, 42)
+                        .padding(.bottom, 110)
+                        .id("library-scroll-top")
+                    }
+                    .refreshable { await store.refreshLibraryRows() }
+                    .onExitCommand { selectedTab = 0 }
+                    .onChange(of: topFocusRequest) { _, _ in
+                        withAnimation(.easeOut(duration: 0.20)) {
+                            scrollProxy.scrollTo("library-scroll-top", anchor: .top)
                         }
                     }
-                    .padding(.horizontal, 78)
-                    .padding(.top, 42)
-                    .padding(.bottom, 110)
                 }
-                .refreshable { await store.refreshLibraryRows() }
             }
             .navigationDestination(for: LibraryLocation.self) { location in
-                LibraryCollectionView(location: location)
+                LibraryCollectionView(
+                    location: location,
+                    onNavigate: { navigationPath.append($0) }
+                )
             }
         }
         .task {
-            if store.libraryRows.isEmpty {
-                await store.refreshLibraryRows(showActivity: true)
-            }
+            await store.refreshLibraryRows(
+                showActivity: store.libraryRows.isEmpty,
+                minimumInterval: 10
+            )
         }
     }
 
     private var collectionBar: some View {
         HStack(spacing: 24) {
-            NavigationLink(value: LibraryLocation.allMovies) {
+            TaterActionButton(
+                action: { navigationPath.append(.allMovies) },
+                onFocusChange: restoreTopWhenFocused
+            ) {
                 Label("All Movies", systemImage: "film.fill")
                     .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 72)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(TaterTheme.orange.opacity(0.82))
 
-            NavigationLink(value: LibraryLocation.allShows) {
+            TaterActionButton(
+                action: { navigationPath.append(.allShows) },
+                onFocusChange: restoreTopWhenFocused
+            ) {
                 Label("All TV Shows", systemImage: "tv.and.mediabox.fill")
                     .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 72)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(TaterTheme.orange.opacity(0.82))
 
             if store.home?.capabilities.newznab == true {
-                Button { selectedTab = 3 } label: {
+                TaterActionButton(
+                    action: { selectedTab = 3 },
+                    onFocusChange: restoreTopWhenFocused
+                ) {
                     Label("Discover", systemImage: "sparkles.tv.fill")
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 72)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.white.opacity(0.15))
             }
 
             if store.home?.capabilities.taterLink == true {
-                Button { selectedTab = 4 } label: {
+                TaterActionButton(
+                    action: { selectedTab = 4 },
+                    onFocusChange: restoreTopWhenFocused
+                ) {
                     Label("Tater Picks", systemImage: "wand.and.stars")
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 72)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.white.opacity(0.15))
             }
         }
         .padding(30)
         .taterGlass(cornerRadius: 30)
+        .focusSection()
+    }
+
+    private func restoreTopWhenFocused(_ focused: Bool) {
+        if focused { topFocusRequest += 1 }
     }
 
     private var displayRows: [LibraryRow] {
@@ -99,6 +128,7 @@ struct LibraryView: View {
 
 private struct LibraryShelf: View {
     let row: LibraryRow
+    let onNavigate: (LibraryLocation) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -108,34 +138,39 @@ private struct LibraryShelf: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 28) {
                     ForEach(row.items) { item in
-                        LibraryItemLink(item: item, parent: LibraryLocation(entry: row.entry))
+                        LibraryItemLink(
+                            item: item,
+                            parent: LibraryLocation(entry: row.entry),
+                            wide: true,
+                            handlesRecentlyAddedShows: row.entry.id.lowercased() == "local-discover:recent",
+                            onNavigate: onNavigate
+                        )
                     }
 
-                    NavigationLink(value: LibraryLocation(entry: row.entry)) {
-                        VStack(spacing: 20) {
-                            Image(systemName: "arrow.right.circle.fill")
-                                .font(.system(size: 58, weight: .medium))
-                            Text("See All")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
-                        }
-                        .foregroundStyle(.white)
-                        .frame(width: 190, height: 365)
-                        .taterGlass(cornerRadius: 22, interactive: true)
+                    TaterCardButton(cornerRadius: 22, action: {
+                        onNavigate(LibraryLocation(entry: row.entry))
+                    }) {
+                        ShelfDestinationCard(title: "See All", icon: "arrow.right.circle.fill")
                     }
-                    .buttonStyle(.card)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 34)
+                .padding(.vertical, 24)
             }
-            .contentMargins(.horizontal, -18, for: .scrollContent)
+            .scrollClipDisabled()
+            .contentMargins(.horizontal, -34, for: .scrollContent)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
     }
 }
 
 struct LibraryCollectionView: View {
     @EnvironmentObject private var store: PlayerStore
+    @State private var heroFocusRequest = 0
+    @FocusState private var focusedItemID: String?
 
     let location: LibraryLocation
+    let onNavigate: (LibraryLocation) -> Void
 
     private var page: LibraryPage? { store.libraryPage(for: location) }
     private var items: [MediaItem] { page?.items.naturallySorted ?? [] }
@@ -145,47 +180,63 @@ struct LibraryCollectionView: View {
         ZStack {
             collectionBackground
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 44) {
-                    if stage.showsHero {
-                        LibraryContextHero(location: location, items: items)
-                    }
-
-                    if let page, page.items.isEmpty {
-                        LibraryEmptyState(
-                            title: "Nothing here yet",
-                            message: "This collection is currently empty on your Tater Tube Server."
-                        )
-                    } else if stage == .episodes {
-                        episodeGrid
-                    } else {
-                        posterGrid
-                    }
-
-                    if page == nil && store.loadingLibraryPages.contains(location.cacheKey) {
-                        HStack(spacing: 18) {
-                            ProgressView()
-                                .tint(TaterTheme.orange)
-                            Text("Loading \(location.title)…")
-                                .font(.system(size: 25, weight: .semibold, design: .rounded))
-                                .foregroundStyle(TaterTheme.secondaryText)
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 44) {
+                        if stage.showsHero {
+                            LibraryContextHero(
+                                location: location,
+                                items: items,
+                                onFocusChange: restoreHeroWhenFocused
+                            )
                         }
-                        .frame(maxWidth: .infinity, minHeight: 260)
-                    }
 
-                    if let error = store.libraryErrors[location.cacheKey], page == nil {
-                        LibraryEmptyState(title: "Couldn’t load this collection", message: error)
+                        if let page, page.items.isEmpty {
+                            LibraryEmptyState(
+                                title: "Nothing here yet",
+                                message: "This collection is currently empty on your Tater Tube Server."
+                            )
+                        } else if stage == .episodes {
+                            episodeGrid
+                        } else {
+                            posterGrid
+                        }
+
+                        if page == nil && store.loadingLibraryPages.contains(location.cacheKey) {
+                            HStack(spacing: 18) {
+                                ProgressView()
+                                    .tint(TaterTheme.orange)
+                                Text("Loading \(location.title)…")
+                                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(TaterTheme.secondaryText)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 260)
+                        }
+
+                        if let error = store.libraryErrors[location.cacheKey], page == nil {
+                            LibraryEmptyState(title: "Couldn’t load this collection", message: error)
+                        }
+                    }
+                    .padding(.horizontal, 78)
+                    .padding(.top, stage.showsHero ? 28 : 52)
+                    .padding(.bottom, 120)
+                    .id("library-collection-top")
+                }
+                .refreshable { await store.loadLibraryPage(location, forceNetwork: true) }
+                .onChange(of: heroFocusRequest) { _, _ in
+                    withAnimation(.easeOut(duration: 0.20)) {
+                        scrollProxy.scrollTo("library-collection-top", anchor: .top)
                     }
                 }
-                .padding(.horizontal, 78)
-                .padding(.top, stage.showsHero ? 28 : 52)
-                .padding(.bottom, 120)
             }
-            .refreshable { await store.loadLibraryPage(location, forceNetwork: true) }
         }
         .navigationTitle("")
         .task(id: location.cacheKey) {
             await store.loadLibraryPage(location)
+            if let initialFocusItemID = location.initialFocusItemID {
+                await Task.yield()
+                focusedItemID = initialFocusItemID
+            }
         }
     }
 
@@ -212,9 +263,15 @@ struct LibraryCollectionView: View {
             spacing: 38
         ) {
             ForEach(items) { item in
-                LibraryItemLink(item: item, parent: location)
+                LibraryItemLink(
+                    item: item,
+                    parent: location,
+                    onNavigate: onNavigate
+                )
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
     }
 
     private var episodeGrid: some View {
@@ -224,14 +281,20 @@ struct LibraryCollectionView: View {
             spacing: 30
         ) {
             ForEach(items) { item in
-                Button {
+                TaterCardButton(cornerRadius: 24) {
                     store.openDetails(for: item)
                 } label: {
                     EpisodeCardView(item: item)
                 }
-                .buttonStyle(.card)
+                .focused($focusedItemID, equals: item.id)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
+    }
+
+    private func restoreHeroWhenFocused(_ focused: Bool) {
+        if focused { heroFocusRequest += 1 }
     }
 }
 
@@ -240,25 +303,57 @@ private struct LibraryItemLink: View {
 
     let item: MediaItem
     let parent: LibraryLocation
+    var wide = false
+    var handlesRecentlyAddedShows = false
+    let onNavigate: (LibraryLocation) -> Void
 
     var body: some View {
         if item.isBrowsableLibraryItem {
-            NavigationLink(value: LibraryLocation(item: item, parent: parent)) {
-                if item.mediaType?.lowercased() == "season" {
+            TaterCardButton(
+                cornerRadius: wide ? 22 : 20,
+                usesDarkFocusSurface: !wide,
+                action: {
+                    openBrowsableItem()
+                }
+            ) {
+                if wide {
+                    WideMediaCardView(item: item)
+                } else if item.mediaType?.lowercased() == "season" {
                     SeasonCardView(item: item)
                 } else {
                     MediaCardView(item: item)
                 }
             }
-            .buttonStyle(.card)
         } else {
-            Button {
+            TaterCardButton(cornerRadius: 20, usesDarkFocusSurface: !wide) {
                 store.openDetails(for: item)
             } label: {
-                MediaCardView(item: item)
+                if wide {
+                    WideMediaCardView(item: item)
+                } else {
+                    MediaCardView(item: item)
+                }
             }
-            .buttonStyle(.card)
         }
+    }
+
+    private func openBrowsableItem() {
+        if handlesRecentlyAddedShows,
+           item.recentItems.count == 1,
+           let episode = item.recentItems.first {
+            store.openDetails(for: episode)
+            return
+        }
+        if handlesRecentlyAddedShows,
+           let firstEpisode = item.recentItems.first,
+           let location = LibraryLocation.recentlyAddedBatch(
+               for: item,
+               firstEpisode: firstEpisode
+           ) {
+            onNavigate(location)
+            return
+        }
+        onNavigate(LibraryLocation(item: item, parent: parent))
     }
 }
 
@@ -267,6 +362,7 @@ private struct LibraryContextHero: View {
 
     let location: LibraryLocation
     let items: [MediaItem]
+    let onFocusChange: (Bool) -> Void
 
     private var resumeItem: MediaItem? {
         if let nested = items.compactMap({ $0.resumeItem?.mediaItem }).first {
@@ -301,13 +397,13 @@ private struct LibraryContextHero: View {
                 }
 
                 if let resumeItem {
-                    Button {
-                        Task { await store.play(resumeItem, resume: true) }
-                    } label: {
+                    TaterActionButton(
+                        prominent: true,
+                        action: { Task { await store.play(resumeItem, resume: true) } },
+                        onFocusChange: onFocusChange
+                    ) {
                         Label(continueLabel(for: resumeItem), systemImage: "play.fill")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(TaterTheme.orange)
                 }
             }
 
@@ -316,6 +412,7 @@ private struct LibraryContextHero: View {
         .padding(38)
         .frame(maxWidth: .infinity, minHeight: 390)
         .taterGlass(cornerRadius: 34)
+        .focusSection()
     }
 
     private var metadataLine: String {
@@ -349,17 +446,21 @@ private struct SeasonCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(alignment: .bottom) { progressBar }
 
-            Text(item.title)
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 7) {
+                Text(item.title)
+                    .font(.system(size: 26, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
 
-            Text(seasonMetadata)
-                .font(.system(size: 20, weight: .medium, design: .rounded))
-                .foregroundStyle(item.resumeTitle == nil ? TaterTheme.secondaryText : TaterTheme.orange)
-                .lineLimit(1)
+                Text(seasonMetadata)
+                    .font(.system(size: 20, weight: .medium, design: .rounded))
+                    .foregroundStyle(item.resumeTitle == nil ? TaterTheme.secondaryText : TaterTheme.orange)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
         }
-        .frame(width: 248, alignment: .leading)
+        .frame(width: 248, height: 452, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -495,7 +596,9 @@ private enum LibraryStage: Equatable {
     init(location: LibraryLocation, items: [MediaItem]) {
         let locationType = location.mediaType?.lowercased() ?? ""
         let firstType = items.first?.mediaType?.lowercased() ?? ""
-        if firstType == "episode" || locationType == "season" {
+        if location.categoryID == "local-discover:series" && location.path.isEmpty {
+            self = .shows
+        } else if firstType == "episode" || locationType == "season" {
             self = .episodes
         } else if firstType == "season" || locationType == "show" || locationType == "series" {
             self = .seasons

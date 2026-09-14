@@ -2,16 +2,16 @@ import AVFoundation
 import UIKit
 import VideoToolbox
 
-struct PlaybackCapabilitiesReport: Encodable {
-    let capabilityVersion = 3
+struct PlaybackCapabilitiesReport: Codable, Equatable {
+    let capabilityVersion = 6
     let platform = "tvos"
     let engine = "avkit"
     let outputName = UIDevice.current.name
     let outputConnection = "hdmi"
     let containers = ["mp4", "mpegts", "hls"]
-    let videoCodecs: [String]
+    var videoCodecs: [String]
     // Keep this list to codecs AVPlayer can reliably consume in either MP4 or
-    // the MPEG-TS stream requested from Tater Tube Server.
+    // the HLS stream requested from Tater Tube Server.
     let audioCodecs = ["aac", "ac3", "eac3"]
     let audioPassthrough: [String] = []
     let passthroughAvailable = false
@@ -20,12 +20,14 @@ struct PlaybackCapabilitiesReport: Encodable {
     let displayHDRFormats: [String]
     let displayHDREnabled: Bool
     let maxVideoBitDepth: Int
-    let dolbyVisionProfiles: [Int] = []
+    let dolbyVisionProfiles: [Int]
     let maxWidth: Int
     let maxHeight: Int
     let maxAudioChannels: Int
     let compatibilityMode = true
-    let preferredStreamContainer = "mpegts"
+    let preferredStreamContainer = "hls"
+    var tubeTVOutputVideoRange: String?
+    var tubeTVOutputFrameRate: Double?
 
     static var current: PlaybackCapabilitiesReport {
         let bounds = UIScreen.main.nativeBounds
@@ -39,21 +41,83 @@ struct PlaybackCapabilitiesReport: Encodable {
 
         let modes = AVPlayer.availableHDRModes
         var ranges: [String] = []
-        if modes.contains(.hdr10) { ranges.append("hdr10") }
-        if modes.contains(.hlg) { ranges.append("hlg") }
-        if modes.contains(.dolbyVision) { ranges.append("dolby_vision") }
+        if AVPlayer.eligibleForHDRPlayback {
+            if modes.contains(.hdr10) { ranges.append("hdr10") }
+            if modes.contains(.hlg) { ranges.append("hlg") }
+            if modes.contains(.dolbyVision) { ranges.append("dolby_vision") }
+        }
 
-        let channels = max(2, AVAudioSession.sharedInstance().maximumOutputNumberOfChannels)
+        // Profile 5 is Apple's native, single-layer Dolby Vision delivery
+        // profile for tvOS HLS. Other profiles need a compatible HDR base
+        // layer or server-side tone mapping instead of being advertised as
+        // universally playable.
+        let dolbyVisionProfiles = modes.contains(.dolbyVision) ? [5] : []
+
+        let channels = configuredAudioOutputChannels()
         return PlaybackCapabilitiesReport(
             videoCodecs: codecs,
             videoHDRFormats: ranges,
             displayHDRFormats: ranges,
             displayHDREnabled: !ranges.isEmpty,
             maxVideoBitDepth: ranges.isEmpty ? 8 : 10,
+            dolbyVisionProfiles: dolbyVisionProfiles,
             maxWidth: width > 0 ? width : 1920,
             maxHeight: height > 0 ? height : 1080,
-            maxAudioChannels: channels
+            maxAudioChannels: channels,
+            tubeTVOutputVideoRange: nil,
+            tubeTVOutputFrameRate: nil
         )
+    }
+
+    private static func configuredAudioOutputChannels() -> Int {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
+        try? session.setSupportsMultichannelContent(true)
+
+        let maximum = max(2, session.maximumOutputNumberOfChannels)
+        let preferred = maximum >= 8 ? 8 : (maximum >= 6 ? 6 : 2)
+        try? session.setPreferredOutputNumberOfChannels(preferred)
+        return preferred
+    }
+
+    func adapted(for item: MediaItem) -> PlaybackCapabilitiesReport {
+        var report = self
+
+        // Tube TV is one continuous HLS channel assembled from independently
+        // mastered items. Ask the server for one display mode for the entire
+        // session so programs, commercials, and bumpers do not renegotiate HDMI
+        // dynamic range or frame cadence at every boundary.
+        if item.isLiveChannel {
+            let supportsHDR10 = report.videoCodecs.contains("hevc")
+                && report.videoHDRFormats.contains("hdr10")
+                && report.displayHDRFormats.contains("hdr10")
+                && report.displayHDREnabled
+                && report.maxVideoBitDepth >= 10
+            report.tubeTVOutputVideoRange = supportsHDR10 ? "hdr10" : "sdr"
+            report.tubeTVOutputFrameRate = PlaybackCapabilitiesReport.tubeTVFrameRate(
+                maximumFramesPerSecond: UIScreen.main.maximumFramesPerSecond
+            )
+            return report
+        }
+        return report
+    }
+
+    private static func tubeTVFrameRate(maximumFramesPerSecond: Int) -> Double {
+        // Use broadcast-compatible fractional rates for 30/60 Hz output. The
+        // server holds this cadence for the full channel session.
+        switch maximumFramesPerSecond {
+        case 59...:
+            return 60_000.0 / 1_001.0
+        case 49...:
+            return 50
+        case 29...:
+            return 30_000.0 / 1_001.0
+        case 24...:
+            return 24
+        default:
+            return 23_976.0 / 1_000.0
+        }
     }
 
     var profile: String {
@@ -84,6 +148,55 @@ struct PlaybackCapabilitiesReport: Encodable {
         case maxAudioChannels = "max_audio_channels"
         case compatibilityMode = "compatibility_mode"
         case preferredStreamContainer = "preferred_stream_container"
+        case tubeTVOutputVideoRange = "tube_tv_output_video_range"
+        case tubeTVOutputFrameRate = "tube_tv_output_frame_rate"
+    }
+}
+
+/// Builds the relatively expensive AVAudioSession/VideoToolbox display profile
+/// once, then reuses it until tvOS reports a display or audio-route change.
+/// Playback-specific details (such as Tube TV's fixed output cadence) are
+/// applied to a copy of the cached base profile.
+@MainActor
+final class PlaybackCapabilityProfileCache {
+    static let shared = PlaybackCapabilityProfileCache()
+
+    private var cachedBaseReport: PlaybackCapabilitiesReport?
+    private var observers: [NSObjectProtocol] = []
+
+    private init() {
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            AVAudioSession.routeChangeNotification,
+            UIScreen.modeDidChangeNotification,
+            UIApplication.didBecomeActiveNotification
+        ]
+        observers = names.map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.invalidate()
+                }
+            }
+        }
+    }
+
+    func baseReport(forceRefresh: Bool = false) -> PlaybackCapabilitiesReport {
+        if forceRefresh || cachedBaseReport == nil {
+            cachedBaseReport = PlaybackCapabilitiesReport.current
+        }
+        return cachedBaseReport!
+    }
+
+    func report(
+        for item: MediaItem,
+        forceRefresh: Bool = false
+    ) -> PlaybackCapabilitiesReport {
+        baseReport(forceRefresh: forceRefresh)
+            .adapted(for: item)
+    }
+
+    func invalidate() {
+        cachedBaseReport = nil
     }
 }
 
@@ -91,8 +204,9 @@ struct PlaybackSessionRequest: Encodable {
     let streamURL: String
     let mediaType: String
     let profile: String
-    let capabilities: PlaybackCapabilitiesReport
+    let capabilities: PlaybackCapabilitiesReport?
     let audioTrack: Int?
+    let forceProbe: Bool
 
     private enum CodingKeys: String, CodingKey {
         case streamURL = "stream_url"
@@ -100,6 +214,7 @@ struct PlaybackSessionRequest: Encodable {
         case profile
         case capabilities
         case audioTrack = "audio_track"
+        case forceProbe = "force_probe"
     }
 }
 

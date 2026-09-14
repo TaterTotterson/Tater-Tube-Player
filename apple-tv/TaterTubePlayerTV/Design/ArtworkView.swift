@@ -7,12 +7,15 @@ struct ArtworkView: View {
     let remoteValue: String?
     let demoName: String?
     var contentMode: ContentMode = .fill
+    var showsPlaceholder = true
 
     @State private var image: UIImage?
 
     var body: some View {
         ZStack {
-            Color.white.opacity(0.035)
+            if showsPlaceholder {
+                Color.white.opacity(0.035)
+            }
 
             if let demoName, let bundled = BundledImageView.load(demoName) {
                 Image(uiImage: bundled)
@@ -23,7 +26,7 @@ struct ArtworkView: View {
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
                     .transition(.opacity.animation(.easeOut(duration: 0.22)))
-            } else {
+            } else if showsPlaceholder {
                 Image(systemName: "film.stack")
                     .font(.system(size: 42, weight: .light))
                     .foregroundStyle(TaterTheme.secondaryText.opacity(0.65))
@@ -47,7 +50,7 @@ struct ArtworkView: View {
 }
 
 @MainActor
-private final class ArtworkMemoryCache {
+final class ArtworkMemoryCache {
     static let shared = ArtworkMemoryCache()
 
     private let images = NSCache<NSString, UIImage>()

@@ -16,6 +16,7 @@ private slots:
     void clampsGridNavigationToPartialFinalRows();
     void keepsVerticalNavigationOnNearestShelf();
     void resolvesHomeShelfDestinations();
+    void resolvesRecentlyAddedEpisodeBatches();
 private:
     QJSEngine engine;
 };
@@ -176,6 +177,39 @@ void ViewingHistoryTest::resolvesHomeShelfDestinations()
     QCOMPARE(engine.evaluate("continueEntry.title").toString(), QStringLiteral("Server Continue"));
     QCOMPARE(engine.evaluate("recentEntry.id").toString(), QStringLiteral("local-discover:recent"));
     QCOMPARE(engine.evaluate("fallbackRecent.id").toString(), QStringLiteral("local-discover:recent"));
+}
+
+void ViewingHistoryTest::resolvesRecentlyAddedEpisodeBatches()
+{
+    engine.evaluate(R"(
+        var oneEpisode = {title: 'Example Show', categoryId: 'local:tv', recentItems: [
+            {title: 'S01E07 New Episode', categoryId: 'local:tv', sourceIndex: 0,
+             path: 'Example Show/Season 01/Example.Show.S01E07.mkv', streamUrl: '/episode/7'}
+        ]};
+        var episodeBatch = {title: 'Example Show', categoryId: 'local:tv', recentItems: [
+            {title: 'S02E03 Third', categoryId: 'local:tv', sourceIndex: 0,
+             path: 'Example Show/Season 02/Example.Show.S02E03.mkv'},
+            {title: 'S02E04 Fourth', categoryId: 'local:tv', sourceIndex: 0,
+             path: 'Example Show/Season 02/Example.Show.S02E04.mkv'}
+        ]};
+        var singleAction = recentlyAddedAction(oneEpisode);
+        var batchAction = recentlyAddedAction(episodeBatch);
+    )");
+
+    QCOMPARE(engine.evaluate("recentlyAddedLabel(oneEpisode)").toString(),
+             QStringLiteral("S01E07 New Episode"));
+    QCOMPARE(engine.evaluate("singleAction.kind").toString(), QStringLiteral("details"));
+    QCOMPARE(engine.evaluate("singleAction.item.path").toString(),
+             QStringLiteral("Example Show/Season 01/Example.Show.S01E07.mkv"));
+
+    QCOMPARE(engine.evaluate("recentlyAddedLabel(episodeBatch)").toString(),
+             QStringLiteral("2 recently added episodes"));
+    QCOMPARE(engine.evaluate("batchAction.kind").toString(), QStringLiteral("browse"));
+    QCOMPARE(engine.evaluate("batchAction.item.title").toString(), QStringLiteral("Season 02"));
+    QCOMPARE(engine.evaluate("batchAction.item.path").toString(),
+             QStringLiteral("Example Show/Season 02"));
+    QCOMPARE(engine.evaluate("batchAction.focusPath").toString(),
+             QStringLiteral("Example Show/Season 02/Example.Show.S02E03.mkv"));
 }
 
 QTEST_GUILESS_MAIN(ViewingHistoryTest)

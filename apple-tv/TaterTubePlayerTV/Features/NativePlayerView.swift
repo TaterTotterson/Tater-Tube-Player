@@ -23,13 +23,19 @@ private struct NativePlayerContent: View {
     @FocusState private var focusedControl: PlayerFocus?
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
+    @State private var channelLogoImage: UIImage?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             if let player = playback.player {
-                PlayerLayerView(player: player)
+                PlayerLayerView(
+                    player: player,
+                    channelLogoImage: channelLogoImage,
+                    channelLogoPosition: playback.currentItem?.channelLogoPosition,
+                    showsChannelLogo: shouldShowChannelLogo
+                )
                     .ignoresSafeArea()
             }
 
@@ -73,6 +79,20 @@ private struct NativePlayerContent: View {
             revealControls()
         }
         .onDisappear { hideControlsTask?.cancel() }
+        .task(id: channelLogoURLToLoad) {
+            channelLogoImage = nil
+            guard let channelLogoURLToLoad else { return }
+            if let cached = ArtworkMemoryCache.shared.image(for: channelLogoURLToLoad) {
+                channelLogoImage = cached
+                return
+            }
+            if let data = try? await store.artworkData(for: channelLogoURLToLoad),
+               !Task.isCancelled,
+               let loaded = UIImage(data: data) {
+                ArtworkMemoryCache.shared.insert(loaded, for: channelLogoURLToLoad)
+                channelLogoImage = loaded
+            }
+        }
         .onPlayPauseCommand {
             playback.togglePlayPause()
             revealControls()
@@ -112,6 +132,34 @@ private struct NativePlayerContent: View {
         .taterGlass(cornerRadius: 28)
     }
 
+    private var channelLogoURLToLoad: String? {
+        guard let item = playback.currentItem,
+              item.isLiveChannel,
+              item.channelLogoOverlayEnabled == true,
+              let logoURL = item.channelLogoURL,
+              !logoURL.isEmpty
+        else { return nil }
+        return logoURL
+    }
+
+    private var shouldShowChannelLogo: Bool {
+        guard channelLogoURLToLoad != nil,
+              let item = playback.currentItem
+        else { return false }
+        return !currentChannelProgramIsInterstitial(item)
+    }
+
+    private func currentChannelProgramIsInterstitial(_ item: MediaItem) -> Bool {
+        guard let number = item.channelNumber,
+              let guide = store.liveGuide,
+              let channel = guide.channels.first(where: { $0.number == number })
+        else { return false }
+        let elapsed = guide.elapsedSeconds()
+        return channel.schedule.first(where: {
+            $0.start <= elapsed && elapsed < $0.end
+        })?.isInterstitial == true
+    }
+
     private func failurePanel(message: String) -> some View {
         VStack(spacing: 24) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -123,9 +171,12 @@ private struct NativePlayerContent: View {
                 .font(.system(size: 24, weight: .medium, design: .rounded))
                 .foregroundStyle(TaterTheme.secondaryText)
                 .multilineTextAlignment(.center)
-            Button("Back") { Task { await store.stopPlayback() } }
-                .buttonStyle(.borderedProminent)
-                .tint(TaterTheme.orange)
+            TaterActionButton(
+                prominent: true,
+                action: { Task { await store.stopPlayback() } }
+            ) {
+                Text("Back")
+            }
         }
         .padding(48)
         .frame(maxWidth: 760)
@@ -149,8 +200,17 @@ private struct NativePlayerContent: View {
             default:
                 break
             }
-        } else if direction == .up {
-            focusedControl = .surface
+        } else {
+            switch (focusedControl, direction) {
+            case (.audio, .right) where playback.hasSubtitles:
+                focusedControl = .subtitles
+            case (.subtitles, .left) where playback.hasMultipleAudioTracks:
+                focusedControl = .audio
+            case (_, .up):
+                focusedControl = .surface
+            default:
+                break
+            }
         }
         revealControls()
     }
@@ -223,24 +283,23 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
 
                     Spacer(minLength: 20)
 
-                    Button(action: onAudio) {
-                        Label(playback.audioTrackLabel, systemImage: "waveform")
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
-                            .frame(maxWidth: 360)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!playback.hasMultipleAudioTracks || playback.isChangingAudioTrack)
-                    .focused(focusedControl, equals: audioFocus)
+                    trackControl(
+                        title: playback.audioTrackLabel,
+                        icon: "waveform",
+                        maxWidth: 360,
+                        focus: audioFocus,
+                        enabled: playback.hasMultipleAudioTracks && !playback.isChangingAudioTrack,
+                        action: onAudio
+                    )
 
-                    Button(action: onSubtitles) {
-                        Label(playback.subtitleTrackLabel, systemImage: "captions.bubble.fill")
-                            .lineLimit(1)
-                            .frame(maxWidth: 220)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!playback.hasSubtitles)
-                    .focused(focusedControl, equals: subtitleFocus)
+                    trackControl(
+                        title: playback.subtitleTrackLabel,
+                        icon: "captions.bubble.fill",
+                        maxWidth: 220,
+                        focus: subtitleFocus,
+                        enabled: playback.hasSubtitles,
+                        action: onSubtitles
+                    )
                 }
 
                 if let message = playback.playbackControlMessage, !message.isEmpty {
@@ -257,6 +316,52 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
             .padding(.horizontal, 54)
             .padding(.bottom, 42)
         }
+    }
+
+    private func trackControl(
+        title: String,
+        icon: String,
+        maxWidth: CGFloat,
+        focus: Focus,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        let selected = focusedControl.wrappedValue == focus
+
+        return Label(title, systemImage: icon)
+        .font(.system(size: 18, weight: .bold, design: .rounded))
+        .lineLimit(1)
+        .minimumScaleFactor(0.66)
+        .foregroundStyle(selected ? TaterTheme.orangeBright : Color.white)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(maxWidth: maxWidth)
+        .background(
+            selected ? Color.black.opacity(0.90) : Color.black.opacity(0.58),
+            in: Capsule()
+        )
+        .overlay {
+            Capsule()
+                .stroke(
+                    selected ? TaterTheme.orangeBright : TaterTheme.orange.opacity(0.62),
+                    lineWidth: selected ? 3 : 1.5
+                )
+        }
+        .shadow(
+            color: selected ? TaterTheme.orange.opacity(0.38) : .clear,
+            radius: selected ? 14 : 0
+        )
+        .contentShape(Capsule())
+        .focusable(enabled)
+        .focusEffectDisabled()
+        .opacity(enabled ? 1 : 0.48)
+        .focused(focusedControl, equals: focus)
+        .animation(.easeOut(duration: 0.16), value: selected)
+        .onTapGesture {
+            guard enabled else { return }
+            action()
+        }
+        .accessibilityAddTraits(.isButton)
     }
 
     private var playbackBadge: some View {
@@ -317,9 +422,28 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
     }
 
     private var pathDetail: String {
-        guard let plan else { return "MATCHING PLAYBACK" }
-        let video = modeLabel(plan.videoMode, fallback: plan.videoCodec)
-        let audio = modeLabel(plan.audioMode, fallback: plan.audioCodec)
+        guard let plan else { return "PREPARING STREAM" }
+        var video = modeLabel(plan.videoMode, fallback: plan.videoCodec)
+        if let outputRange = plan.outputVideoRange?.lowercased(), outputRange != "sdr" {
+            video += " " + outputRange.replacingOccurrences(of: "_", with: " ").uppercased()
+        }
+        if let frameRate = plan.outputFrameRate, frameRate > 0 {
+            video += " " + String(format: "%.2f FPS", frameRate)
+        }
+        let audio: String
+        if plan.audioMode.lowercased() == "transcode" {
+            let codec = (plan.audioCodec?.isEmpty == false ? plan.audioCodec! : "AAC").uppercased()
+            let channels: String
+            switch plan.outputAudioChannels {
+            case 6: channels = " 5.1"
+            case 8: channels = " 7.1"
+            case 2: channels = " STEREO"
+            default: channels = ""
+            }
+            audio = "TRANSCODE \(codec)\(channels)"
+        } else {
+            audio = modeLabel(plan.audioMode, fallback: plan.audioCodec)
+        }
         return "VIDEO \(video)  •  AUDIO \(audio)"
     }
 
@@ -343,15 +467,28 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
 
 private struct PlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
+    let channelLogoImage: UIImage?
+    let channelLogoPosition: String?
+    let showsChannelLogo: Bool
 
     func makeUIView(context: Context) -> PlayerSurfaceView {
         let view = PlayerSurfaceView()
-        view.player = player
+        view.update(
+            player: player,
+            channelLogoImage: channelLogoImage,
+            channelLogoPosition: channelLogoPosition,
+            showsChannelLogo: showsChannelLogo
+        )
         return view
     }
 
     func updateUIView(_ view: PlayerSurfaceView, context: Context) {
-        view.player = player
+        view.update(
+            player: player,
+            channelLogoImage: channelLogoImage,
+            channelLogoPosition: channelLogoPosition,
+            showsChannelLogo: showsChannelLogo
+        )
     }
 }
 
@@ -359,12 +496,72 @@ private final class PlayerSurfaceView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
 
     private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    private let channelLogoView = UIImageView()
+    private var channelLogoPosition = "bottom_right"
 
-    var player: AVPlayer? {
-        get { playerLayer.player }
-        set {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        channelLogoView.backgroundColor = .clear
+        channelLogoView.contentMode = .scaleAspectFit
+        channelLogoView.alpha = 0.74
+        channelLogoView.isHidden = true
+        channelLogoView.isUserInteractionEnabled = false
+        channelLogoView.layer.shouldRasterize = true
+        channelLogoView.layer.rasterizationScale = UIScreen.main.scale
+        addSubview(channelLogoView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(
+        player: AVPlayer,
+        channelLogoImage: UIImage?,
+        channelLogoPosition: String?,
+        showsChannelLogo: Bool
+    ) {
+        if playerLayer.player !== player {
             playerLayer.videoGravity = .resizeAspect
-            playerLayer.player = newValue
+            playerLayer.player = player
         }
+        if channelLogoView.image !== channelLogoImage {
+            channelLogoView.image = channelLogoImage
+        }
+        let nextPosition = channelLogoPosition?.lowercased() ?? "bottom_right"
+        if self.channelLogoPosition != nextPosition {
+            self.channelLogoPosition = nextPosition
+            setNeedsLayout()
+        }
+        let shouldHide = !showsChannelLogo || channelLogoImage == nil
+        if channelLogoView.isHidden != shouldHide {
+            channelLogoView.isHidden = shouldHide
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Keep the station bug inside a broadcast-style safe area so it remains
+        // readable without feeling pinned to the bezel on any selected corner.
+        let size = CGSize(width: 132, height: 88)
+        let horizontalInset: CGFloat = 64
+        let verticalInset: CGFloat = 52
+        let x: CGFloat
+        let y: CGFloat
+        switch channelLogoPosition {
+        case "top_left":
+            x = horizontalInset
+            y = verticalInset
+        case "top_right":
+            x = bounds.width - horizontalInset - size.width
+            y = verticalInset
+        case "bottom_left":
+            x = horizontalInset
+            y = bounds.height - verticalInset - size.height
+        default:
+            x = bounds.width - horizontalInset - size.width
+            y = bounds.height - verticalInset - size.height
+        }
+        channelLogoView.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
     }
 }

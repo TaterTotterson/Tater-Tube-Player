@@ -9,6 +9,9 @@ struct TaterTubePlayerTVApp: App {
             RootView()
                 .environmentObject(playerStore)
                 .preferredColorScheme(.dark)
+                .onOpenURL { url in
+                    Task { await playerStore.handleDeepLink(url) }
+                }
         }
     }
 }

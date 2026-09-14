@@ -1,12 +1,43 @@
 import SwiftUI
 
+private struct DiscoveryRoute: Hashable {
+    enum Kind: Hashable {
+        case category
+        case title
+    }
+
+    let kind: Kind
+    let id: String
+    let category: DiscoverCategory?
+    let titleItem: MediaItem?
+
+    static func category(_ category: DiscoverCategory) -> DiscoveryRoute {
+        DiscoveryRoute(kind: .category, id: "category:\(category.id)", category: category, titleItem: nil)
+    }
+
+    static func title(_ item: MediaItem) -> DiscoveryRoute {
+        DiscoveryRoute(kind: .title, id: "title:\(item.id)", category: nil, titleItem: item)
+    }
+
+    static func == (lhs: DiscoveryRoute, rhs: DiscoveryRoute) -> Bool {
+        lhs.kind == rhs.kind && lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(id)
+    }
+}
+
 struct DiscoveryView: View {
     @EnvironmentObject private var store: PlayerStore
+    @Binding var selectedTab: Int
+    @State private var navigationPath: [DiscoveryRoute] = []
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 30), count: 3)
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 DiscoveryGlowBackground()
 
@@ -17,14 +48,15 @@ struct DiscoveryView: View {
                         if !store.discoverCategories.isEmpty {
                             LazyVGrid(columns: columns, spacing: 30) {
                                 ForEach(store.discoverCategories) { category in
-                                    NavigationLink {
-                                        DiscoveryTitlesView(category: category)
-                                    } label: {
+                                    TaterCardButton(cornerRadius: 24, action: {
+                                        navigationPath.append(.category(category))
+                                    }) {
                                         DiscoveryCategoryCard(category: category)
                                     }
-                                    .buttonStyle(.card)
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .focusSection()
                         } else if store.isDiscoverCatalogRefreshing {
                             DiscoveryStatePanel(
                                 icon: "sparkles.tv.fill",
@@ -51,6 +83,21 @@ struct DiscoveryView: View {
                     .padding(.bottom, 120)
                 }
                 .refreshable { await store.refreshDiscoverCatalog() }
+                .onExitCommand { selectedTab = 0 }
+            }
+            .navigationDestination(for: DiscoveryRoute.self) { route in
+                switch route.kind {
+                case .category:
+                    if let category = route.category {
+                        DiscoveryTitlesView(category: category) { item in
+                            navigationPath.append(.title(item))
+                        }
+                    }
+                case .title:
+                    if let item = route.titleItem {
+                        DiscoveryResultsView(titleItem: item)
+                    }
+                }
             }
         }
         .task {
@@ -120,6 +167,7 @@ private struct DiscoveryTitlesView: View {
     @EnvironmentObject private var store: PlayerStore
 
     let category: DiscoverCategory
+    let onSelectTitle: (MediaItem) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 238, maximum: 258), spacing: 34)]
     private var key: String { store.discoverFeedKey(for: category) }
@@ -136,14 +184,15 @@ private struct DiscoveryTitlesView: View {
                     if let page, !page.items.isEmpty {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 38) {
                             ForEach(page.items) { item in
-                                NavigationLink {
-                                    DiscoveryResultsView(titleItem: item)
-                                } label: {
+                                TaterCardButton(cornerRadius: 20, action: {
+                                    onSelectTitle(item)
+                                }) {
                                     MediaCardView(item: item)
                                 }
-                                .buttonStyle(.card)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .focusSection()
                     } else if store.loadingDiscoverPages.contains(key) {
                         DiscoveryStatePanel(
                             icon: "sparkles",
@@ -217,13 +266,17 @@ private struct DiscoveryResultsView: View {
 
     var body: some View {
         ZStack {
-            ArtworkView(
-                remoteValue: titleItem.backdrop ?? titleItem.poster,
-                demoName: titleItem.demoArtworkName
-            )
+            GeometryReader { geometry in
+                ArtworkView(
+                    remoteValue: titleItem.backdrop ?? titleItem.poster,
+                    demoName: titleItem.demoArtworkName
+                )
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipped()
+                .overlay(Color.black.opacity(0.76))
+                .blur(radius: 12)
+            }
             .ignoresSafeArea()
-            .overlay(Color.black.opacity(0.76))
-            .blur(radius: 12)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 28) {
@@ -231,12 +284,11 @@ private struct DiscoveryResultsView: View {
 
                     if let page, !page.items.isEmpty {
                         ForEach(page.items) { release in
-                            Button {
+                            TaterCardButton(cornerRadius: 24) {
                                 prepare(release)
                             } label: {
                                 DiscoveryReleaseRow(release: release)
                             }
-                            .buttonStyle(.card)
                             .disabled(store.isPreparingDiscovery)
                         }
                     } else if store.loadingDiscoverPages.contains(key) {
@@ -264,7 +316,9 @@ private struct DiscoveryResultsView: View {
                 .padding(.top, 30)
                 .padding(.bottom, 120)
             }
-            .refreshable { await store.searchDiscovery(for: titleItem, forceNetwork: true) }
+            .refreshable {
+                await store.searchDiscovery(for: titleItem, forceNetwork: true)
+            }
 
             if store.isPreparingDiscovery {
                 Color.black.opacity(0.50)
@@ -405,11 +459,28 @@ private struct DiscoveryReleaseRow: View {
     }
 
     private var releaseMetadata: [String] {
-        [release.sizeText ?? release.subtitle, release.files, release.grabs, release.category]
-            .compactMap { value in
-                guard let value, !value.isEmpty else { return nil }
-                return value
-            }
+        [
+            nonempty(release.sizeText ?? release.subtitle),
+            countLabel(release.files, singular: "file", plural: "files"),
+            countLabel(release.grabs, singular: "grab", plural: "grabs")
+        ]
+        .compactMap { $0 }
+    }
+
+    private func nonempty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func countLabel(_ value: String?, singular: String, plural: String) -> String? {
+        guard let value = nonempty(value) else { return nil }
+        let lowercaseValue = value.lowercased()
+        if lowercaseValue.contains(singular) || lowercaseValue.contains(plural) {
+            return value
+        }
+
+        return "\(value) \(value == "1" ? singular : plural)"
     }
 }
 
@@ -433,7 +504,7 @@ private struct DiscoveryFilePicker: View {
                     .padding(.bottom, 10)
 
                     ForEach(files) { file in
-                        Button {
+                        TaterCardButton(cornerRadius: 24) {
                             onSelect(file)
                         } label: {
                             HStack(spacing: 24) {
@@ -450,9 +521,8 @@ private struct DiscoveryFilePicker: View {
                             .padding(.horizontal, 30)
                             .padding(.vertical, 24)
                             .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
-                            .taterGlass(cornerRadius: 24, interactive: true)
+                                .taterGlass(cornerRadius: 24, interactive: true)
                         }
-                        .buttonStyle(.card)
                     }
                 }
                 .padding(.horizontal, 110)

@@ -85,13 +85,15 @@ struct PlayerCapabilities: Decodable, Equatable {
     let tubeTV: Bool
     let commercials: Bool
     let taterLink: Bool
+    let hdrHLS: Bool
 
     static let empty = PlayerCapabilities(
         localMedia: false,
         newznab: false,
         tubeTV: false,
         commercials: false,
-        taterLink: false
+        taterLink: false,
+        hdrHLS: false
     )
 
     init(
@@ -99,13 +101,15 @@ struct PlayerCapabilities: Decodable, Equatable {
         newznab: Bool = false,
         tubeTV: Bool = false,
         commercials: Bool = false,
-        taterLink: Bool = false
+        taterLink: Bool = false,
+        hdrHLS: Bool = false
     ) {
         self.localMedia = localMedia
         self.newznab = newznab
         self.tubeTV = tubeTV
         self.commercials = commercials
         self.taterLink = taterLink
+        self.hdrHLS = hdrHLS
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -114,6 +118,7 @@ struct PlayerCapabilities: Decodable, Equatable {
         case tubeTV
         case commercials
         case taterLink
+        case hdrHLS
     }
 
     init(from decoder: Decoder) throws {
@@ -123,6 +128,7 @@ struct PlayerCapabilities: Decodable, Equatable {
         tubeTV = try values.decodeIfPresent(Bool.self, forKey: .tubeTV) ?? false
         commercials = try values.decodeIfPresent(Bool.self, forKey: .commercials) ?? false
         taterLink = try values.decodeIfPresent(Bool.self, forKey: .taterLink) ?? false
+        hdrHLS = try values.decodeIfPresent(Bool.self, forKey: .hdrHLS) ?? false
     }
 }
 
@@ -535,6 +541,7 @@ struct LibraryLocation: Hashable, Identifiable {
     let summary: String?
     let mediaType: String?
     let demoArtworkName: String?
+    let initialFocusItemID: String?
 
     var id: String { cacheKey }
 
@@ -579,7 +586,8 @@ struct LibraryLocation: Hashable, Identifiable {
         poster: String? = nil,
         summary: String? = nil,
         mediaType: String? = nil,
-        demoArtworkName: String? = nil
+        demoArtworkName: String? = nil,
+        initialFocusItemID: String? = nil
     ) {
         self.categoryID = categoryID
         self.title = title
@@ -591,6 +599,7 @@ struct LibraryLocation: Hashable, Identifiable {
         self.summary = summary
         self.mediaType = mediaType
         self.demoArtworkName = demoArtworkName
+        self.initialFocusItemID = initialFocusItemID
     }
 
     init(entry: LibraryEntry) {
@@ -604,6 +613,7 @@ struct LibraryLocation: Hashable, Identifiable {
         summary = nil
         mediaType = nil
         demoArtworkName = nil
+        initialFocusItemID = nil
     }
 
     init(item: MediaItem, parent: LibraryLocation) {
@@ -617,6 +627,33 @@ struct LibraryLocation: Hashable, Identifiable {
         summary = item.summary ?? parent.summary
         mediaType = item.mediaType
         demoArtworkName = item.demoArtworkName ?? parent.demoArtworkName
+        initialFocusItemID = nil
+    }
+
+    static func recentlyAddedBatch(
+        for show: MediaItem,
+        firstEpisode: MediaItem
+    ) -> LibraryLocation? {
+        guard let episodePath = firstEpisode.path, !episodePath.isEmpty else { return nil }
+        let pathParts = episodePath.split(separator: "/", omittingEmptySubsequences: true)
+        guard pathParts.count >= 2 else { return nil }
+
+        let parentParts = pathParts.dropLast()
+        let parentPath = parentParts.joined(separator: "/")
+        let folderTitle = parentParts.last.map(String.init) ?? show.title
+        let opensSeason = parentPath != show.path
+        return LibraryLocation(
+            categoryID: firstEpisode.categoryID ?? show.categoryID ?? "",
+            title: opensSeason ? folderTitle : show.title,
+            sourceIndex: firstEpisode.sourceIndex,
+            path: parentPath,
+            backdrop: show.backdrop ?? firstEpisode.backdrop,
+            poster: show.seriesPoster ?? show.poster ?? firstEpisode.seriesPoster ?? firstEpisode.poster,
+            summary: show.summary,
+            mediaType: opensSeason ? "season" : "show",
+            demoArtworkName: show.demoArtworkName ?? firstEpisode.demoArtworkName,
+            initialFocusItemID: firstEpisode.id
+        )
     }
 }
 
@@ -633,6 +670,9 @@ struct MediaItem: Decodable, Equatable, Identifiable {
     let category: String?
     let channelNumber: String?
     let channelName: String?
+    let channelLogoURL: String?
+    let channelLogoPosition: String?
+    let channelLogoOverlayEnabled: Bool?
     let categoryID: String?
     let sourceIndex: Int
     let path: String?
@@ -665,6 +705,7 @@ struct MediaItem: Decodable, Equatable, Identifiable {
     let episodeCount: Int
     let resumeTitle: String?
     let resumeItem: ResumeMediaItem?
+    let recentItems: [MediaItem]
     let demoArtworkName: String?
 
     init(
@@ -680,6 +721,9 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         category: String? = nil,
         channelNumber: String? = nil,
         channelName: String? = nil,
+        channelLogoURL: String? = nil,
+        channelLogoPosition: String? = nil,
+        channelLogoOverlayEnabled: Bool? = nil,
         categoryID: String? = nil,
         sourceIndex: Int = 0,
         path: String? = nil,
@@ -712,6 +756,7 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         episodeCount: Int = 0,
         resumeTitle: String? = nil,
         resumeItem: ResumeMediaItem? = nil,
+        recentItems: [MediaItem] = [],
         demoArtworkName: String? = nil
     ) {
         self.id = id
@@ -726,6 +771,9 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         self.category = category
         self.channelNumber = channelNumber
         self.channelName = channelName
+        self.channelLogoURL = channelLogoURL
+        self.channelLogoPosition = channelLogoPosition
+        self.channelLogoOverlayEnabled = channelLogoOverlayEnabled
         self.categoryID = categoryID
         self.sourceIndex = sourceIndex
         self.path = path
@@ -758,6 +806,7 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         self.episodeCount = episodeCount
         self.resumeTitle = resumeTitle
         self.resumeItem = resumeItem
+        self.recentItems = recentItems
         self.demoArtworkName = demoArtworkName
     }
 
@@ -779,6 +828,9 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         case category
         case channelNumber
         case channelName
+        case channelLogoURL
+        case channelLogoPosition
+        case channelLogoOverlayEnabled
         case categoryID = "categoryId"
         case sourceIndex
         case path
@@ -811,6 +863,7 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         case episodeCount
         case resumeTitle
         case resumeItem
+        case recentItems
     }
 
     init(from decoder: Decoder) throws {
@@ -821,6 +874,9 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         category = try values.decodeIfPresent(String.self, forKey: .category)
         channelNumber = try values.decodeIfPresent(String.self, forKey: .channelNumber)
         channelName = try values.decodeIfPresent(String.self, forKey: .channelName)
+        channelLogoURL = try values.decodeIfPresent(String.self, forKey: .channelLogoURL)
+        channelLogoPosition = try values.decodeIfPresent(String.self, forKey: .channelLogoPosition)
+        channelLogoOverlayEnabled = try values.decodeIfPresent(Bool.self, forKey: .channelLogoOverlayEnabled)
         categoryID = try values.decodeIfPresent(String.self, forKey: .categoryID)
         sourceIndex = try values.decodeIfPresent(Int.self, forKey: .sourceIndex) ?? 0
         path = try values.decodeIfPresent(String.self, forKey: .path)
@@ -860,6 +916,7 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         episodeCount = try values.decodeIfPresent(Int.self, forKey: .episodeCount) ?? 0
         resumeTitle = try values.decodeIfPresent(String.self, forKey: .resumeTitle)
         resumeItem = try values.decodeIfPresent(ResumeMediaItem.self, forKey: .resumeItem)
+        recentItems = try values.decodeIfPresent([MediaItem].self, forKey: .recentItems) ?? []
         demoArtworkName = nil
         id = try values.decodeFlexibleStringIfPresent(forKey: .id)
             ?? values.decodeFlexibleStringIfPresent(forKey: .playStateID)
@@ -983,6 +1040,10 @@ struct PlaybackPlan: Decodable, Equatable {
     let reason: String?
     let resolutionLabel: String?
     let outputContainer: String?
+    let outputAudioChannels: Int?
+    let sourceVideoRange: String?
+    let outputVideoRange: String?
+    let outputFrameRate: Double?
     let selectedAudioTrack: Int
     let source: PlaybackMediaInfo
 
@@ -997,6 +1058,10 @@ struct PlaybackPlan: Decodable, Equatable {
         case reason
         case resolutionLabel
         case outputContainer
+        case outputAudioChannels
+        case sourceVideoRange
+        case outputVideoRange
+        case outputFrameRate
         case selectedAudioTrack
         case source
     }
@@ -1004,6 +1069,7 @@ struct PlaybackPlan: Decodable, Equatable {
 
 struct PlaybackMediaInfo: Decodable, Equatable {
     let container: String?
+    let durationSeconds: Double?
     let videoCodec: String?
     let width: Int?
     let height: Int?
@@ -1116,6 +1182,7 @@ struct LiveChannel: Decodable, Equatable, Identifiable {
     let logoURL: String?
     let logoTitle: String?
     let logoPosition: String?
+    let logoOverlayEnabled: Bool?
     let autoGenerated: Bool
     let streamURL: String?
     let now: LiveProgram?
@@ -1131,6 +1198,7 @@ struct LiveChannel: Decodable, Equatable, Identifiable {
         case logoURL = "logoUrl"
         case logoTitle
         case logoPosition
+        case logoOverlayEnabled
         case autoGenerated
         case streamURL = "streamUrl"
         case now
@@ -1147,6 +1215,7 @@ struct LiveChannel: Decodable, Equatable, Identifiable {
         logoURL: String? = nil,
         logoTitle: String? = nil,
         logoPosition: String? = nil,
+        logoOverlayEnabled: Bool? = nil,
         autoGenerated: Bool = false,
         streamURL: String? = nil,
         now: LiveProgram? = nil,
@@ -1161,6 +1230,7 @@ struct LiveChannel: Decodable, Equatable, Identifiable {
         self.logoURL = logoURL
         self.logoTitle = logoTitle
         self.logoPosition = logoPosition
+        self.logoOverlayEnabled = logoOverlayEnabled
         self.autoGenerated = autoGenerated
         self.streamURL = streamURL
         self.now = now
@@ -1177,6 +1247,7 @@ struct LiveChannel: Decodable, Equatable, Identifiable {
         logoURL = try values.decodeIfPresent(String.self, forKey: .logoURL)
         logoTitle = try values.decodeIfPresent(String.self, forKey: .logoTitle)
         logoPosition = try values.decodeIfPresent(String.self, forKey: .logoPosition)
+        logoOverlayEnabled = try values.decodeIfPresent(Bool.self, forKey: .logoOverlayEnabled)
         autoGenerated = try values.decodeIfPresent(Bool.self, forKey: .autoGenerated) ?? false
         streamURL = try values.decodeIfPresent(String.self, forKey: .streamURL)
         now = try values.decodeIfPresent(LiveProgram.self, forKey: .now)
@@ -1199,6 +1270,9 @@ struct LiveChannel: Decodable, Equatable, Identifiable {
             category: program?.category,
             channelNumber: number,
             channelName: title,
+            channelLogoURL: logoURL,
+            channelLogoPosition: logoPosition,
+            channelLogoOverlayEnabled: logoOverlayEnabled,
             categoryID: program?.categoryID,
             sourceIndex: program?.sourceIndex ?? 0,
             path: program?.path,

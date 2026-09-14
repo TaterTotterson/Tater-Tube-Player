@@ -49,7 +49,12 @@ final class PlayerStore: ObservableObject {
     private let discoverPagesCacheDirectory: URL
     private let recommendationsCacheURL: URL
     private let libraryShuffleSeed = UUID().uuidString
+    private var homeRefreshInFlight = false
+    private var lastHomeRefreshAt: Date?
+    private var libraryRowsRefreshInFlight = false
+    private var lastLibraryRowsRefreshAt: Date?
     private var lastLibraryLocation: LibraryLocation?
+    private var pendingTopShelfAction: PendingTopShelfAction?
 
     init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -80,6 +85,7 @@ final class PlayerStore: ObservableObject {
             recommendationBatch = DemoCatalog.recommendations.batch
             recommendations = DemoCatalog.recommendations.items
             phase = .ready
+            Task { await publishTopShelf() }
         }
     }
 
@@ -95,14 +101,18 @@ final class PlayerStore: ObservableObject {
 
         connection = saved
         client = APIClient(serverURL: saved.serverURL, token: saved.token)
+        if let client {
+            preparePlaybackCapabilities(using: client)
+        }
         loadCachedHome()
         loadCachedLibraryRows()
         loadCachedLiveGuide()
         loadCachedDiscoverCatalog()
         loadCachedRecommendations()
         phase = .ready
-        await refreshHome(showActivity: home == nil)
-        await refreshLibraryRows(showActivity: libraryRows.isEmpty)
+        await publishTopShelf()
+        await refreshHome(showActivity: home == nil, reportErrors: home == nil)
+        await refreshLibraryRows(showActivity: libraryRows.isEmpty, reportErrors: false)
         if home?.capabilities.tubeTV == true {
             await refreshLiveGuide(showActivity: liveGuide == nil)
         }
@@ -122,6 +132,9 @@ final class PlayerStore: ObservableObject {
             try credentials.save(saved)
             connection = saved
             client = APIClient(serverURL: serverURL, token: response.token)
+            if let client {
+                preparePlaybackCapabilities(using: client)
+            }
             isDemo = false
             phase = .ready
             await refreshHome(showActivity: true)
@@ -148,21 +161,58 @@ final class PlayerStore: ObservableObject {
         discoverPages.removeAll()
         errorMessage = nil
         phase = .ready
+        Task { await publishTopShelf() }
     }
 
-    func refreshHome(showActivity: Bool = false) async {
-        guard !isDemo, let client else { return }
+    func handleDeepLink(_ url: URL) async {
+        guard url.scheme?.lowercased() == "tatertubeplayer",
+              url.host?.lowercased() == "continue",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let identifier = components.queryItems?.first(where: { $0.name == "id" })?.value,
+              !identifier.isEmpty
+        else { return }
+
+        let shouldPlay = components.queryItems?.first(where: { $0.name == "action" })?.value == "play"
+        pendingTopShelfAction = PendingTopShelfAction(
+            identifier: identifier,
+            shouldPlay: shouldPlay
+        )
+        await openPendingTopShelfItemIfPossible()
+    }
+
+    func refreshHome(
+        showActivity: Bool = false,
+        minimumInterval: TimeInterval = 0,
+        reportErrors: Bool = true
+    ) async {
+        guard !isDemo, let client, !homeRefreshInFlight else { return }
+        if minimumInterval > 0,
+           let lastHomeRefreshAt,
+           Date().timeIntervalSince(lastHomeRefreshAt) < minimumInterval {
+            return
+        }
+        homeRefreshInFlight = true
         if showActivity { isRefreshing = true }
-        defer { isRefreshing = false }
+        defer {
+            homeRefreshInFlight = false
+            isRefreshing = false
+        }
 
         do {
             let response = try await client.home()
-            home = response.value
-            try? response.encodedEnvelope.write(to: homeCacheURL, options: .atomic)
-            errorMessage = nil
+            lastHomeRefreshAt = Date()
+            if response.value != home {
+                home = response.value
+                try? response.encodedEnvelope.write(to: homeCacheURL, options: .atomic)
+                await publishTopShelf()
+            }
+            await openPendingTopShelfItemIfPossible()
+            if reportErrors { errorMessage = nil }
         } catch {
-            errorMessage = error.localizedDescription
-            if home == nil { phase = .pairing }
+            if reportErrors {
+                errorMessage = error.localizedDescription
+                if home == nil { phase = .pairing }
+            }
         }
     }
 
@@ -328,20 +378,34 @@ final class PlayerStore: ObservableObject {
         )
     }
 
-    func refreshLibraryRows(showActivity: Bool = false) async {
-        guard !isDemo, let client else { return }
+    func refreshLibraryRows(
+        showActivity: Bool = false,
+        minimumInterval: TimeInterval = 0,
+        reportErrors: Bool = true
+    ) async {
+        guard !isDemo, let client, !libraryRowsRefreshInFlight else { return }
+        if minimumInterval > 0,
+           let lastLibraryRowsRefreshAt,
+           Date().timeIntervalSince(lastLibraryRowsRefreshAt) < minimumInterval {
+            return
+        }
+        libraryRowsRefreshInFlight = true
         if showActivity { isLibraryRefreshing = true }
-        defer { isLibraryRefreshing = false }
+        defer {
+            libraryRowsRefreshInFlight = false
+            isLibraryRefreshing = false
+        }
 
         do {
             let response = try await client.libraryRows(shuffleSeed: libraryShuffleSeed)
+            lastLibraryRowsRefreshAt = Date()
             if response.value != libraryRows {
                 libraryRows = response.value
+                try? response.encodedEnvelope.write(to: libraryRowsCacheURL, options: .atomic)
             }
-            try? response.encodedEnvelope.write(to: libraryRowsCacheURL, options: .atomic)
-            errorMessage = nil
+            if reportErrors { errorMessage = nil }
         } catch {
-            if libraryRows.isEmpty {
+            if reportErrors, libraryRows.isEmpty {
                 errorMessage = error.localizedDescription
             }
         }
@@ -417,7 +481,7 @@ final class PlayerStore: ObservableObject {
     func stopPlayback() async {
         await playback.stop()
         isPlaybackPresented = false
-        await refreshHome()
+        await refreshHome(reportErrors: false)
         if let lastLibraryLocation {
             await loadLibraryPage(lastLibraryLocation, forceNetwork: true)
         }
@@ -431,7 +495,7 @@ final class PlayerStore: ObservableObject {
         do {
             try await client.clearPlayState(for: item)
             selectedMedia = nil
-            await refreshHome()
+            await refreshHome(reportErrors: false)
             if let lastLibraryLocation {
                 await loadLibraryPage(lastLibraryLocation, forceNetwork: true)
             }
@@ -440,6 +504,16 @@ final class PlayerStore: ObservableObject {
             }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func preparePlaybackCapabilities(using client: APIClient) {
+        Task { @MainActor in
+            await Task.yield()
+            let capabilities = PlaybackCapabilityProfileCache.shared.baseReport()
+            // Launch remains responsive while the server learns this Apple
+            // TV's display, decoder, HDR, and audio profile once per route.
+            try? await client.reportPlaybackCapabilities(capabilities)
         }
     }
 
@@ -483,6 +557,30 @@ final class PlayerStore: ObservableObject {
         isDemo = false
         errorMessage = nil
         phase = .pairing
+        TopShelfPublisher.clear()
+    }
+
+    private func publishTopShelf() async {
+        await TopShelfPublisher.publish(
+            items: home?.continueWatching ?? [],
+            client: client,
+            isDemo: isDemo
+        )
+    }
+
+    private func openPendingTopShelfItemIfPossible() async {
+        guard let pendingTopShelfAction,
+              let item = home?.continueWatching.first(where: {
+                  $0.id == pendingTopShelfAction.identifier
+              })
+        else { return }
+
+        self.pendingTopShelfAction = nil
+        if pendingTopShelfAction.shouldPlay {
+            await play(item, resume: true)
+        } else {
+            openDetails(for: item)
+        }
     }
 
     private func loadCachedHome() {
@@ -543,4 +641,9 @@ final class PlayerStore: ObservableObject {
         let filename = digest.map { String(format: "%02x", $0) }.joined() + ".json"
         return libraryPagesCacheDirectory.appendingPathComponent(filename)
     }
+}
+
+private struct PendingTopShelfAction {
+    let identifier: String
+    let shouldPlay: Bool
 }

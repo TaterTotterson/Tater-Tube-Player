@@ -55,12 +55,26 @@ struct RecommendationsResult {
     let encodedEnvelope: Data
 }
 
+struct PlaybackPlanLookup {
+    let plan: PlaybackPlan
+    let cacheKey: String
+    let wasCached: Bool
+}
+
+private struct CachedPlaybackPlan {
+    let plan: PlaybackPlan
+    let expiresAt: Date
+}
+
 final class APIClient: @unchecked Sendable {
     let serverURL: URL
     let token: String?
 
     private let session: URLSession
     private let decoder: JSONDecoder
+    private let playbackCacheLock = NSLock()
+    private var playbackPlanCache: [String: CachedPlaybackPlan] = [:]
+    private var reportedCapabilityFingerprint: String?
 
     init(serverURL: URL, token: String? = nil) {
         self.serverURL = serverURL
@@ -350,28 +364,123 @@ final class APIClient: @unchecked Sendable {
         }
     }
 
+    func reportPlaybackCapabilities(_ capabilities: PlaybackCapabilitiesReport) async throws {
+        let body = try JSONEncoder().encode(capabilities)
+        _ = try await request(
+            path: "/api/v1/player/capabilities",
+            method: "POST",
+            body: body,
+            timeout: 12
+        )
+        let fingerprint = sha256(body)
+        playbackCacheLock.withLock {
+            reportedCapabilityFingerprint = fingerprint
+        }
+    }
+
     func playbackPlan(
         for item: MediaItem,
         capabilities: PlaybackCapabilitiesReport,
-        audioTrack: Int? = nil
-    ) async throws -> PlaybackPlan {
-        guard let streamURL = item.streamURL, !streamURL.isEmpty else {
+        audioTrack: Int? = nil,
+        forceRefresh: Bool = false
+    ) async throws -> PlaybackPlanLookup {
+        guard var streamURL = item.streamURL, !streamURL.isEmpty else {
             throw TaterAPIError.invalidResponse
         }
-        let payload = PlaybackSessionRequest(
+        if item.isLiveChannel,
+           item.channelLogoOverlayEnabled == true,
+           item.channelLogoURL?.isEmpty == false,
+           var components = URLComponents(string: streamURL) {
+            var query = components.queryItems ?? []
+            query.removeAll { $0.name == "tater_client_logo_overlay" }
+            query.append(URLQueryItem(name: "tater_client_logo_overlay", value: "1"))
+            components.queryItems = query
+            streamURL = components.url?.absoluteString ?? streamURL
+        }
+        let cachePayload = PlaybackSessionRequest(
             streamURL: streamURL,
             mediaType: item.mediaType ?? "video",
             profile: capabilities.profile,
             capabilities: capabilities,
-            audioTrack: audioTrack
+            audioTrack: audioTrack,
+            forceProbe: false
         )
-        let body = try JSONEncoder().encode(payload)
-        let data = try await request(
-            path: "/api/v1/player/playback/sessions",
-            method: "POST",
-            body: body
-        )
-        return try decodeEnvelope(PlaybackPlan.self, from: data)
+        let canonicalBody = try JSONEncoder().encode(cachePayload)
+        let cacheKey = sha256(canonicalBody)
+        let shouldCache = !item.isLiveChannel
+
+        if shouldCache, !forceRefresh {
+            let cached = playbackCacheLock.withLock { () -> CachedPlaybackPlan? in
+                let value = playbackPlanCache[cacheKey]
+                if (value?.expiresAt ?? .distantPast) <= Date() {
+                    playbackPlanCache.removeValue(forKey: cacheKey)
+                    return nil
+                }
+                return value
+            }
+            if let cached, cached.expiresAt > Date() {
+                return PlaybackPlanLookup(plan: cached.plan, cacheKey: cacheKey, wasCached: true)
+            }
+        }
+
+        let capabilityBody = try JSONEncoder().encode(capabilities)
+        let capabilityFingerprint = sha256(capabilityBody)
+        let profileWasCurrent = playbackCacheLock.withLock {
+            reportedCapabilityFingerprint == capabilityFingerprint
+        }
+        if forceRefresh || !profileWasCurrent {
+            try await reportPlaybackCapabilities(capabilities)
+        }
+
+        func fetchPlan() async throws -> PlaybackPlan {
+            let payload = PlaybackSessionRequest(
+                streamURL: streamURL,
+                mediaType: item.mediaType ?? "video",
+                profile: capabilities.profile,
+                capabilities: nil,
+                audioTrack: audioTrack,
+                forceProbe: forceRefresh
+            )
+            let data = try await request(
+                path: "/api/v1/player/playback/sessions",
+                method: "POST",
+                body: try JSONEncoder().encode(payload),
+                timeout: 45
+            )
+            return try decodeEnvelope(PlaybackPlan.self, from: data)
+        }
+
+        let plan: PlaybackPlan
+        do {
+            plan = try await fetchPlan()
+        } catch {
+            // If the app believed the launch profile was current, the server
+            // may have restarted. Re-report it once, then retry the lightweight
+            // playback request. This is the only profile recovery path.
+            guard profileWasCurrent, !forceRefresh else { throw error }
+            try await reportPlaybackCapabilities(capabilities)
+            plan = try await fetchPlan()
+        }
+        if shouldCache {
+            playbackCacheLock.withLock {
+                if playbackPlanCache.count >= 96,
+                   let oldest = playbackPlanCache.min(by: { $0.value.expiresAt < $1.value.expiresAt })?.key {
+                    playbackPlanCache.removeValue(forKey: oldest)
+                }
+                playbackPlanCache[cacheKey] = CachedPlaybackPlan(
+                    plan: plan,
+                    expiresAt: Date().addingTimeInterval(2 * 60 * 60)
+                )
+            }
+        }
+        return PlaybackPlanLookup(plan: plan, cacheKey: cacheKey, wasCached: false)
+    }
+
+    func invalidatePlaybackPlan(cacheKey: String?) {
+        guard let cacheKey, !cacheKey.isEmpty else { return }
+        playbackCacheLock.withLock {
+            _ = playbackPlanCache.removeValue(forKey: cacheKey)
+        }
     }
 
     func savePlayState(
@@ -597,6 +706,12 @@ final class APIClient: @unchecked Sendable {
 
     private func sha256(_ value: String) -> String {
         SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func sha256(_ value: Data) -> String {
+        SHA256.hash(data: value)
             .map { String(format: "%02x", $0) }
             .joined()
     }

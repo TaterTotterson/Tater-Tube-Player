@@ -7,3 +7,5 @@ aqtinstall.log
 *.user
 *.qmlc
 *.jsc
+xcuserdata/
+*.xcuserstate

@@ -2,24 +2,26 @@ import SwiftUI
 
 struct TaterPicksView: View {
     @EnvironmentObject private var store: PlayerStore
+    @Binding var selectedTab: Int
 
     var body: some View {
-        TaterPicksContent(speech: store.recommendationSpeech)
+        TaterPicksContent(speech: store.recommendationSpeech, selectedTab: $selectedTab)
     }
 }
 
 private struct TaterPicksContent: View {
     @EnvironmentObject private var store: PlayerStore
     @ObservedObject var speech: RecommendationSpeechCoordinator
+    @Binding var selectedTab: Int
 
     @FocusState private var focusedPickID: String?
     @State private var spokenBatchID: String?
-    @State private var libraryDestination: LibraryLocation?
+    @State private var navigationPath: [LibraryLocation] = []
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 26), count: 4)
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 picksBackground
 
@@ -30,15 +32,23 @@ private struct TaterPicksContent: View {
                         if !displayedRecommendations.isEmpty {
                             LazyVGrid(columns: columns, spacing: 28) {
                                 ForEach(displayedRecommendations) { recommendation in
-                                    Button {
-                                        activate(recommendation)
-                                    } label: {
+                                    TaterCardButton(
+                                        cornerRadius: 24,
+                                        action: { activate(recommendation) },
+                                        onFocusChange: { focused in
+                                            if focused {
+                                                focusedPickID = recommendation.id
+                                            } else if focusedPickID == recommendation.id {
+                                                focusedPickID = nil
+                                            }
+                                        }
+                                    ) {
                                         TaterPickCard(recommendation: recommendation)
                                     }
-                                    .buttonStyle(.card)
-                                    .focused($focusedPickID, equals: recommendation.id)
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .focusSection()
                         } else if store.isRecommendationsRefreshing {
                             TaterPicksStatePanel(
                                 icon: "wand.and.stars",
@@ -65,9 +75,13 @@ private struct TaterPicksContent: View {
                     .padding(.bottom, 120)
                 }
                 .refreshable { await store.refreshRecommendations() }
+                .onExitCommand { selectedTab = 0 }
             }
-            .navigationDestination(item: $libraryDestination) { location in
-                LibraryCollectionView(location: location)
+            .navigationDestination(for: LibraryLocation.self) { location in
+                LibraryCollectionView(
+                    location: location,
+                    onNavigate: { navigationPath.append($0) }
+                )
             }
         }
         .task {
@@ -241,7 +255,7 @@ private struct TaterPicksContent: View {
         store.stopRecommendationSpeech()
         let item = recommendation.launch
         if isBrowsable(item) {
-            libraryDestination = LibraryLocation(
+            navigationPath.append(LibraryLocation(
                 categoryID: item.categoryID ?? "",
                 title: item.title,
                 sourceIndex: item.sourceIndex,
@@ -251,7 +265,7 @@ private struct TaterPicksContent: View {
                 summary: item.summary,
                 mediaType: item.mediaType,
                 demoArtworkName: item.demoArtworkName
-            )
+            ))
         } else {
             store.openDetails(for: item)
         }

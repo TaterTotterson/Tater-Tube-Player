@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var store: PlayerStore
+    @Binding var selectedTab: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
@@ -22,14 +23,17 @@ struct SettingsView: View {
 
             HStack(spacing: 22) {
                 if !store.isDemo {
-                    Button("Refresh Now") { Task { await store.refreshHome(showActivity: true) } }
+                    TaterActionButton(
+                        prominent: true,
+                        action: { Task { await store.refreshHome(showActivity: true) } }
+                    ) {
+                        Text("Refresh Now")
+                    }
                 }
-                Button(store.isDemo ? "Leave Demo" : "Disconnect", role: .destructive) {
-                    store.disconnect()
+                TaterActionButton(action: { store.disconnect() }) {
+                    Text(store.isDemo ? "Leave Demo" : "Disconnect")
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(TaterTheme.orange)
         }
         .padding(58)
         .frame(width: 940, alignment: .leading)
@@ -39,5 +43,6 @@ struct SettingsView: View {
                 ProgressView().tint(TaterTheme.orange).padding(36)
             }
         }
+        .onExitCommand { selectedTab = 0 }
     }
 }

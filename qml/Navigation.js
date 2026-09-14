@@ -87,3 +87,50 @@ function homeShelfEntry(rows, shelf) {
     }
     return ({})
 }
+
+function recentlyAddedLabel(item) {
+    var recent = item && item.recentItems ? item.recentItems : []
+    if (!recent || recent.length === 0)
+        return ""
+    if (recent.length === 1)
+        return String(recent[0].title || "New episode")
+    return recent.length + " recently added episodes"
+}
+
+function recentlyAddedAction(item) {
+    var recent = item && item.recentItems ? item.recentItems : []
+    if (!recent || recent.length === 0)
+        return {kind: "default"}
+    if (recent.length === 1)
+        return {kind: "details", item: recent[0]}
+
+    // The server orders an import batch by season and episode. Open the
+    // earliest episode's season so a multi-episode download remains one card
+    // without making the viewer hunt for where the new batch starts.
+    var firstEpisode = recent[0]
+    var episodePath = String(firstEpisode.path || "")
+    var separator = episodePath.lastIndexOf("/")
+    if (separator <= 0)
+        return {kind: "default"}
+    var parentPath = episodePath.slice(0, separator)
+    var parentSeparator = parentPath.lastIndexOf("/")
+    var parentTitle = parentSeparator >= 0
+            ? parentPath.slice(parentSeparator + 1) : parentPath
+    var sourceIndex = firstEpisode.sourceIndex
+    if (sourceIndex === undefined || sourceIndex === null)
+        sourceIndex = item && item.sourceIndex !== undefined
+                ? item.sourceIndex : 0
+
+    return {
+        kind: "browse",
+        focusPath: episodePath,
+        item: {
+            title: parentTitle || String(item && item.title || "Season"),
+            categoryId: String(firstEpisode.categoryId
+                               || (item && item.categoryId) || ""),
+            sourceIndex: Number(sourceIndex),
+            path: parentPath,
+            mediaType: "season"
+        }
+    }
+}

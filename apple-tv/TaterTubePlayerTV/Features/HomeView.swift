@@ -1,42 +1,89 @@
+import Combine
 import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var store: PlayerStore
     @Binding var selectedTab: Int
+    @State private var navigationPath: [LibraryLocation] = []
+    @State private var heroFocusRequest = 0
+    @State private var heroClock = Date()
+
+    private let heroClockTimer = Timer.publish(
+        every: 60,
+        on: .main,
+        in: .common
+    ).autoconnect()
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 54) {
-                    hero
+        NavigationStack(path: $navigationPath) {
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 54) {
+                        hero
 
-                    if let items = store.home?.continueWatching, !items.isEmpty {
-                        MediaShelf(
-                            title: "Continue Watching",
-                            items: items,
-                            destination: continueWatchingLocation
-                        )
+                        if let items = store.home?.continueWatching, !items.isEmpty {
+                            MediaShelf(
+                                title: "Continue Watching",
+                                items: items,
+                                destination: continueWatchingLocation,
+                                onNavigate: { navigationPath.append($0) }
+                            )
+                        }
+
+                        if !homeLiveChannels.isEmpty {
+                            liveShelf(homeLiveChannels)
+                        }
+
+                        if let items = store.home?.recentlyAdded, !items.isEmpty {
+                            MediaShelf(
+                                title: "Recently Added",
+                                items: items,
+                                destination: recentlyAddedLocation,
+                                handlesRecentlyAddedShows: true,
+                                onNavigate: { navigationPath.append($0) }
+                            )
+                        }
                     }
-
-                    if let channels = store.home?.liveChannels, !channels.isEmpty {
-                        liveShelf(channels)
-                    }
-
-                    if let items = store.home?.recentlyAdded, !items.isEmpty {
-                        MediaShelf(
-                            title: "Recently Added",
-                            items: items,
-                            destination: recentlyAddedLocation
-                        )
+                    .padding(.horizontal, 78)
+                    .padding(.top, 42)
+                    .padding(.bottom, 110)
+                    .id("home-scroll-top")
+                }
+                .refreshable {
+                    await store.refreshHome()
+                    if store.home?.capabilities.tubeTV == true {
+                        await store.refreshLiveGuide()
                     }
                 }
-                .padding(.horizontal, 78)
-                .padding(.top, 42)
-                .padding(.bottom, 110)
+                .onChange(of: heroFocusRequest) { _, _ in
+                    withAnimation(.easeOut(duration: 0.20)) {
+                        scrollProxy.scrollTo("home-scroll-top", anchor: .top)
+                    }
+                }
             }
-            .refreshable { await store.refreshHome() }
             .navigationDestination(for: LibraryLocation.self) { location in
-                LibraryCollectionView(location: location)
+                LibraryCollectionView(
+                    location: location,
+                    onNavigate: { navigationPath.append($0) }
+                )
+            }
+        }
+        .onAppear {
+            heroClock = Date()
+            Task {
+                await store.refreshHome(
+                    minimumInterval: 10,
+                    reportErrors: false
+                )
+            }
+        }
+        .onReceive(heroClockTimer) { date in
+            heroClock = date
+            Task {
+                await store.refreshHome(
+                    minimumInterval: 55,
+                    reportErrors: false
+                )
             }
         }
     }
@@ -44,58 +91,53 @@ struct HomeView: View {
     private var hero: some View {
         HStack(spacing: 54) {
             VStack(alignment: .leading, spacing: 18) {
-                Text(store.home?.hero?.eyebrow ?? greeting)
+                Text(heroEyebrow)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .tracking(2.5)
                     .foregroundStyle(TaterTheme.orange)
 
-                Text(store.home?.hero?.message ?? "Everything good, right where you left it.")
+                Text(heroMessage)
                     .font(.system(size: 52, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(2)
 
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(store.isDemo ? Color.yellow : Color.green)
-                        .frame(width: 11, height: 11)
-                    Text(store.isDemo ? "DEMO MODE" : "\(store.home?.serverName ?? "Tater Tube Server") ONLINE")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(TaterTheme.secondaryText)
-                }
-
                 HStack(spacing: 14) {
                     if store.home?.capabilities.tubeTV == true {
-                        Button { selectedTab = 2 } label: {
+                        TaterActionButton(
+                            action: { selectedTab = 2 },
+                            onFocusChange: restoreHeroWhenFocused
+                        ) {
                             Label("Watch Live", systemImage: "play.fill")
                                 .foregroundStyle(.white)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(TaterTheme.orange)
                     }
 
-                    Button { selectedTab = 1 } label: {
+                    TaterActionButton(
+                        action: { selectedTab = 1 },
+                        onFocusChange: restoreHeroWhenFocused
+                    ) {
                         Label("Browse Library", systemImage: "rectangle.stack.fill")
                             .foregroundStyle(.white)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.white.opacity(0.15))
 
                     if store.home?.capabilities.newznab == true {
-                        Button { selectedTab = 3 } label: {
+                        TaterActionButton(
+                            action: { selectedTab = 3 },
+                            onFocusChange: restoreHeroWhenFocused
+                        ) {
                             Label("Discover", systemImage: "sparkles.tv.fill")
                                 .foregroundStyle(.white)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.white.opacity(0.15))
                     }
 
                     if store.home?.capabilities.taterLink == true {
-                        Button { selectedTab = 4 } label: {
+                        TaterActionButton(
+                            action: { selectedTab = 4 },
+                            onFocusChange: restoreHeroWhenFocused
+                        ) {
                             Label("Tater Picks", systemImage: "wand.and.stars")
                                 .foregroundStyle(.white)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.white.opacity(0.15))
                     }
                 }
                 .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -111,13 +153,70 @@ struct HomeView: View {
         .padding(.vertical, 35)
         .frame(maxWidth: .infinity, minHeight: 320)
         .taterGlass(cornerRadius: 36)
+        .focusSection()
     }
 
-    private var greeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        if hour < 12 { return "GOOD MORNING" }
-        if hour < 18 { return "GOOD AFTERNOON" }
-        return "GOOD EVENING"
+    private var homeLiveChannels: [LiveChannel] {
+        if let channels = store.liveGuide?.channels, !channels.isEmpty {
+            return channels
+        }
+        return store.home?.liveChannels ?? []
+    }
+
+    private func restoreHeroWhenFocused(_ focused: Bool) {
+        if focused { heroFocusRequest += 1 }
+    }
+
+    private var heroEyebrow: String {
+        let calendar = Calendar.current
+        let weekday = heroClock.formatted(.dateTime.weekday(.wide)).uppercased()
+        let hour = calendar.component(.hour, from: heroClock)
+        let timeOfDay: String
+        switch hour {
+        case 5..<12:
+            timeOfDay = "MORNING"
+        case 12..<17:
+            timeOfDay = "AFTERNOON"
+        case 17..<22:
+            timeOfDay = "EVENING"
+        default:
+            timeOfDay = "LATE NIGHT"
+        }
+        return "\(weekday) \(timeOfDay)"
+    }
+
+    private var heroMessage: String {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: heroClock)
+        let day = calendar.ordinality(of: .day, in: .year, for: heroClock) ?? 0
+        let messages: [String]
+        switch hour {
+        case 5..<12:
+            messages = [
+                "Start the day with something good.",
+                "Your morning watch is ready.",
+                "Ease into something worth watching."
+            ]
+        case 12..<17:
+            messages = [
+                "Take a break with something good.",
+                "There’s always time for one more.",
+                "Your afternoon watch is ready."
+            ]
+        case 17..<22:
+            messages = [
+                "Settle in and press play.",
+                "Your next watch starts here.",
+                "Everything good is right where you left it."
+            ]
+        default:
+            messages = [
+                "One more before calling it a night?",
+                "Your late-night watch is ready.",
+                "Everything good is still right where you left it."
+            ]
+        }
+        return messages[day % messages.count]
     }
 
     private func liveShelf(_ channels: [LiveChannel]) -> some View {
@@ -127,22 +226,25 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 28) {
                     ForEach(channels) { channel in
-                        Button {
+                        TaterCardButton(cornerRadius: 22) {
                             Task { await store.play(channel) }
-                        } label: { LiveChannelCardView(channel: channel) }
-                            .buttonStyle(.card)
+                        } label: {
+                            LiveChannelCardView(channel: channel, guide: store.liveGuide)
+                        }
                     }
 
-                    Button { selectedTab = 2 } label: {
+                    TaterCardButton(cornerRadius: 22, action: { selectedTab = 2 }) {
                         ShelfDestinationCard(title: "Open Guide", icon: "list.bullet.rectangle.fill")
                     }
-                    .buttonStyle(.card)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 34)
+                .padding(.vertical, 24)
             }
-            .contentMargins(.horizontal, -18, for: .scrollContent)
+            .scrollClipDisabled()
+            .contentMargins(.horizontal, -34, for: .scrollContent)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
     }
 
     private var continueWatchingLocation: LibraryLocation {
@@ -177,11 +279,21 @@ struct MediaShelf: View {
     let title: String
     let items: [MediaItem]
     let destination: LibraryLocation?
+    let handlesRecentlyAddedShows: Bool
+    let onNavigate: (LibraryLocation) -> Void
 
-    init(title: String, items: [MediaItem], destination: LibraryLocation? = nil) {
+    init(
+        title: String,
+        items: [MediaItem],
+        destination: LibraryLocation? = nil,
+        handlesRecentlyAddedShows: Bool = false,
+        onNavigate: @escaping (LibraryLocation) -> Void = { _ in }
+    ) {
         self.title = title
         self.items = items
         self.destination = destination
+        self.handlesRecentlyAddedShows = handlesRecentlyAddedShows
+        self.onNavigate = onNavigate
     }
 
     var body: some View {
@@ -192,28 +304,60 @@ struct MediaShelf: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 28) {
                     ForEach(items) { item in
-                        Button {
-                            store.openDetails(for: item)
-                        } label: { MediaCardView(item: item) }
-                            .buttonStyle(.card)
+                        TaterCardButton(cornerRadius: 22) {
+                            open(item)
+                        } label: { WideMediaCardView(item: item) }
                     }
 
                     if let destination {
-                        NavigationLink(value: destination) {
+                        TaterCardButton(cornerRadius: 22, action: { onNavigate(destination) }) {
                             ShelfDestinationCard(title: "See All", icon: "arrow.right.circle.fill")
                         }
-                        .buttonStyle(.card)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 34)
+                .padding(.vertical, 24)
             }
-            .contentMargins(.horizontal, -18, for: .scrollContent)
+            .scrollClipDisabled()
+            .contentMargins(.horizontal, -34, for: .scrollContent)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
+    }
+
+    private func open(_ item: MediaItem) {
+        let kind = item.mediaType?.lowercased() ?? ""
+        guard handlesRecentlyAddedShows,
+              ["show", "series", "tv", "tvshow"].contains(kind)
+        else {
+            store.openDetails(for: item)
+            return
+        }
+
+        if item.recentItems.count == 1, let episode = item.recentItems.first {
+            store.openDetails(for: episode)
+            return
+        }
+        if let firstEpisode = item.recentItems.first,
+           let location = LibraryLocation.recentlyAddedBatch(
+               for: item,
+               firstEpisode: firstEpisode
+           ) {
+            onNavigate(location)
+            return
+        }
+
+        // Older servers do not include the import batch. Open the series instead
+        // of presenting a non-playable show as though it were an episode.
+        let parent = destination ?? LibraryLocation(
+            categoryID: item.categoryID ?? "",
+            title: "Recently Added"
+        )
+        onNavigate(LibraryLocation(item: item, parent: parent))
     }
 }
 
-private struct ShelfDestinationCard: View {
+struct ShelfDestinationCard: View {
     let title: String
     let icon: String
 
@@ -225,7 +369,7 @@ private struct ShelfDestinationCard: View {
                 .font(.system(size: 23, weight: .bold, design: .rounded))
         }
         .foregroundStyle(.white)
-        .frame(width: 190, height: 365)
-        .taterGlass(cornerRadius: 24, interactive: true)
+        .frame(width: 190, height: 202)
+        .taterGlass(cornerRadius: 24)
     }
 }
