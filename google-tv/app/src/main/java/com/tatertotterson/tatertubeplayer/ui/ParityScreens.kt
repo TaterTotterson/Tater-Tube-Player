@@ -6,7 +6,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -719,7 +718,7 @@ private fun FocusCard(
     Box(
         modifier
             .onFocusChanged { focused = it.isFocused; onFocus(it.isFocused) }
-            .then(if (onClick != null) Modifier.focusable().clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .clip(shape)
             .background(TaterColors.Glass)
             .border(if (focused) 4.dp else 1.dp, border, shape)

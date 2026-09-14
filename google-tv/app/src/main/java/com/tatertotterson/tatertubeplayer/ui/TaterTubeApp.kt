@@ -5,7 +5,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,11 +20,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,14 +38,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.tatertotterson.tatertubeplayer.R
@@ -59,9 +66,28 @@ import com.tatertotterson.tatertubeplayer.ui.components.SectionHeading
 import com.tatertotterson.tatertubeplayer.ui.components.TaterArtwork
 import com.tatertotterson.tatertubeplayer.ui.components.TaterButton
 import com.tatertotterson.tatertubeplayer.ui.theme.TaterColors
+import kotlin.math.min
 
 @Composable
 fun TaterTubeApp(viewModel: PlayerViewModel) {
+    TvDesignViewport { TaterTubeAppContent(viewModel) }
+}
+
+@Composable
+private fun TvDesignViewport(content: @Composable () -> Unit) {
+    val configuration = LocalConfiguration.current
+    val systemDensity = LocalDensity.current
+    val pixelWidth = configuration.screenWidthDp * systemDensity.density
+    val pixelHeight = configuration.screenHeightDp * systemDensity.density
+    val designDensity = min(pixelWidth / 1920f, pixelHeight / 1080f).coerceAtLeast(0.5f)
+    CompositionLocalProvider(
+        LocalDensity provides Density(designDensity, systemDensity.fontScale),
+        content = content,
+    )
+}
+
+@Composable
+private fun TaterTubeAppContent(viewModel: PlayerViewModel) {
     val state = viewModel.state
 
     if (state.playback != null) {
@@ -122,62 +148,99 @@ private fun PairingScreen(
     var pin by remember { mutableStateOf("") }
     val serverFocus = remember { FocusRequester() }
 
-    Row(
+    Box(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 76.dp, vertical = 52.dp),
-        horizontalArrangement = Arrangement.spacedBy(60.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(Color.Black)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(TaterColors.Orange.copy(alpha = 0.16f), Color.Transparent),
+                    center = Offset(1430f, 520f),
+                    radius = 760f,
+                )
+            )
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            Image(
-                painter = painterResource(R.drawable.tater_tube_logo),
-                contentDescription = "Tater Tube",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().height(250.dp),
-            )
-            Text(
-                "Your server. Your screen.",
-                color = Color.White,
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "Pair this Google TV with Tater Tube Server, then settle in with the remote.",
-                color = TaterColors.SecondaryText,
-                fontSize = 19.sp,
-                lineHeight = 27.sp,
-            )
-        }
-
-        GlassSurface(Modifier.width(520.dp)) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 118.dp, vertical = 84.dp),
+            horizontalArrangement = Arrangement.spacedBy(108.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Column(
-                Modifier.padding(34.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+                horizontalAlignment = Alignment.Start,
             ) {
-                Text("PAIR YOUR PLAYER", color = TaterColors.OrangeBright, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                PairingField(
-                    value = server,
-                    onValueChange = { server = it },
-                    label = "Server address",
-                    hint = "10.0.0.20:8000",
-                    modifier = Modifier.focusRequester(serverFocus),
+                Text(
+                    "TATER TUBE PLAYER",
+                    color = TaterColors.OrangeBright,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.6.sp,
                 )
-                PairingField(
-                    value = pin,
-                    onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                    label = "Pairing code",
-                    hint = "000000",
-                    keyboardOptions = KeyboardOptions.Default,
+                Image(
+                    painter = painterResource(R.drawable.tater_tube_logo),
+                    contentDescription = "Tater Tube",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.width(680.dp).height(300.dp),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    TaterButton(
-                        text = if (busy) "Pairing…" else "Pair",
-                        onClick = { onPair(server, pin) },
-                        enabled = !busy,
-                        modifier = Modifier.weight(1f),
+                Text(
+                    "Your server. Your screen.",
+                    color = Color.White,
+                    fontSize = 44.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "Bring your Tater Tube library, channels, and watch history to the biggest screen in the house.",
+                    color = TaterColors.SecondaryText,
+                    fontSize = 20.sp,
+                    lineHeight = 29.sp,
+                    modifier = Modifier.width(690.dp),
+                )
+            }
+
+            GlassSurface(Modifier.width(620.dp), cornerRadius = 30.dp) {
+                Column(
+                    Modifier.padding(horizontal = 40.dp, vertical = 38.dp),
+                    verticalArrangement = Arrangement.spacedBy(19.dp),
+                ) {
+                    Text("PAIR YOUR PLAYER", color = TaterColors.OrangeBright, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("Connect to Tater Tube", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Enter the server address and temporary pairing code shown in Tater Tube Server.",
+                        color = TaterColors.SecondaryText,
+                        fontSize = 16.sp,
+                        lineHeight = 23.sp,
                     )
-                    TaterButton(text = "Try Demo", onClick = onDemo, modifier = Modifier.weight(1f))
+                    PairingField(
+                        value = server,
+                        onValueChange = { server = it },
+                        label = "Server address",
+                        hint = "10.0.0.20:8000",
+                        modifier = Modifier.focusRequester(serverFocus),
+                    )
+                    PairingField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                        label = "Pairing code",
+                        hint = "000000",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        TaterButton(
+                            text = if (busy) "Pairing…" else "Pair",
+                            onClick = { onPair(server, pin) },
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TaterButton(text = "Try Demo", onClick = onDemo, modifier = Modifier.weight(1f))
+                    }
+                    Text(
+                        "No server handy? Try Demo uses fictional media and does not connect anywhere.",
+                        color = TaterColors.SecondaryText.copy(alpha = 0.78f),
+                        fontSize = 14.sp,
+                    )
                 }
             }
         }
@@ -485,16 +548,19 @@ private fun SideMenu(viewModel: PlayerViewModel) {
                 modifier = Modifier.fillMaxWidth().height(140.dp),
             )
             Spacer(Modifier.height(12.dp))
-            destinations.forEachIndexed { index, destination ->
-                MenuItem(
-                    destination = destination,
-                    selected = state.destination == destination,
-                    onClick = { viewModel.selectDestination(destination) },
-                    modifier = if (index == 0) Modifier.focusRequester(firstFocus) else Modifier,
-                )
-                Spacer(Modifier.height(8.dp))
+            LazyColumn(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(destinations) { index, destination ->
+                    MenuItem(
+                        destination = destination,
+                        selected = state.destination == destination,
+                        onClick = { viewModel.selectDestination(destination) },
+                        modifier = if (index == 0) Modifier.focusRequester(firstFocus) else Modifier,
+                    )
+                }
             }
-            Spacer(Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
                 Box(
                     Modifier
@@ -524,7 +590,6 @@ private fun MenuItem(
         modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
-            .focusable()
             .clickable(onClick = onClick)
             .background(
                 if (focused) Color.Black.copy(alpha = 0.92f)

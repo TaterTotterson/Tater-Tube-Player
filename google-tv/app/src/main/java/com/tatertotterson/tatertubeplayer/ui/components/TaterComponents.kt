@@ -6,7 +6,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,7 +81,6 @@ fun TaterButton(
     Box(
         modifier
             .onFocusChanged { focused = it.isFocused }
-            .focusable(enabled)
             .clickable(enabled = enabled, onClick = onClick)
             .border(if (focused) 3.dp else 1.dp, borderColor, shape)
             .background(Color.Black.copy(alpha = if (enabled) 0.88f else 0.45f), shape)
@@ -163,7 +161,6 @@ fun MediaCard(
         modifier = modifier
             .width(248.dp * scale)
             .onFocusChanged { focused = it.isFocused }
-            .focusable()
             .clickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
