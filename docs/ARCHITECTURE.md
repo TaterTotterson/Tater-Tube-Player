@@ -124,8 +124,9 @@ container-specific decisions without changing the track-level modes.
 - Apple TV: a thin SwiftUI/AVKit client using the same server contract.
 - Google TV: a thin Kotlin/Compose TV/Media3 client using the same contract.
   Its TV-only launcher, secure pairing, cached Home shelf, capability report,
-  server-selected playback plan, and native playback foundation live in
-  `google-tv/`.
+  hierarchical Library, compact guide, Discover and Tater Picks flows,
+  server-selected playback plan, Media3 track controls, and Watch Next
+  integration live in `google-tv/`.
 
 UI implementation is platform-specific. Product behavior, API fixtures, design
 tokens, copy, artwork rules, and acceptance tests are shared.

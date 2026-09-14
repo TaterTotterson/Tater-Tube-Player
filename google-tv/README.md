@@ -12,17 +12,22 @@ and Apple TV clients while using Kotlin, Compose for TV, and AndroidX Media3.
 - Pairing with private-LAN HTTP support and HTTPS enforcement for remote hosts
 - Player token encrypted by Android Keystore
 - Cached Home response displayed before background refresh
+- Cached Library shelves and pages with complete movie, show, season, and episode navigation
+- Compact Tube TV guide with channel logos, current-program progress, and grouped commercial breaks
+- Discover catalog, title feeds, release search, multi-file selection, and prepared playback
+- Scheduled Tater Picks with per-title reasons and automatic Tater voice playback
 - Display, codec, HDR, HDMI audio, resolution, and channel capability reporting
 - Server-selected direct, selective-transcode, or full-transcode playback plan
 - Media3 playback with subtitles off by default, English audio preference,
-  remote seeking, a Tater playback overlay, MediaSession, and sleep prevention
+  native audio/subtitle cycling, remote seeking, a Tater playback overlay,
+  MediaSession, sleep prevention, and automatic next-episode playback
 - Immediate local progress updates followed by server synchronization
+- Android TV Watch Next publishing and direct resume links for Continue Watching
 - Fictional demo mode available from the pairing screen
 
-Library depth, the full Tube TV guide, Discovery release selection, Tater Picks
-speech, full audio/subtitle cycling, and Android TV home recommendations are the
-next parity slices. The server contract is already shared; these are native UI
-and player integrations rather than server migrations.
+The shared server contract is used without a Google-TV-specific migration.
+Physical-device QA remains necessary for remote focus behavior, decoder and
+HDMI capability reporting, playback transitions, and launcher integration.
 
 ## Build
 

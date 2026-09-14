@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.tatertotterson.tatertubeplayer.R
+import com.tatertotterson.tatertubeplayer.model.LibraryEntry
+import com.tatertotterson.tatertubeplayer.model.LibraryLocation
 import com.tatertotterson.tatertubeplayer.model.MediaItem
 import com.tatertotterson.tatertubeplayer.model.PlayerHome
 import com.tatertotterson.tatertubeplayer.playback.PlaybackScreen
@@ -63,11 +65,17 @@ fun TaterTubeApp(viewModel: PlayerViewModel) {
     val state = viewModel.state
 
     if (state.playback != null) {
-        PlaybackScreen(
-            session = state.playback,
-            token = viewModel.token,
-            onExit = viewModel::stopPlayback,
-        )
+        Box(Modifier.fillMaxSize()) {
+            PlaybackScreen(
+                session = state.playback,
+                token = viewModel.token,
+                onExit = viewModel::stopPlayback,
+                onAudioTrackChange = viewModel::changeAudioTrack,
+            )
+            state.errorMessage?.let { message ->
+                MessageOverlay(message = message, onDismiss = viewModel::dismissError)
+            }
+        }
         return
     }
 
@@ -223,14 +231,7 @@ private fun PairingField(
 @Composable
 private fun MainShell(viewModel: PlayerViewModel) {
     val state = viewModel.state
-    BackHandler {
-        when {
-            state.selectedMedia != null -> viewModel.closeDetails()
-            state.menuVisible -> viewModel.hideMenu()
-            state.destination != Destination.HOME -> viewModel.selectDestination(Destination.HOME)
-            else -> viewModel.showMenu()
-        }
-    }
+    BackHandler { viewModel.handleBack() }
 
     Box(
         Modifier
@@ -244,25 +245,10 @@ private fun MainShell(viewModel: PlayerViewModel) {
     ) {
         when (state.destination) {
             Destination.HOME -> HomeScreen(viewModel)
-            Destination.LIBRARY -> LibraryLanding(viewModel)
-            Destination.LIVE_TV -> SimpleDestination(
-                title = "Live TV",
-                message = "The native Tube TV guide is the next Google TV feature slice.",
-                items = state.home?.liveChannels.orEmpty(),
-                viewModel = viewModel,
-            )
-            Destination.DISCOVER -> SimpleDestination(
-                title = "Discover",
-                message = "Discovery catalog and release selection will use the same server flow as Apple TV.",
-                items = state.home?.recentlyAdded.orEmpty(),
-                viewModel = viewModel,
-            )
-            Destination.TATER_PICKS -> SimpleDestination(
-                title = "Tater Picks",
-                message = "Scheduled recommendations and Tater voice are ready to connect in the next slice.",
-                items = state.home?.continueWatching.orEmpty(),
-                viewModel = viewModel,
-            )
+            Destination.LIBRARY -> LibraryScreen(viewModel)
+            Destination.LIVE_TV -> LiveGuideScreen(viewModel)
+            Destination.DISCOVER -> DiscoveryScreen(viewModel)
+            Destination.TATER_PICKS -> TaterPicksScreen(viewModel)
             Destination.SETTINGS -> SettingsScreen(viewModel)
         }
 
@@ -296,13 +282,30 @@ private fun HomeScreen(viewModel: PlayerViewModel) {
     ) {
         item { HomeHero(home, viewModel) }
         if (home.continueWatching.isNotEmpty()) {
-            item { MediaShelf("Continue Watching", home.continueWatching, viewModel) }
+            item {
+                MediaShelf("Continue Watching", home.continueWatching, viewModel) {
+                    viewModel.selectDestination(Destination.LIBRARY)
+                    viewModel.openLibrary(LibraryLocation.fromEntry(LibraryEntry("continue", "Continue Watching", "continue")))
+                }
+            }
         }
         if (home.recentlyAdded.isNotEmpty()) {
-            item { MediaShelf("Recently Added", home.recentlyAdded, viewModel) }
+            item {
+                val recentLocation = LibraryLocation("local-discover:recent", "Recently Added")
+                MediaShelf(
+                    title = "Recently Added",
+                    items = home.recentlyAdded,
+                    viewModel = viewModel,
+                    onMore = {
+                        viewModel.selectDestination(Destination.LIBRARY)
+                        viewModel.openLibrary(recentLocation)
+                    },
+                    onItemClick = { item -> viewModel.activateLibraryItem(item, recentLocation, recentlyAdded = true) },
+                )
+            }
         }
         if (home.liveChannels.isNotEmpty()) {
-            item { MediaShelf("Live on Tater Tube", home.liveChannels, viewModel) }
+            item { MediaShelf("Live on Tater Tube", home.liveChannels, viewModel) { viewModel.selectDestination(Destination.LIVE_TV) } }
         }
     }
 }
@@ -333,6 +336,12 @@ private fun HomeHero(home: PlayerHome, viewModel: PlayerViewModel) {
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     TaterButton("Browse Library", { viewModel.selectDestination(Destination.LIBRARY) })
+                    if (home.capabilities.newznab) {
+                        TaterButton("Discover", { viewModel.selectDestination(Destination.DISCOVER) })
+                    }
+                    if (home.capabilities.taterLink) {
+                        TaterButton("Tater Picks", { viewModel.selectDestination(Destination.TATER_PICKS) })
+                    }
                     if (home.capabilities.tubeTV) {
                         TaterButton("Watch Live", { viewModel.selectDestination(Destination.LIVE_TV) })
                     }
@@ -349,17 +358,32 @@ private fun HomeHero(home: PlayerHome, viewModel: PlayerViewModel) {
 }
 
 @Composable
-private fun MediaShelf(title: String, items: List<MediaItem>, viewModel: PlayerViewModel) {
+private fun MediaShelf(
+    title: String,
+    items: List<MediaItem>,
+    viewModel: PlayerViewModel,
+    onMore: (() -> Unit)? = null,
+    onItemClick: ((MediaItem) -> Unit)? = null,
+) {
     Column {
-        SectionHeading(title, if (items.size > 4) "MORE →" else null)
+        SectionHeading(title)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             items(items, key = { it.id }) { item ->
                 MediaCard(
                     item = item,
                     artworkUrl = viewModel.artworkUrl(item),
                     token = viewModel.token,
-                    onClick = { viewModel.openDetails(item) },
+                    onClick = { onItemClick?.invoke(item) ?: viewModel.openDetails(item) },
                 )
+            }
+            if (onMore != null) {
+                item {
+                    TaterButton(
+                        text = if (title == "Live on Tater Tube") "Open Guide" else "See All",
+                        onClick = onMore,
+                        modifier = Modifier.width(160.dp).height(146.dp),
+                    )
+                }
             }
         }
     }
@@ -556,6 +580,7 @@ private fun MediaDetailOverlay(item: MediaItem, viewModel: PlayerViewModel) {
                             modifier = Modifier.focusRequester(playFocus),
                         )
                         if (hasProgress) TaterButton("Start Over", { viewModel.play(item, resume = false) })
+                        if (hasProgress) TaterButton("Clear", { viewModel.clearProgress(item) })
                     }
                 }
             }
