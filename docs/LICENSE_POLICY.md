@@ -53,7 +53,9 @@ The application source is offered under Apache-2.0. This does not replace or
 weaken the separate LGPL obligations for Qt, FFmpeg, or mpv.
 
 Apple TV is a native SwiftUI/AVKit client and does not distribute Qt. Google TV
-will receive its own distribution review before an Android build is published.
+is a native Kotlin/Compose TV/Media3 client and does not distribute Qt or mpv.
+Its AndroidX, Media3, Coil, OkHttp, Kotlin, and coroutine dependencies use
+permissive Apache-2.0 terms and remain covered by the Android release notices.
 
 ## Controller input
 

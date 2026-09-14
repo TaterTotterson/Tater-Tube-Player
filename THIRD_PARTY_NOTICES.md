@@ -131,3 +131,16 @@ Qt, FFmpeg, and the Linux runtime use additional third-party components. Their
 notices are generated from the exact Qt SPDX documents and the final depot's
 runtime dependency scan. The release depot includes those records under
 `compliance/`, together with the exact build options and source information.
+
+## Google TV native client
+
+The Google TV and Android TV client uses AndroidX, Compose for TV, AndroidX
+Media3, Kotlin, Kotlin coroutines, Coil, OkHttp, Okio, and their transitive
+runtime components. These projects are distributed under the Apache License
+2.0. The Google TV release records must retain the exact Gradle dependency
+report and generated notices for the version being shipped.
+
+- AndroidX and Media3: https://developer.android.com/jetpack/androidx
+- Kotlin and coroutines: https://kotlinlang.org/
+- Coil: https://coil-kt.github.io/coil/
+- OkHttp and Okio: https://square.github.io/okhttp/

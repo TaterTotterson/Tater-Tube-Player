@@ -123,6 +123,9 @@ container-specific decisions without changing the track-level modes.
 - Steam/Steam Deck: this Qt Quick desktop client, initially released for Linux.
 - Apple TV: a thin SwiftUI/AVKit client using the same server contract.
 - Google TV: a thin Kotlin/Compose TV/Media3 client using the same contract.
+  Its TV-only launcher, secure pairing, cached Home shelf, capability report,
+  server-selected playback plan, and native playback foundation live in
+  `google-tv/`.
 
 UI implementation is platform-specific. Product behavior, API fixtures, design
 tokens, copy, artwork rules, and acceptance tests are shared.

@@ -11,9 +11,10 @@ viewing activity, or pairing credential to Tater.
 
 To remain paired, the Player stores the server address, player name, and
 server-issued player token in the current operating-system user's settings. On
-Linux, that settings file is restricted to the current user. The Player also
-caches artwork, catalog responses, and viewing state locally so its interface
-can load quickly.
+Linux, that settings file is restricted to the current user. Apple TV stores
+the token in Keychain, and Google TV encrypts it using an app key held by
+Android Keystore. The Player also caches artwork, catalog responses, and
+viewing state locally so its interface can load quickly.
 
 The Player sends the pairing token, playback capabilities, catalog requests,
 and viewing progress directly to the Tater Tube Server selected by the user.

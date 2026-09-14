@@ -9,3 +9,7 @@ aqtinstall.log
 *.jsc
 xcuserdata/
 *.xcuserstate
+.gradle/
+local.properties
+google-tv/.idea/
+google-tv/app/release/
