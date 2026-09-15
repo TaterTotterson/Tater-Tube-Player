@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tatertotterson.tatertubeplayer.R
 import com.tatertotterson.tatertubeplayer.data.CredentialStore
 import com.tatertotterson.tatertubeplayer.data.DemoCatalog
 import com.tatertotterson.tatertubeplayer.data.DeviceCapabilities
@@ -29,6 +30,7 @@ import com.tatertotterson.tatertubeplayer.model.PlaybackPlan
 import com.tatertotterson.tatertubeplayer.model.PlayerHome
 import com.tatertotterson.tatertubeplayer.model.RecommendationBatch
 import com.tatertotterson.tatertubeplayer.model.RecommendationItem
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -112,6 +114,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var speechRequestId: String? = null
     private var spokenBatchId: String? = null
     private var pendingDeepLinkId: String? = null
+    private var discoverPageJob: Job? = null
 
     var state by mutableStateOf(PlayerUiState())
         private set
@@ -172,6 +175,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     state = state.copy(home = home, isRefreshing = false, errorMessage = null)
                     viewModelScope.launch { WatchNextPublisher.publish(getApplication(), home.continueWatching) }
                     openPendingDeepLink()
+                    if (home.capabilities.tubeTV) refreshLiveGuide()
                 }
                 .onFailure { error ->
                     state = state.copy(
@@ -208,11 +212,31 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             state.destination == Destination.LIBRARY && state.libraryStack.isNotEmpty() ->
                 state = state.copy(libraryStack = state.libraryStack.dropLast(1))
             state.destination == Destination.DISCOVER && state.discoverStage != DiscoverStage.CATEGORIES -> {
-                state = when (state.discoverStage) {
-                    DiscoverStage.FILES -> state.copy(discoverStage = DiscoverStage.RESULTS, preparedFiles = emptyList())
-                    DiscoverStage.RESULTS -> state.copy(discoverStage = DiscoverStage.TITLES, discoverTitle = null, discoverPage = null)
-                    DiscoverStage.TITLES -> state.copy(discoverStage = DiscoverStage.CATEGORIES, discoverCategory = null, discoverPage = null)
-                    DiscoverStage.CATEGORIES -> state
+                when (state.discoverStage) {
+                    DiscoverStage.FILES -> state = state.copy(
+                        discoverStage = DiscoverStage.RESULTS,
+                        preparedFiles = emptyList(),
+                    )
+                    DiscoverStage.RESULTS -> {
+                        val category = state.discoverCategory
+                        if (category != null) openDiscoverCategory(category)
+                        else state = state.copy(
+                            discoverStage = DiscoverStage.CATEGORIES,
+                            discoverTitle = null,
+                            discoverPage = null,
+                        )
+                    }
+                    DiscoverStage.TITLES -> {
+                        discoverPageJob?.cancel()
+                        discoverPageJob = null
+                        state = state.copy(
+                            discoverStage = DiscoverStage.CATEGORIES,
+                            discoverCategory = null,
+                            discoverPage = null,
+                            isDiscoverRefreshing = false,
+                        )
+                    }
+                    DiscoverStage.CATEGORIES -> Unit
                 }
             }
             state.destination != Destination.HOME -> selectDestination(Destination.HOME)
@@ -342,6 +366,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     state = state.copy(discoverCategories = categories, isDiscoverRefreshing = false)
                 }
                 .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
                     state = state.copy(
                         isDiscoverRefreshing = false,
                         errorMessage = if (state.discoverCategories.isEmpty()) error.userMessage() else state.errorMessage,
@@ -383,9 +408,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun loadDiscoverPage(key: String, loader: suspend () -> Pair<String, LibraryPage>) {
+        discoverPageJob?.cancel()
         val cached = readCache(cacheFile("discover", key), ModelParser::libraryPage)
         if (cached != null) state = state.copy(discoverPage = cached)
-        viewModelScope.launch {
+        discoverPageJob = viewModelScope.launch {
             state = state.copy(isDiscoverRefreshing = true)
             runCatching { loader() }
                 .onSuccess { (raw, page) ->
@@ -403,6 +429,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun prepareDiscoverRelease(release: MediaItem) {
         val source = state.discoverTitle ?: return
+        if (state.isDemo) {
+            startPlayback(
+                release.copy(
+                    title = source.title,
+                    subtitle = source.subtitle,
+                    summary = source.summary,
+                    mediaType = source.mediaType,
+                    nzbUrl = null,
+                    artworkResource = source.artworkResource,
+                ),
+                resume = false,
+                holdDiscoveryOverlay = true,
+            )
+            return
+        }
         val api = client ?: run {
             state = state.copy(errorMessage = "Pair with your Tater Tube Server to prepare this stream.")
             return
@@ -418,8 +459,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                             errorMessage = "The server did not return a playable file.",
                         )
                         files.size == 1 -> {
-                            state = state.copy(isPreparingDiscovery = false)
-                            startPlayback(files.first().playbackItem, resume = false)
+                            startPlayback(
+                                files.first().playbackItem,
+                                resume = false,
+                                holdDiscoveryOverlay = true,
+                            )
                         }
                         else -> state = state.copy(
                             isPreparingDiscovery = false,
@@ -432,7 +476,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun playPreparedFile(file: DiscoverPreparedFile) = startPlayback(file.playbackItem, resume = false)
+    fun playPreparedFile(file: DiscoverPreparedFile) {
+        if (state.isPreparingDiscovery || state.isPreparingPlayback) return
+        state = state.copy(isPreparingDiscovery = true)
+        startPlayback(file.playbackItem, resume = false, holdDiscoveryOverlay = true)
+    }
+
+    fun finishDiscoveryPreparation() {
+        if (state.isPreparingDiscovery) state = state.copy(isPreparingDiscovery = false)
+    }
 
     fun refreshRecommendations() {
         if (state.isDemo) {
@@ -481,6 +533,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun play(item: MediaItem, resume: Boolean) {
+        if (state.isDemo) {
+            startPlayback(item.copy(nzbUrl = null), resume)
+            return
+        }
         if (!item.nzbUrl.isNullOrBlank()) {
             val api = client ?: return
             viewModelScope.launch {
@@ -499,16 +555,46 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         startPlayback(item, resume)
     }
 
-    private fun startPlayback(item: MediaItem, resume: Boolean) {
-        val api = client
-        if (state.isDemo || api == null) {
-            state = state.copy(errorMessage = "Pair with your Tater Tube Server to play this title.")
+    private fun startPlayback(item: MediaItem, resume: Boolean, holdDiscoveryOverlay: Boolean = false) {
+        if (state.isDemo) {
+            val durationMs = DemoCatalog.playbackDurationMs
+            val resumePositionMs = if (resume) {
+                (durationMs * item.progressPercent.coerceIn(0.0, 95.0) / 100.0).toLong()
+            } else 0L
+            val resourceUri = "android.resource://${getApplication<Application>().packageName}/${R.raw.tater_demo_reel}"
+            state = state.copy(
+                isPreparingPlayback = false,
+                isPreparingDiscovery = if (holdDiscoveryOverlay) false else state.isPreparingDiscovery,
+                selectedMedia = null,
+                playback = PlaybackSession(
+                    item = item.copy(
+                        streamUrl = resourceUri,
+                        durationMs = durationMs,
+                        viewOffsetMs = resumePositionMs,
+                    ),
+                    plan = DemoCatalog.playbackPlan(resourceUri),
+                    startPositionMs = resumePositionMs,
+                ),
+                errorMessage = null,
+            )
             return
         }
-        if (state.isPreparingPlayback) return
+        val api = client
+        if (api == null) {
+            state = state.copy(
+                isPreparingDiscovery = if (holdDiscoveryOverlay) false else state.isPreparingDiscovery,
+                errorMessage = "Pair with your Tater Tube Server to play this title.",
+            )
+            return
+        }
+        if (state.isPreparingPlayback) {
+            if (holdDiscoveryOverlay) state = state.copy(isPreparingDiscovery = false)
+            return
+        }
         viewModelScope.launch {
             state = state.copy(isPreparingPlayback = true, errorMessage = null)
-            runCatching { api.playbackPlan(item, capabilities) }
+            val playbackCapabilities = DeviceCapabilities.read(getApplication()).also { capabilities = it }
+            runCatching { api.playbackPlan(item, playbackCapabilities) }
                 .onSuccess { plan ->
                     val duration = item.durationMs.takeIf { it > 0 }
                         ?: plan.source.durationSeconds?.times(1000)?.toLong().orZero()
@@ -527,13 +613,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     )
                     runCatching { api.savePlayState(playable, state.playback?.startPositionMs ?: 0, duration, false, true) }
                 }
-                .onFailure { error -> state = state.copy(isPreparingPlayback = false, errorMessage = error.userMessage()) }
+                .onFailure { error -> state = state.copy(
+                    isPreparingPlayback = false,
+                    isPreparingDiscovery = if (holdDiscoveryOverlay) false else state.isPreparingDiscovery,
+                    errorMessage = error.userMessage(),
+                ) }
         }
     }
 
     fun stopPlayback(positionMs: Long, durationMs: Long, completed: Boolean) {
         val session = state.playback ?: return
-        state = state.copy(playback = null)
+        state = state.copy(playback = null, isPreparingDiscovery = false)
         updateVisibleProgress(session.item, positionMs, durationMs, completed)
         state.home?.let { home ->
             viewModelScope.launch { WatchNextPublisher.publish(getApplication(), home.continueWatching) }

@@ -44,12 +44,16 @@ class ModelParserTest {
             """{"data":{"batch":{"id":"batch-1","assistantName":"Tater","summary":"For Sunday morning"},"items":[{"id":"pick-1","rank":1,"title":"Cartoon Hour","reason":"Weekend cartoons","launch":{"id":"episode-1","title":"Cartoon Hour","mediaType":"episode","streamUrl":"/play/1"}}]}}"""
         )
         val plan = ModelParser.playbackPlan(
-            """{"data":{"streamUrl":"/session/1.m3u8","videoMode":"direct","audioMode":"transcode","selectedAudioTrack":1,"source":{"durationSeconds":1800,"audioTracks":[{"index":0,"codec":"aac","channels":2,"language":"eng"},{"index":1,"codec":"eac3","channels":6,"language":"eng","default":true}]}}}"""
+            """{"data":{"stream_url":"/session/1","video_mode":"direct","audio_mode":"transcode","output_container":"hls","selected_audio_track":1,"source":{"duration_seconds":1800,"audio_tracks":[{"index":0,"stream_index":1,"codec":"aac","channels":2,"language":"eng"},{"index":1,"stream_index":2,"codec":"eac3","channels":6,"language":"eng","default":true}]}}}"""
         )
 
         assertEquals("Cartoon Hour", picks.items.single().launch.title)
         assertEquals(2, plan.source.audioTracks.size)
         assertEquals(6, plan.source.audioTracks[1].channels)
+        assertEquals("hls", plan.outputContainer)
+        assertEquals("transcode", plan.audioMode)
+        assertEquals(1, plan.selectedAudioTrack)
+        assertEquals(2, plan.source.audioTracks[1].streamIndex)
     }
 
     @Test

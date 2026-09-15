@@ -23,7 +23,8 @@ and Apple TV clients while using Kotlin, Compose for TV, and AndroidX Media3.
   MediaSession, sleep prevention, and automatic next-episode playback
 - Immediate local progress updates followed by server synchronization
 - Android TV Watch Next publishing and direct resume links for Continue Watching
-- Fictional demo mode available from the pairing screen
+- Fictional demo mode with bundled rights-safe H.264/AAC playback available
+  from the pairing screen
 
 The shared server contract is used without a Google-TV-specific migration.
 Physical-device QA remains necessary for remote focus behavior, decoder and
@@ -52,3 +53,26 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Open the app from the TV launcher and choose **Try Demo** or pair it with Tater
 Tube Server using the server address and pairing code.
+
+## Signed Google Play bundle
+
+The unified `Release builds` GitHub Actions workflow builds the production AAB
+on a hosted Linux runner. It requires these repository secrets:
+
+- `ANDROID_RELEASE_KEYSTORE_BASE64`
+- `ANDROID_RELEASE_STORE_PASSWORD`
+- `ANDROID_RELEASE_KEY_ALIAS`
+- `ANDROID_RELEASE_KEY_PASSWORD`
+
+Run the workflow manually for validation, optionally supplying a version name
+and monotonically increasing Play version code. Publishing a matching GitHub
+release builds all three Player editions and attaches the signed AAB plus its
+SHA-256 checksum to that release. The Google TV job runs unit tests and release
+lint, rejects missing or partial signing configuration, and verifies the bundle
+signature before publishing it.
+
+The upload keystore and its password backup must remain outside the repository.
+Use the upload key for Play Console delivery and leave Play App Signing enabled.
+
+Google Play graphics, reviewer notes, provenance, and the submission checklist
+are under [`../store/google-play/`](../store/google-play/).

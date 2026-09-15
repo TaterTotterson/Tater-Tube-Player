@@ -1,0 +1,340 @@
+name: Release builds
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: Public version; defaults to the version in CMakeLists.txt
+        required: false
+        type: string
+      version_code:
+        description: Google Play version code; defaults to this workflow run number
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-builds-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    name: Release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      version_name: ${{ steps.release.outputs.version_name }}
+      version_code: ${{ steps.release.outputs.version_code }}
+      version_label: ${{ steps.release.outputs.version_label }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and validate version
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION_NAME: ${{ inputs.version_name }}
+          INPUT_VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          source_version="$(awk '
+            /^project\(TaterTubePlayer/ { in_project = 1 }
+            in_project && $1 == "VERSION" { print $2; exit }
+          ' CMakeLists.txt)"
+          version_name="${INPUT_VERSION_NAME:-$source_version}"
+          version_code="${INPUT_VERSION_CODE:-$GITHUB_RUN_NUMBER}"
+          release_tag="${RELEASE_TAG:-v${version_name}}"
+
+          if [[ ! "$version_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+            echo "::error::The public version must look like 0.1.0."
+            exit 1
+          fi
+          if [[ ! "$version_code" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::The Google Play version code must be a positive integer."
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "release" && "$release_tag" != "v${source_version}" ]]; then
+            echo "::error::Release tag $release_tag must match CMake project version v$source_version."
+            exit 1
+          fi
+
+          version_label="$(printf '%s' "$release_tag" | tr -c 'A-Za-z0-9._-' '-')"
+          printf 'version_name=%s\n' "$version_name" >> "$GITHUB_OUTPUT"
+          printf 'version_code=%s\n' "$version_code" >> "$GITHUB_OUTPUT"
+          printf 'version_label=%s\n' "$version_label" >> "$GITHUB_OUTPUT"
+          printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+
+  google-tv:
+    name: Signed Google TV bundle
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Google TV release signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE_BASE64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::All four Android release-signing secrets must be configured."
+            exit 1
+          fi
+          keystore_path="$RUNNER_TEMP/tater-tube-player-upload.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | openssl base64 -d -A -out "$keystore_path"
+          chmod 600 "$keystore_path"
+          printf 'ANDROID_SIGNING_STORE_FILE=%s\n' "$keystore_path" >> "$GITHUB_ENV"
+
+      - name: Test, lint, and build signed bundle
+        working-directory: google-tv
+        env:
+          TATER_TUBE_PLAYER_VERSION_NAME: ${{ needs.metadata.outputs.version_name }}
+          TATER_TUBE_PLAYER_VERSION_CODE: ${{ needs.metadata.outputs.version_code }}
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintRelease :app:bundleRelease
+
+      - name: Verify and package bundle
+        shell: bash
+        env:
+          VERSION_LABEL: ${{ needs.metadata.outputs.version_label }}
+          VERSION_CODE: ${{ needs.metadata.outputs.version_code }}
+        run: |
+          source_path="google-tv/app/build/outputs/bundle/release/app-release.aab"
+          output_name="Tater-Tube-Player-Google-TV-${VERSION_LABEL}-${VERSION_CODE}.aab"
+          test -f "$source_path"
+          verification_output="$(jarsigner -verify "$source_path" 2>&1)"
+          printf '%s\n' "$verification_output"
+          if ! grep -q "jar verified" <<< "$verification_output"; then
+            echo "::error::The generated Google TV app bundle is not signed."
+            exit 1
+          fi
+          mkdir -p release-assets
+          cp "$source_path" "release-assets/$output_name"
+          cd release-assets
+          sha256sum "$output_name" > "$output_name.sha256"
+
+      - name: Upload Google TV artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: tater-tube-player-google-tv
+          path: release-assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  apple-tv:
+    name: Apple TV Simulator build
+    needs: metadata
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build Apple TV Simulator app
+        env:
+          VERSION_NAME: ${{ needs.metadata.outputs.version_name }}
+          VERSION_CODE: ${{ needs.metadata.outputs.version_code }}
+        run: |
+          xcodebuild \
+            -project apple-tv/TaterTubePlayerTV.xcodeproj \
+            -scheme TaterTubePlayerTV \
+            -configuration Release \
+            -sdk appletvsimulator \
+            -destination 'generic/platform=tvOS Simulator' \
+            -derivedDataPath build/ci-tvos \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="$VERSION_NAME" \
+            CURRENT_PROJECT_VERSION="$VERSION_CODE" \
+            build
+
+      - name: Package Apple TV Simulator app
+        shell: bash
+        env:
+          VERSION_LABEL: ${{ needs.metadata.outputs.version_label }}
+        run: |
+          app_path="build/ci-tvos/Build/Products/Release-appletvsimulator/TaterTubePlayerTV.app"
+          if [[ ! -d "$app_path" ]]; then
+            echo "::error::The Apple TV Simulator app was not produced."
+            exit 1
+          fi
+          mkdir -p release-assets
+          archive_name="Tater-Tube-Player-Apple-TV-Simulator-${VERSION_LABEL}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "release-assets/$archive_name"
+          cd release-assets
+          shasum -a 256 "$archive_name" > "$archive_name.sha256"
+
+      - name: Upload Apple TV artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: tater-tube-player-apple-tv
+          path: release-assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  steam-linux:
+    name: Audited Steam Linux depot
+    if: github.event_name == 'release'
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build pinned Steam Runtime SDK
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: packaging/steam/Containerfile
+          load: true
+          tags: tater-tube-player-steam-builder:${{ github.sha }}
+          cache-from: type=gha,scope=tater-tube-player-steam
+          cache-to: type=gha,mode=max,scope=tater-tube-player-steam
+
+      - name: Build and audit tagged Steam depot
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+          VERSION_NAME: ${{ needs.metadata.outputs.version_name }}
+        run: |
+          app_source_name="tater-tube-player-${VERSION_NAME}-source.tar.gz"
+          third_party_name="tater-tube-player-${VERSION_NAME}-third-party-sources.tar"
+          asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
+
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            -e TATER_STEAM_BUILD_DIR=/tmp/tater-build \
+            -e TATER_STEAM_DEPOT_DIR=/workspace/dist/steam/linux-x86_64 \
+            -e TATER_STEAM_SOURCE_BOOTSTRAP=1 \
+            "tater-tube-player-steam-builder:${GITHUB_SHA}" \
+            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/build-steam-depot.sh'
+
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$RUNNER_TEMP:/release-output" \
+            -w /workspace \
+            -e TATER_STEAM_DEPOT_DIR=/workspace/dist/steam/linux-x86_64 \
+            "tater-tube-player-steam-builder:${GITHUB_SHA}" \
+            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/prepare-steam-source-offer.sh /release-output/steam-source'
+
+          app_sha="$(sha256sum "$RUNNER_TEMP/steam-source/$app_source_name" | awk '{print $1}')"
+          third_party_sha="$(sha256sum "$RUNNER_TEMP/steam-source/$third_party_name" | awk '{print $1}')"
+
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            -e TATER_STEAM_DEPOT_DIR=/workspace/dist/steam/linux-x86_64 \
+            -e TATER_APP_SOURCE_URL="$asset_base/$app_source_name" \
+            -e TATER_APP_SOURCE_SHA256="$app_sha" \
+            -e TATER_QT_SOURCE_URL="$asset_base/$third_party_name" \
+            -e TATER_QT_SOURCE_SHA256="$third_party_sha" \
+            -e TATER_FFMPEG_SOURCE_URL="$asset_base/$third_party_name" \
+            -e TATER_FFMPEG_SOURCE_SHA256="$third_party_sha" \
+            -e TATER_ICU_SOURCE_URL="$asset_base/$third_party_name" \
+            -e TATER_ICU_SOURCE_SHA256="$third_party_sha" \
+            -e TATER_MPV_SOURCE_URL="$asset_base/$third_party_name" \
+            -e TATER_MPV_SOURCE_SHA256="$third_party_sha" \
+            "tater-tube-player-steam-builder:${GITHUB_SHA}" \
+            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/prepare-steam-compliance.sh "$TATER_STEAM_DEPOT_DIR"; ./scripts/audit-steam-depot.sh "$TATER_STEAM_DEPOT_DIR"'
+
+      - name: Package Steam release assets
+        shell: bash
+        env:
+          VERSION_LABEL: ${{ needs.metadata.outputs.version_label }}
+          VERSION_NAME: ${{ needs.metadata.outputs.version_name }}
+        run: |
+          mkdir -p release-assets
+          depot_name="Tater-Tube-Player-Steam-Linux-x86_64-${VERSION_LABEL}.tar.gz"
+          tar -C dist/steam -czf "release-assets/$depot_name" linux-x86_64
+          cp "$RUNNER_TEMP/steam-source/tater-tube-player-${VERSION_NAME}-source.tar.gz" release-assets/
+          cp "$RUNNER_TEMP/steam-source/tater-tube-player-${VERSION_NAME}-third-party-sources.tar" release-assets/
+          cd release-assets
+          for asset in "$depot_name" \
+              "tater-tube-player-${VERSION_NAME}-source.tar.gz" \
+              "tater-tube-player-${VERSION_NAME}-third-party-sources.tar"; do
+            sha256sum "$asset" > "$asset.sha256"
+          done
+
+      - name: Upload Steam artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: tater-tube-player-steam-linux
+          path: release-assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  publish:
+    name: Attach assets to GitHub Release
+    if: github.event_name == 'release'
+    needs: [metadata, google-tv, apple-tv, steam-linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: tater-tube-player-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify checksums
+        working-directory: release-assets
+        shell: bash
+        run: |
+          shopt -s nullglob
+          checksum_files=(*.sha256)
+          if (( ${#checksum_files[@]} == 0 )); then
+            echo "::error::No release checksums were downloaded."
+            exit 1
+          fi
+          sha256sum --check "${checksum_files[@]}"
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber

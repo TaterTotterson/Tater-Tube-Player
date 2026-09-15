@@ -251,7 +251,9 @@ fi
 
 if grep -q 'attach before Steam submission' \
     "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null; then
-    if [ "${TATER_STEAM_DRAFT:-0}" = "1" ]; then
+    if [ "${TATER_STEAM_SOURCE_BOOTSTRAP:-0}" = "1" ]; then
+        echo "Source bootstrap: corresponding-source archives will be generated before the required final audit." >&2
+    elif [ "${TATER_STEAM_DRAFT:-0}" = "1" ]; then
         echo "Draft depot: corresponding-source archive locations are still placeholders." >&2
     else
         echo "The corresponding-source manifest still contains release placeholders." >&2
@@ -280,19 +282,21 @@ if [ "${TATER_STEAM_DRAFT:-0}" != "1" ]; then
         echo "The corresponding-source manifest does not identify an exact Git revision." >&2
         tater_failed=1
     fi
-    tater_source_url_count=$(grep -E -c \
-        '^  (Archive: )?https://[^[:space:]]+$' \
-        "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null || true)
-    if [ "${tater_source_url_count}" -ne 5 ]; then
-        echo "The corresponding-source manifest must contain five HTTPS archive locations." >&2
-        tater_failed=1
-    fi
-    tater_source_hash_count=$(grep -E -c \
-        '^  SHA-256: [0-9a-f]{64}$' \
-        "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null || true)
-    if [ "${tater_source_hash_count}" -ne 5 ]; then
-        echo "The corresponding-source manifest must contain five valid SHA-256 values." >&2
-        tater_failed=1
+    if [ "${TATER_STEAM_SOURCE_BOOTSTRAP:-0}" != "1" ]; then
+        tater_source_url_count=$(grep -E -c \
+            '^  (Archive: )?https://[^[:space:]]+$' \
+            "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null || true)
+        if [ "${tater_source_url_count}" -ne 5 ]; then
+            echo "The corresponding-source manifest must contain five HTTPS archive locations." >&2
+            tater_failed=1
+        fi
+        tater_source_hash_count=$(grep -E -c \
+            '^  SHA-256: [0-9a-f]{64}$' \
+            "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null || true)
+        if [ "${tater_source_hash_count}" -ne 5 ]; then
+            echo "The corresponding-source manifest must contain five valid SHA-256 values." >&2
+            tater_failed=1
+        fi
     fi
 fi
 

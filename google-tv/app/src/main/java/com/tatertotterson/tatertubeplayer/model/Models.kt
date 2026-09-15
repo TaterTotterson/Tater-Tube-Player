@@ -261,9 +261,10 @@ data class LiveChannel(
         id = "tube-tv:$number",
         title = now?.title ?: title,
         type = "channel",
-        subtitle = if (number.isBlank()) "Live on Tater Tube" else "Channel $number",
+        subtitle = next?.let { "Up next: ${it.title}" }
+            ?: if (number.isBlank()) "Live on Tater Tube" else "Channel $number",
         summary = now?.summary ?: "Now playing on $title",
-        mediaType = now?.mediaType ?: now?.kind ?: "channel",
+        mediaType = "channel",
         category = now?.category,
         categoryId = now?.categoryId,
         sourceIndex = now?.sourceIndex ?: 0,
@@ -279,6 +280,7 @@ data class LiveChannel(
         channelLogoUrl = logoUrl,
         channelLogoPosition = logoPosition,
         channelLogoOverlayEnabled = logoOverlayEnabled,
+        progressPercent = now?.progressPercent ?: 0.0,
     )
 
     fun displayedPrograms(elapsed: Double): List<LiveProgram> {
@@ -504,30 +506,30 @@ object ModelParser {
     fun playbackPlan(raw: String): PlaybackPlan {
         val data = envelope(raw)
         val source = data.optJSONObject("source") ?: JSONObject()
-        val tracks = source.optJSONArray("audioTracks") ?: JSONArray()
+        val tracks = source.array("audioTracks", "audio_tracks") ?: JSONArray()
         return PlaybackPlan(
             streamUrl = data.string("streamUrl", "stream_url") ?: error("The server did not return a playable stream."),
             mode = data.string("mode") ?: "direct",
-            videoMode = data.string("videoMode") ?: "direct",
-            audioMode = data.string("audioMode") ?: "direct",
-            videoCodec = data.string("videoCodec"),
-            audioCodec = data.string("audioCodec"),
-            qualityLabel = data.string("qualityLabel") ?: "Best available",
-            resolutionLabel = data.string("resolutionLabel"),
-            outputContainer = data.string("outputContainer"),
-            outputAudioChannels = data.flexibleInt("outputAudioChannels"),
-            sourceVideoRange = data.string("sourceVideoRange"),
-            outputVideoRange = data.string("outputVideoRange"),
-            outputFrameRate = data.flexibleDouble("outputFrameRate"),
-            selectedAudioTrack = data.optInt("selectedAudioTrack", 0),
+            videoMode = data.string("videoMode", "video_mode") ?: "direct",
+            audioMode = data.string("audioMode", "audio_mode") ?: "direct",
+            videoCodec = data.string("videoCodec", "video_codec"),
+            audioCodec = data.string("audioCodec", "audio_codec"),
+            qualityLabel = data.string("qualityLabel", "quality_label") ?: "Best available",
+            resolutionLabel = data.string("resolutionLabel", "resolution_label"),
+            outputContainer = data.string("outputContainer", "output_container"),
+            outputAudioChannels = data.flexibleInt("outputAudioChannels", "output_audio_channels"),
+            sourceVideoRange = data.string("sourceVideoRange", "source_video_range"),
+            outputVideoRange = data.string("outputVideoRange", "output_video_range"),
+            outputFrameRate = data.flexibleDouble("outputFrameRate", "output_frame_rate"),
+            selectedAudioTrack = data.flexibleInt("selectedAudioTrack", "selected_audio_track") ?: 0,
             source = PlaybackSource(
-                durationSeconds = source.flexibleDouble("durationSeconds"),
+                durationSeconds = source.flexibleDouble("durationSeconds", "duration_seconds"),
                 audioTracks = buildList {
                     repeat(tracks.length()) { index ->
                         val track = tracks.optJSONObject(index) ?: return@repeat
                         add(PlaybackAudioTrack(
                             index = track.optInt("index", index),
-                            streamIndex = track.flexibleInt("streamIndex"),
+                            streamIndex = track.flexibleInt("streamIndex", "stream_index"),
                             codec = track.string("codec"),
                             channels = track.flexibleInt("channels"),
                             language = track.string("language"),
@@ -698,21 +700,25 @@ private fun JSONObject.string(vararg keys: String): String? {
 
 private fun JSONObject.array(vararg keys: String): JSONArray? = keys.firstNotNullOfOrNull { optJSONArray(it) }
 
-private fun JSONObject.flexibleLong(key: String): Long? {
-    val value = opt(key)
-    return if (value is Number) value.toLong()
-    else if (value is String) value.toDoubleOrNull()?.toLong()
-    else null
+private fun JSONObject.flexibleLong(vararg keys: String): Long? {
+    for (key in keys) {
+        val value = opt(key)
+        if (value is Number) return value.toLong()
+        if (value is String) value.toDoubleOrNull()?.toLong()?.let { return it }
+    }
+    return null
 }
 
-private fun JSONObject.flexibleDouble(key: String): Double? {
-    val value = opt(key)
-    return if (value is Number) value.toDouble()
-    else if (value is String) value.toDoubleOrNull()
-    else null
+private fun JSONObject.flexibleDouble(vararg keys: String): Double? {
+    for (key in keys) {
+        val value = opt(key)
+        if (value is Number) return value.toDouble()
+        if (value is String) value.toDoubleOrNull()?.let { return it }
+    }
+    return null
 }
 
-private fun JSONObject.flexibleInt(key: String): Int? = flexibleLong(key)?.toInt()
+private fun JSONObject.flexibleInt(vararg keys: String): Int? = flexibleLong(*keys)?.toInt()
 
 private fun JSONObject.nullableBoolean(vararg keys: String): Boolean? {
     for (key in keys) {

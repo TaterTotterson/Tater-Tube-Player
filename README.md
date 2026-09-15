@@ -167,6 +167,18 @@ The pairing screen includes a rights-safe demo catalog. See
 [`google-tv/README.md`](google-tv/README.md) for device installation and the
 feature-parity roadmap.
 
+### Unified release builds
+
+Publishing a GitHub Release whose tag matches the CMake version (for example,
+`v0.3.28`) runs the `Release builds` workflow. It produces an audited
+Steam/Linux depot with its corresponding-source archives, an unsigned Apple TV
+Simulator package for testing, and a signed Google TV AAB. Each artifact is
+published with a SHA-256 checksum on the same GitHub Release.
+
+Manual workflow runs build the Apple TV and Google TV validation artifacts.
+The App Store archive remains signed and uploaded through Xcode, while the
+Google TV job uses the repository's protected Android upload-key secrets.
+
 ## Security and privacy
 
 On Steam, the paired-player token is stored in the current operating-system

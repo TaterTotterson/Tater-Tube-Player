@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseSigningValues = mapOf(
+    "storeFile" to System.getenv("ANDROID_SIGNING_STORE_FILE").orEmpty(),
+    "storePassword" to System.getenv("ANDROID_SIGNING_STORE_PASSWORD").orEmpty(),
+    "keyAlias" to System.getenv("ANDROID_SIGNING_KEY_ALIAS").orEmpty(),
+    "keyPassword" to System.getenv("ANDROID_SIGNING_KEY_PASSWORD").orEmpty(),
+)
+val suppliedReleaseSigningValues = releaseSigningValues.filterValues { it.isNotBlank() }
+if (suppliedReleaseSigningValues.isNotEmpty() && suppliedReleaseSigningValues.size != releaseSigningValues.size) {
+    throw GradleException("Android release signing requires store file, store password, key alias, and key password.")
+}
+
 android {
     namespace = "com.tatertotterson.tatertubeplayer"
     compileSdk = 37
@@ -11,8 +22,8 @@ android {
         applicationId = "com.tatertotterson.tatertubeplayer"
         minSdk = 23
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = System.getenv("TATER_TUBE_PLAYER_VERSION_CODE")?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+        versionName = System.getenv("TATER_TUBE_PLAYER_VERSION_NAME")?.trim()?.ifBlank { null } ?: "0.1.0"
     }
 
     buildFeatures {
@@ -25,9 +36,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        if (suppliedReleaseSigningValues.size == releaseSigningValues.size) {
+            create("release") {
+                storeFile = file(releaseSigningValues.getValue("storeFile"))
+                storePassword = releaseSigningValues.getValue("storePassword")
+                keyAlias = releaseSigningValues.getValue("keyAlias")
+                keyPassword = releaseSigningValues.getValue("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,7 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -44,8 +48,23 @@ import coil3.request.ImageRequest
 import com.tatertotterson.tatertubeplayer.R
 import com.tatertotterson.tatertubeplayer.model.MediaItem
 import com.tatertotterson.tatertubeplayer.ui.theme.TaterColors
+import com.tatertotterson.tatertubeplayer.ui.theme.taterFocusGlow
+import kotlinx.coroutines.delay
 
 private val GlassShape = RoundedCornerShape(22.dp)
+
+@Composable
+fun RestoreInitialFocus(
+    requester: FocusRequester,
+    focusKey: Any?,
+    enabled: Boolean,
+) {
+    LaunchedEffect(focusKey, enabled) {
+        if (!enabled) return@LaunchedEffect
+        delay(120)
+        runCatching { requester.requestFocus() }
+    }
+}
 
 @Composable
 fun GlassSurface(
@@ -82,6 +101,11 @@ fun TaterButton(
         modifier
             .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .taterFocusGlow(focused, shape, 15.dp)
             .border(if (focused) 3.dp else 1.dp, borderColor, shape)
             .background(Color.Black.copy(alpha = if (enabled) 0.88f else 0.45f), shape)
             .padding(horizontal = 25.dp, vertical = 14.dp),
@@ -90,7 +114,7 @@ fun TaterButton(
         Text(
             text = text,
             color = if (enabled) Color.White else TaterColors.SecondaryText,
-            fontSize = 18.sp * scale,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
         )
@@ -105,6 +129,7 @@ fun TaterArtwork(
     token: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    backgroundColor: Color = Color(0xFF171717),
 ) {
     if (item.artworkResource != null) {
         Image(
@@ -137,7 +162,7 @@ fun TaterArtwork(
         model = model,
         contentDescription = item.title,
         contentScale = contentScale,
-        modifier = modifier.background(Color(0xFF171717)),
+        modifier = modifier.background(backgroundColor),
         error = painterResource(R.drawable.tater_launcher_icon),
         fallback = painterResource(R.drawable.tater_launcher_icon),
     )
@@ -157,61 +182,70 @@ fun MediaCard(
         label = "card-border",
     )
     val scale by animateFloatAsState(if (focused) 1.045f else 1f, label = "card-scale")
-    Column(
+    Box(
         modifier = modifier
-            .width(248.dp * scale)
+            .width(340.dp)
+            .height(202.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .clickable(onClick = onClick)
+            .taterFocusGlow(focused, GlassShape)
+            .clip(GlassShape)
+            .border(if (focused) 4.dp else 1.dp, borderColor, GlassShape),
     ) {
+        TaterArtwork(
+            item = item,
+            artworkUrl = artworkUrl,
+            token = token,
+            modifier = Modifier.fillMaxSize(),
+        )
         Box(
             Modifier
-                .fillMaxWidth()
-                .height(146.dp * scale)
-                .clip(GlassShape)
-                .border(if (focused) 4.dp else 1.dp, borderColor, GlassShape)
-        ) {
-            TaterArtwork(
-                item = item,
-                artworkUrl = artworkUrl,
-                token = token,
-                modifier = Modifier.fillMaxSize(),
-            )
-            if (item.progressPercent > 0.5) {
-                Box(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .background(Color.Black.copy(alpha = 0.72f))
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth((item.progressPercent / 100.0).toFloat().coerceIn(0f, 1f))
-                            .height(5.dp)
-                            .background(TaterColors.Orange)
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = .08f), Color.Black.copy(alpha = .38f), Color.Black.copy(alpha = .92f))
                     )
-                }
-            }
-        }
-        Text(
-            text = item.title,
-            color = Color.White,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 3.dp),
+                )
         )
-        item.subtitle?.let {
+        Column(
+            Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp, vertical = if (item.progressPercent > .5) 19.dp else 17.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
             Text(
-                text = it,
-                color = TaterColors.SecondaryText,
-                fontSize = 14.sp,
+                text = if (item.isLiveChannel) {
+                    if (item.channelNumber.isNullOrBlank()) "LIVE" else "CH ${item.channelNumber}  •  LIVE"
+                } else {
+                    listOfNotNull((item.mediaType ?: item.type ?: "VIDEO").uppercase(), item.date).joinToString("  •  ")
+                },
+                color = TaterColors.OrangeBright,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 3.dp),
             )
+            Text(item.title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val subtitle = when {
+                item.recentItems.size == 1 -> item.recentItems.first().title
+                item.recentItems.size > 1 -> "${item.recentItems.size} recently added episodes"
+                else -> item.subtitle ?: item.category
+            }
+            subtitle?.takeIf(String::isNotBlank)?.let {
+                Text(it, color = Color.White.copy(alpha = .72f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (item.progressPercent > 0.5 || item.viewOffsetMs > 0) {
+            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(6.dp).background(Color.White.copy(alpha = .24f))) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(if (item.progressPercent > .5) (item.progressPercent / 100.0).toFloat().coerceIn(0f, 1f) else .10f)
+                        .height(6.dp)
+                        .background(TaterColors.Orange)
+                )
+            }
         }
     }
 }
@@ -223,10 +257,10 @@ fun SectionHeading(title: String, detail: String? = null) {
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold)
         if (detail != null) {
             Text(detail, color = TaterColors.OrangeBright, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         }
     }
-    Spacer(Modifier.height(14.dp))
+    Spacer(Modifier.height(22.dp))
 }

@@ -11,6 +11,8 @@ import com.tatertotterson.tatertubeplayer.model.LiveChannel
 import com.tatertotterson.tatertubeplayer.model.LiveGuide
 import com.tatertotterson.tatertubeplayer.model.LiveProgram
 import com.tatertotterson.tatertubeplayer.model.MediaItem
+import com.tatertotterson.tatertubeplayer.model.PlaybackPlan
+import com.tatertotterson.tatertubeplayer.model.PlaybackSource
 import com.tatertotterson.tatertubeplayer.model.PlayerCapabilities
 import com.tatertotterson.tatertubeplayer.model.PlayerHome
 import com.tatertotterson.tatertubeplayer.model.RecommendationBatch
@@ -18,6 +20,22 @@ import com.tatertotterson.tatertubeplayer.model.RecommendationItem
 import com.tatertotterson.tatertubeplayer.model.Recommendations
 
 object DemoCatalog {
+    const val playbackDurationMs = 24_000L
+
+    fun playbackPlan(resourceUri: String) = PlaybackPlan(
+        streamUrl = resourceUri,
+        mode = "direct",
+        videoMode = "direct",
+        audioMode = "direct",
+        videoCodec = "h264",
+        audioCodec = "aac",
+        qualityLabel = "Rights-safe demo",
+        resolutionLabel = "1080p",
+        outputContainer = "mp4",
+        outputAudioChannels = 2,
+        source = PlaybackSource(durationSeconds = playbackDurationMs / 1000.0),
+    )
+
     private val cosmicDrift = MediaItem(
         id = "demo-cosmic-drift",
         title = "Cosmic Drift",

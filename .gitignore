@@ -13,3 +13,7 @@ xcuserdata/
 local.properties
 google-tv/.idea/
 google-tv/app/release/
+*.jks
+*.keystore
+keystore.properties
+release-signing.env

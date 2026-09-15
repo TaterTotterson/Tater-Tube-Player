@@ -23,6 +23,7 @@ import java.net.URI
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Calendar
+import java.util.UUID
 
 class TaterApiClient(
     val serverUrl: String,
@@ -148,6 +149,7 @@ class TaterApiClient(
             .put("stream_url", source)
             .put("media_type", item.mediaType ?: "video")
             .put("profile", capabilities.profile)
+            .put("capabilities", capabilities.toJson())
             .put("force_probe", false)
         if (audioTrack != null) body.put("audio_track", audioTrack)
         val raw = request(
@@ -156,7 +158,13 @@ class TaterApiClient(
             body = body,
             timeoutMs = 45_000,
         )
-        return ModelParser.playbackPlan(raw).let { it.copy(streamUrl = resolveUrl(it.streamUrl)) }
+        return ModelParser.playbackPlan(raw).let { plan ->
+            val resolved = resolveUrl(plan.streamUrl)
+            val isolated = if (plan.mode != "direct" && !item.isLiveChannel) {
+                appendQuery(resolved, "tater_hls_generation", UUID.randomUUID().toString().lowercase())
+            } else resolved
+            plan.copy(streamUrl = isolated)
+        }
     }
 
     suspend fun clearPlayState(item: MediaItem) {
@@ -233,6 +241,11 @@ class TaterApiClient(
         path + values.joinToString(prefix = "?", separator = "&") { (key, value) ->
             "${URLEncoder.encode(key, Charsets.UTF_8.name())}=${URLEncoder.encode(value, Charsets.UTF_8.name())}"
         }
+
+    private fun appendQuery(url: String, key: String, value: String): String {
+        val separator = if (url.contains('?')) "&" else "?"
+        return "$url$separator${URLEncoder.encode(key, Charsets.UTF_8.name())}=${URLEncoder.encode(value, Charsets.UTF_8.name())}"
+    }
 
     private suspend fun requestBytes(
         path: String,
@@ -336,6 +349,7 @@ class TaterApiClient(
 
 data class PlaybackCapabilities(
     val videoCodecs: List<String>,
+    val videoDecoders: List<VideoDecoderCapability>,
     val audioCodecs: List<String>,
     val audioPassthrough: List<String>,
     val videoHdrFormats: List<String>,
@@ -359,17 +373,18 @@ data class PlaybackCapabilities(
         }
 
     fun toJson(): JSONObject = JSONObject()
-        .put("capability_version", 6)
+        .put("capability_version", 7)
         .put("platform", "android_tv")
         .put("engine", "media3")
         .put("output_name", outputName)
         .put("output_connection", outputConnection)
         .put("containers", JSONArray(listOf("mp4", "matroska", "webm", "mpegts", "hls")))
         .put("video_codecs", JSONArray(videoCodecs))
+        .put("video_decoders", JSONArray(videoDecoders.map(VideoDecoderCapability::toJson)))
         .put("audio_codecs", JSONArray(audioCodecs))
         .put("audio_passthrough", JSONArray(audioPassthrough))
         .put("passthrough_available", audioPassthrough.isNotEmpty())
-        .put("audio_downmix", true)
+        .put("audio_downmix", false)
         .put("video_hdr_formats", JSONArray(videoHdrFormats))
         .put("display_hdr_formats", JSONArray(displayHdrFormats))
         .put("display_hdr_enabled", displayHdrEnabled)
@@ -379,7 +394,38 @@ data class PlaybackCapabilities(
         .put("max_height", maxHeight)
         .put("max_audio_channels", maxAudioChannels)
         .put("compatibility_mode", true)
-        .put("preferred_stream_container", "hls")
+        // Let Media3 use its native progressive extractor for converted files.
+        // In particular, AV1 cannot be copied reliably into MPEG-TS HLS when
+        // only the audio needs conversion. Live Tube TV URLs remain HLS.
+        .put("preferred_stream_container", "")
         .put("tube_tv_output_video_range", tubeTvOutputVideoRange ?: JSONObject.NULL)
         .put("tube_tv_output_frame_rate", tubeTvOutputFrameRate ?: JSONObject.NULL)
+}
+
+data class VideoDecoderCapability(
+    val codec: String,
+    val profile: String,
+    val maxLevel: Int,
+    val maxBitDepth: Int,
+    val hardwareAccelerated: Boolean,
+    val performanceLimits: List<VideoPerformanceLimit>,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("codec", codec)
+        .put("profile", profile)
+        .put("max_level", maxLevel)
+        .put("max_bit_depth", maxBitDepth)
+        .put("hardware_accelerated", hardwareAccelerated)
+        .put("performance_limits", JSONArray(performanceLimits.map(VideoPerformanceLimit::toJson)))
+}
+
+data class VideoPerformanceLimit(
+    val maxWidth: Int,
+    val maxHeight: Int,
+    val maxFrameRate: Double,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("max_width", maxWidth)
+        .put("max_height", maxHeight)
+        .put("max_frame_rate", maxFrameRate)
 }

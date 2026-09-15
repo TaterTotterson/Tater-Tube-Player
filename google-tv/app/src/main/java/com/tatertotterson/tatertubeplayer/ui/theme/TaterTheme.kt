@@ -8,6 +8,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
@@ -38,16 +43,37 @@ fun TaterTubeTheme(content: @Composable () -> Unit) {
         Box(
             Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(TaterColors.Orange.copy(alpha = 0.17f), Color.Transparent),
-                        center = Offset(1500f, 40f),
-                        radius = 1050f,
+                .background(TaterColors.Background)
+                .drawWithCache {
+                    val glow = Brush.radialGradient(
+                        colors = listOf(
+                            TaterColors.Orange.copy(alpha = 0.19f),
+                            TaterColors.Orange.copy(alpha = 0.07f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.84f, size.height * 0.07f),
+                        radius = size.minDimension * 0.82f,
                     )
-                )
-                .background(TaterColors.Background.copy(alpha = 0.82f))
+                    onDrawBehind { drawRect(glow) }
+                }
         ) {
             content()
         }
     }
+}
+
+fun Modifier.taterFocusGlow(
+    focused: Boolean,
+    shape: Shape,
+    elevation: Dp = 18.dp,
+): Modifier = if (focused) {
+    shadow(
+        elevation = elevation,
+        shape = shape,
+        clip = false,
+        ambientColor = TaterColors.Orange.copy(alpha = 0.42f),
+        spotColor = TaterColors.Orange.copy(alpha = 0.58f),
+    )
+} else {
+    this
 }

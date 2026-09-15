@@ -1,12 +1,18 @@
 package com.tatertotterson.tatertubeplayer.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,9 +43,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -57,10 +67,12 @@ import com.tatertotterson.tatertubeplayer.model.MediaItem
 import com.tatertotterson.tatertubeplayer.model.RecommendationItem
 import com.tatertotterson.tatertubeplayer.ui.components.GlassSurface
 import com.tatertotterson.tatertubeplayer.ui.components.MediaCard
+import com.tatertotterson.tatertubeplayer.ui.components.RestoreInitialFocus
 import com.tatertotterson.tatertubeplayer.ui.components.SectionHeading
 import com.tatertotterson.tatertubeplayer.ui.components.TaterArtwork
 import com.tatertotterson.tatertubeplayer.ui.components.TaterButton
 import com.tatertotterson.tatertubeplayer.ui.theme.TaterColors
+import com.tatertotterson.tatertubeplayer.ui.theme.taterFocusGlow
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -78,6 +90,7 @@ fun LibraryScreen(viewModel: PlayerViewModel) {
 private fun LibraryOverview(viewModel: PlayerViewModel) {
     val state = viewModel.state
     val home = state.home ?: return
+    val initialFocus = remember { FocusRequester() }
     val rows = state.libraryRows.filter { row ->
         val id = row.entry.id.lowercase()
         val type = row.entry.type.orEmpty().lowercase()
@@ -94,7 +107,11 @@ private fun LibraryOverview(viewModel: PlayerViewModel) {
                     Modifier.padding(22.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    TaterButton("All Movies", { viewModel.openLibrary(LibraryLocation.AllMovies) }, Modifier.weight(1f))
+                    TaterButton(
+                        "All Movies",
+                        { viewModel.openLibrary(LibraryLocation.AllMovies) },
+                        Modifier.weight(1f).focusRequester(initialFocus),
+                    )
                     TaterButton("All TV Shows", { viewModel.openLibrary(LibraryLocation.AllShows) }, Modifier.weight(1f))
                     if (home.capabilities.newznab) {
                         TaterButton("Discover", { viewModel.selectDestination(Destination.DISCOVER) }, Modifier.weight(1f))
@@ -116,6 +133,11 @@ private fun LibraryOverview(viewModel: PlayerViewModel) {
             }
         }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "library-overview",
+        enabled = !state.menuVisible && state.selectedMedia == null,
+    )
 }
 
 @Composable
@@ -123,7 +145,10 @@ private fun LibraryShelf(row: LibraryRow, viewModel: PlayerViewModel) {
     val parent = LibraryLocation.fromEntry(row.entry)
     Column {
         SectionHeading(row.title)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+        ) {
             items(row.items, key = { it.id }) { item ->
                 MediaCard(
                     item = item,
@@ -150,6 +175,8 @@ private fun LibraryCollection(location: LibraryLocation, viewModel: PlayerViewMo
     val state = viewModel.state
     val page = state.libraryPages[location.cacheKey]
     val items = page?.items.orEmpty().naturalOrder()
+    val firstItemId = items.firstOrNull()?.id
+    val initialFocus = remember { FocusRequester() }
     val isEpisodePage = items.isNotEmpty() && items.count { it.isEpisode } >= items.size / 2
     val showHero = location.mediaType.orEmpty().lowercase() in setOf("show", "series", "season", "tvshow")
 
@@ -183,18 +210,28 @@ private fun LibraryCollection(location: LibraryLocation, viewModel: PlayerViewMo
                     verticalArrangement = Arrangement.spacedBy(22.dp),
                     contentPadding = PaddingValues(8.dp),
                 ) {
-                    items(items, key = { it.id }) { item -> EpisodeCard(item, viewModel) { viewModel.openDetails(item) } }
+                    items(items, key = { it.id }) { item ->
+                        EpisodeCard(
+                            item,
+                            viewModel,
+                            modifier = if (item.id == firstItemId) Modifier.focusRequester(initialFocus) else Modifier,
+                        ) { viewModel.openDetails(item) }
+                    }
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(188.dp),
+                    columns = GridCells.Adaptive(248.dp),
                     modifier = Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(22.dp),
                     verticalArrangement = Arrangement.spacedBy(26.dp),
                     contentPadding = PaddingValues(8.dp),
                 ) {
                     items(items, key = { it.id }) { item ->
-                        PosterCard(item, viewModel) {
+                        PosterCard(
+                            item,
+                            viewModel,
+                            modifier = if (item.id == firstItemId) Modifier.focusRequester(initialFocus) else Modifier,
+                        ) {
                             viewModel.activateLibraryItem(item, location)
                         }
                     }
@@ -202,6 +239,11 @@ private fun LibraryCollection(location: LibraryLocation, viewModel: PlayerViewMo
             }
         }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "${location.cacheKey}:$firstItemId",
+        enabled = firstItemId != null && !state.menuVisible && state.selectedMedia == null,
+    )
     LaunchedEffect(location.cacheKey) { viewModel.loadLibraryPage(location) }
 }
 
@@ -236,22 +278,23 @@ private fun CollectionHero(location: LibraryLocation, items: List<MediaItem>, vi
 }
 
 @Composable
-private fun PosterCard(item: MediaItem, viewModel: PlayerViewModel, onClick: () -> Unit) {
-    FocusCard(onClick, Modifier.width(188.dp), 20.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+private fun PosterCard(item: MediaItem, viewModel: PlayerViewModel, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusCard(onClick, modifier.width(248.dp), 20.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
             TaterArtwork(
                 item,
                 viewModel.artworkUrl(item),
                 viewModel.token,
-                Modifier.fillMaxWidth().height(278.dp).clip(RoundedCornerShape(17.dp)),
+                Modifier.fillMaxWidth().height(365.dp).clip(RoundedCornerShape(18.dp)),
             )
-            Text(item.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(item.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
             val count = maxOf(item.episodeCount, item.leafCount)
             Text(
                 item.resumeTitle?.let { "Continue $it" } ?: if (count > 0) "$count episodes" else item.subtitle.orEmpty(),
                 color = if (item.resumeTitle != null) TaterColors.OrangeBright else TaterColors.SecondaryText,
-                fontSize = 13.sp,
+                fontSize = 20.sp,
                 maxLines = 1,
+                modifier = Modifier.padding(horizontal = 8.dp),
             )
             ProgressBar(item.progressPercent.toFloat())
         }
@@ -259,8 +302,8 @@ private fun PosterCard(item: MediaItem, viewModel: PlayerViewModel, onClick: () 
 }
 
 @Composable
-private fun EpisodeCard(item: MediaItem, viewModel: PlayerViewModel, onClick: () -> Unit) {
-    FocusCard(onClick, Modifier.fillMaxWidth(), 22.dp) {
+private fun EpisodeCard(item: MediaItem, viewModel: PlayerViewModel, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusCard(onClick, modifier.fillMaxWidth(), 22.dp) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             TaterArtwork(
                 item,
@@ -282,6 +325,7 @@ private fun EpisodeCard(item: MediaItem, viewModel: PlayerViewModel, onClick: ()
 fun LiveGuideScreen(viewModel: PlayerViewModel) {
     val state = viewModel.state
     val guide = state.liveGuide
+    val initialFocus = remember { FocusRequester() }
     var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         viewModel.refreshLiveGuide()
@@ -308,14 +352,28 @@ fun LiveGuideScreen(viewModel: PlayerViewModel) {
         return
     }
     val elapsed = guide.elapsedSeconds(clock)
+    val firstChannelId = guide.channels.firstOrNull()?.id
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 46.dp, end = 46.dp, top = 30.dp, bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         stickyHeader { GuideHeader() }
-        items(guide.channels, key = { it.id }) { channel -> GuideRow(channel, guide, elapsed, viewModel) }
+        items(guide.channels, key = { it.id }) { channel ->
+            GuideRow(
+                channel,
+                guide,
+                elapsed,
+                viewModel,
+                channelModifier = if (channel.id == firstChannelId) Modifier.focusRequester(initialFocus) else Modifier,
+            )
+        }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "guide:$firstChannelId",
+        enabled = firstChannelId != null && !state.menuVisible && state.selectedMedia == null,
+    )
 }
 
 @Composable
@@ -331,10 +389,16 @@ private fun GuideHeader() {
 }
 
 @Composable
-private fun GuideRow(channel: LiveChannel, guide: LiveGuide, elapsed: Double, viewModel: PlayerViewModel) {
+private fun GuideRow(
+    channel: LiveChannel,
+    guide: LiveGuide,
+    elapsed: Double,
+    viewModel: PlayerViewModel,
+    channelModifier: Modifier = Modifier,
+) {
     val programs = channel.displayedPrograms(elapsed)
     Row(Modifier.fillMaxWidth().height(180.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        ChannelCard(channel, viewModel, Modifier.width(210.dp))
+        ChannelCard(channel, viewModel, channelModifier.width(210.dp))
         repeat(3) { index ->
             val program = programs.getOrNull(index)
             if (program == null) GuidePlaceholder(index, Modifier.weight(1f))
@@ -367,6 +431,7 @@ private fun ChannelCard(channel: LiveChannel, viewModel: PlayerViewModel, modifi
                     viewModel.token,
                     Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 24.dp),
                     ContentScale.Fit,
+                    backgroundColor = Color.Transparent,
                 )
             } else {
                 Column(Modifier.align(Alignment.Center).padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -448,15 +513,27 @@ fun DiscoveryScreen(viewModel: PlayerViewModel) {
         DiscoverStage.FILES -> DiscoverFiles(viewModel)
     }
     if (viewModel.state.isPreparingDiscovery) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .64f)), contentAlignment = Alignment.Center) {
-            StatePanel("Preparing your stream…", "Tater Tube Server is finding the playable files.", true)
-        }
+        DiscoveryPreparingOverlay()
+    }
+}
+
+@Composable
+internal fun DiscoveryPreparingOverlay() {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .64f)), contentAlignment = Alignment.Center) {
+        StatePanel(
+            "Preparing your stream…",
+            "Tater Tube Server is finding the best playback path.",
+            loading = true,
+            modifier = Modifier.width(660.dp),
+        )
     }
 }
 
 @Composable
 private fun DiscoverCategories(viewModel: PlayerViewModel) {
     val state = viewModel.state
+    val initialFocus = remember { FocusRequester() }
+    val firstCategoryId = state.discoverCategories.firstOrNull()?.id
     Column(Modifier.fillMaxSize().padding(52.dp), verticalArrangement = Arrangement.spacedBy(26.dp)) {
         DiscoveryHero("Find your next favorite.", "Choose a collection, pick a title, then select a release that fits your screen and sound system.")
         if (state.discoverCategories.isEmpty()) {
@@ -473,15 +550,26 @@ private fun DiscoverCategories(viewModel: PlayerViewModel) {
                 verticalArrangement = Arrangement.spacedBy(22.dp),
                 contentPadding = PaddingValues(8.dp),
             ) {
-                items(state.discoverCategories, key = { it.id }) { category -> DiscoveryCategoryCard(category, viewModel) }
+                items(state.discoverCategories, key = { it.id }) { category ->
+                    DiscoveryCategoryCard(
+                        category,
+                        viewModel,
+                        if (category.id == firstCategoryId) Modifier.focusRequester(initialFocus) else Modifier,
+                    )
+                }
             }
         }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "discover-categories:$firstCategoryId",
+        enabled = firstCategoryId != null && !state.menuVisible && state.selectedMedia == null && !state.isPreparingDiscovery,
+    )
     LaunchedEffect(Unit) { viewModel.refreshDiscoverCatalog() }
 }
 
 @Composable
-private fun DiscoveryCategoryCard(category: DiscoverCategory, viewModel: PlayerViewModel) {
+private fun DiscoveryCategoryCard(category: DiscoverCategory, viewModel: PlayerViewModel, modifier: Modifier = Modifier) {
     val art = when (category.artworkKey) {
         "popular-movies" -> R.drawable.discover_popular_movies
         "new-movies" -> R.drawable.discover_new_movies
@@ -490,9 +578,14 @@ private fun DiscoveryCategoryCard(category: DiscoverCategory, viewModel: PlayerV
         "featured-tv" -> R.drawable.discover_featured_tv
         else -> R.drawable.discover_featured_movies
     }
-    FocusCard({ viewModel.openDiscoverCategory(category) }, Modifier.fillMaxWidth(), 22.dp) {
+    FocusCard({ viewModel.openDiscoverCategory(category) }, modifier.fillMaxWidth(), 22.dp) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Image(painterResource(art), category.title, Modifier.fillMaxWidth().height(142.dp).clip(RoundedCornerShape(17.dp)), contentScale = ContentScale.Crop)
+            Image(
+                painterResource(art),
+                category.title,
+                Modifier.fillMaxWidth().aspectRatio(2f).clip(RoundedCornerShape(17.dp)),
+                contentScale = ContentScale.Fit,
+            )
             Text(category.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Text(category.detail ?: "Browse this collection", color = TaterColors.SecondaryText, fontSize = 14.sp, maxLines = 1)
         }
@@ -503,36 +596,61 @@ private fun DiscoveryCategoryCard(category: DiscoverCategory, viewModel: PlayerV
 private fun DiscoverTitles(viewModel: PlayerViewModel) {
     val state = viewModel.state
     val category = state.discoverCategory ?: return
+    val items = state.discoverPage?.items.orEmpty()
+    val firstItemId = items.firstOrNull()?.id
+    val initialFocus = remember { FocusRequester() }
     Column(Modifier.fillMaxSize().padding(52.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         DiscoveryHero(category.title, category.detail ?: "Choose a title to search for a playable release.")
-        val items = state.discoverPage?.items.orEmpty()
         if (items.isEmpty()) StatePanel("Loading ${category.title}…", "Your cached collection appears first whenever available.", state.isDiscoverRefreshing)
         else LazyVerticalGrid(
-            columns = GridCells.Adaptive(188.dp),
+            columns = GridCells.Adaptive(248.dp),
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(22.dp),
             verticalArrangement = Arrangement.spacedBy(26.dp),
             contentPadding = PaddingValues(8.dp),
         ) {
-            items(items, key = { it.id }) { item -> PosterCard(item, viewModel) { viewModel.openDiscoverTitle(item) } }
+            items(items, key = { it.id }) { item ->
+                PosterCard(
+                    item,
+                    viewModel,
+                    modifier = if (item.id == firstItemId) Modifier.focusRequester(initialFocus) else Modifier,
+                ) { viewModel.openDiscoverTitle(item) }
+            }
         }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "discover-titles:$firstItemId",
+        enabled = firstItemId != null && !state.menuVisible && state.selectedMedia == null && !state.isPreparingDiscovery,
+    )
 }
 
 @Composable
 private fun DiscoverResults(viewModel: PlayerViewModel) {
     val state = viewModel.state
     val title = state.discoverTitle ?: return
+    val results = state.discoverPage?.items.orEmpty()
+    val firstResultId = results.firstOrNull()?.id
+    val initialFocus = remember { FocusRequester() }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(70.dp, 36.dp, 70.dp, 80.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item { DiscoveryTitleHero(title, viewModel) }
-        val results = state.discoverPage?.items.orEmpty()
         if (results.isEmpty()) item { StatePanel("Finding releases…", "Searching for the complete title now.", state.isDiscoverRefreshing) }
-        else items(results, key = { it.id }) { release -> ReleaseRow(release) { viewModel.prepareDiscoverRelease(release) } }
+        else items(results, key = { it.id }) { release ->
+            ReleaseRow(
+                release,
+                modifier = if (release.id == firstResultId) Modifier.focusRequester(initialFocus) else Modifier,
+            ) { viewModel.prepareDiscoverRelease(release) }
+        }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "discover-results:$firstResultId",
+        enabled = firstResultId != null && !state.menuVisible && state.selectedMedia == null && !state.isPreparingDiscovery,
+    )
 }
 
 @Composable
@@ -550,8 +668,8 @@ private fun DiscoveryTitleHero(item: MediaItem, viewModel: PlayerViewModel) {
 }
 
 @Composable
-private fun ReleaseRow(release: MediaItem, onClick: () -> Unit) {
-    FocusCard(onClick, Modifier.fillMaxWidth(), 20.dp) {
+private fun ReleaseRow(release: MediaItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusCard(onClick, modifier.fillMaxWidth(), 20.dp) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 17.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(72.dp).background(TaterColors.Orange.copy(alpha = .15f), RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
                 Text("▶", color = TaterColors.OrangeBright, fontSize = 27.sp)
@@ -572,18 +690,29 @@ private fun ReleaseRow(release: MediaItem, onClick: () -> Unit) {
 
 @Composable
 private fun DiscoverFiles(viewModel: PlayerViewModel) {
+    val state = viewModel.state
+    val firstFileId = state.preparedFiles.firstOrNull()?.id
+    val initialFocus = remember { FocusRequester() }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(90.dp, 60.dp, 90.dp, 80.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item { DiscoveryHero("Choose a file", "This release contains more than one playable video.") }
-        items(viewModel.state.preparedFiles, key = { it.id }) { file ->
-            ReleaseRow(file.playbackItem.copy(title = file.filename, sizeText = null, files = null, grabs = null)) {
+        items(state.preparedFiles, key = { it.id }) { file ->
+            ReleaseRow(
+                file.playbackItem.copy(title = file.filename, sizeText = null, files = null, grabs = null),
+                modifier = if (file.id == firstFileId) Modifier.focusRequester(initialFocus) else Modifier,
+            ) {
                 viewModel.playPreparedFile(file)
             }
         }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "discover-files:$firstFileId",
+        enabled = firstFileId != null && !state.menuVisible && state.selectedMedia == null && !state.isPreparingDiscovery,
+    )
 }
 
 @Composable
@@ -603,6 +732,8 @@ private fun DiscoveryHero(title: String, message: String) {
 fun TaterPicksScreen(viewModel: PlayerViewModel) {
     val state = viewModel.state
     var focused by remember { mutableStateOf<RecommendationItem?>(null) }
+    val initialFocus = remember { FocusRequester() }
+    val firstPickId = state.recommendations.firstOrNull()?.id
     Column(Modifier.fillMaxSize().padding(52.dp), verticalArrangement = Arrangement.spacedBy(26.dp)) {
         PicksHero(focused, viewModel)
         if (state.recommendations.isEmpty()) {
@@ -623,12 +754,18 @@ fun TaterPicksScreen(viewModel: PlayerViewModel) {
                     PickCard(
                         recommendation,
                         viewModel,
+                        modifier = if (recommendation.id == firstPickId) Modifier.focusRequester(initialFocus) else Modifier,
                         onFocus = { active -> if (active) focused = recommendation else if (focused?.id == recommendation.id) focused = null },
                     ) { viewModel.activateRecommendation(recommendation) }
                 }
             }
         }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "picks:$firstPickId",
+        enabled = firstPickId != null && !state.menuVisible && state.selectedMedia == null,
+    )
     LaunchedEffect(Unit) { viewModel.refreshRecommendations() }
 }
 
@@ -665,10 +802,11 @@ private fun PicksHero(focused: RecommendationItem?, viewModel: PlayerViewModel) 
 private fun PickCard(
     recommendation: RecommendationItem,
     viewModel: PlayerViewModel,
+    modifier: Modifier = Modifier,
     onFocus: (Boolean) -> Unit,
     onClick: () -> Unit,
 ) {
-    FocusCard(onClick, Modifier.fillMaxWidth(), 20.dp, onFocus) {
+    FocusCard(onClick, modifier.fillMaxWidth(), 20.dp, onFocus) {
         Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Box {
                 TaterArtwork(
@@ -695,10 +833,10 @@ private fun PickCard(
 
 @Composable
 private fun DestinationCard(title: String, glyph: String, onClick: () -> Unit) {
-    FocusCard(onClick, Modifier.width(160.dp).height(146.dp), 20.dp) {
+    FocusCard(onClick, Modifier.width(190.dp).height(202.dp), 22.dp) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text(glyph, color = TaterColors.OrangeBright, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-            Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text(glyph, color = TaterColors.OrangeBright, fontSize = 54.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -719,10 +857,14 @@ private fun FocusCard(
         modifier
             .onFocusChanged { focused = it.isFocused; onFocus(it.isFocused) }
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .taterFocusGlow(focused, shape)
             .clip(shape)
             .background(TaterColors.Glass)
             .border(if (focused) 4.dp else 1.dp, border, shape)
-            .padding(if (focused) (4.dp * (scale - 1f)) else 0.dp)
     ) { content() }
 }
 
@@ -735,13 +877,52 @@ private fun ProgressBar(percent: Float) {
 }
 
 @Composable
-private fun StatePanel(title: String, message: String, loading: Boolean = false) {
-    GlassSurface(Modifier.fillMaxWidth().height(210.dp), 28.dp) {
+private fun StatePanel(
+    title: String,
+    message: String,
+    loading: Boolean = false,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
+    GlassSurface(modifier.height(210.dp), 28.dp) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text(if (loading) "•••" else "✦", color = TaterColors.OrangeBright, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            if (loading) LoadingDots()
+            else Text("✦", color = TaterColors.OrangeBright, fontSize = 30.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
             Text(title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
             Text(message, color = TaterColors.SecondaryText, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun LoadingDots() {
+    val animation = rememberInfiniteTransition(label = "loading-dots")
+    Row(
+        Modifier.height(30.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(3) { index ->
+            val lift by animation.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 420, delayMillis = index * 120),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "loading-dot-$index",
+            )
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .graphicsLayer {
+                        translationY = -6.dp.toPx() * lift
+                        scaleX = 0.82f + (0.18f * lift)
+                        scaleY = scaleX
+                        alpha = 0.48f + (0.52f * lift)
+                    }
+                    .background(TaterColors.OrangeBright, CircleShape)
+            )
         }
     }
 }

@@ -2,8 +2,11 @@ package com.tatertotterson.tatertubeplayer.ui
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +45,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -55,17 +60,23 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.tatertotterson.tatertubeplayer.R
-import com.tatertotterson.tatertubeplayer.model.LibraryEntry
 import com.tatertotterson.tatertubeplayer.model.LibraryLocation
 import com.tatertotterson.tatertubeplayer.model.MediaItem
 import com.tatertotterson.tatertubeplayer.model.PlayerHome
 import com.tatertotterson.tatertubeplayer.playback.PlaybackScreen
 import com.tatertotterson.tatertubeplayer.ui.components.GlassSurface
 import com.tatertotterson.tatertubeplayer.ui.components.MediaCard
+import com.tatertotterson.tatertubeplayer.ui.components.RestoreInitialFocus
 import com.tatertotterson.tatertubeplayer.ui.components.SectionHeading
 import com.tatertotterson.tatertubeplayer.ui.components.TaterArtwork
 import com.tatertotterson.tatertubeplayer.ui.components.TaterButton
 import com.tatertotterson.tatertubeplayer.ui.theme.TaterColors
+import com.tatertotterson.tatertubeplayer.ui.theme.taterFocusGlow
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlin.math.min
 
 @Composable
@@ -95,9 +106,12 @@ private fun TaterTubeAppContent(viewModel: PlayerViewModel) {
             PlaybackScreen(
                 session = state.playback,
                 token = viewModel.token,
+                liveGuide = state.liveGuide,
                 onExit = viewModel::stopPlayback,
                 onAudioTrackChange = viewModel::changeAudioTrack,
+                onFirstFrame = viewModel::finishDiscoveryPreparation,
             )
+            if (state.isPreparingDiscovery) DiscoveryPreparingOverlay()
             state.errorMessage?.let { message ->
                 MessageOverlay(message = message, onDismiss = viewModel::dismissError)
             }
@@ -333,23 +347,72 @@ private fun MainShell(viewModel: PlayerViewModel) {
 
 @Composable
 private fun HomeScreen(viewModel: PlayerViewModel) {
-    val home = viewModel.state.home
+    val state = viewModel.state
+    val home = state.home
     if (home == null) {
         StartingScreen()
         return
     }
+    val initialFocus = remember { FocusRequester() }
+    var homeClock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val liveItems = state.liveGuide?.let { guide ->
+        val elapsed = guide.elapsedSeconds(homeClock)
+        guide.channels.map { channel ->
+            val programs = channel.displayedPrograms(elapsed)
+            val current = programs.firstOrNull()
+            val next = programs.drop(1).firstOrNull()
+            val artwork = current?.let(viewModel::guideArtworkUrl)
+            channel.playbackItem().copy(
+                title = current?.title ?: channel.title,
+                subtitle = next?.let { "Up next: ${it.title}" }
+                    ?: if (channel.number.isBlank()) "Live on Tater Tube" else "Channel ${channel.number}",
+                summary = current?.summary ?: channel.playbackItem().summary,
+                category = current?.category,
+                categoryId = current?.categoryId,
+                sourceIndex = current?.sourceIndex ?: 0,
+                path = current?.path,
+                poster = artwork ?: current?.poster ?: channel.logoUrl,
+                backdrop = artwork ?: current?.backdrop,
+                seriesPoster = current?.seriesPoster,
+                seasonPoster = current?.seasonPoster,
+                episodeStill = current?.episodeStill,
+                progressPercent = current?.progress(elapsed)?.times(100.0) ?: 0.0,
+            )
+        }
+    }?.takeIf { it.isNotEmpty() } ?: home.liveChannels
+    val continueLocation = state.libraryRows
+        .firstOrNull { it.entry.type.equals("continue", true) }
+        ?.entry
+        ?.let(LibraryLocation::fromEntry)
+        ?: LibraryLocation("", "Continue Watching", continueWatching = true)
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 58.dp, end = 58.dp, top = 42.dp, bottom = 70.dp),
-        verticalArrangement = Arrangement.spacedBy(34.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 78.dp, end = 78.dp, top = 42.dp, bottom = 110.dp),
+        verticalArrangement = Arrangement.spacedBy(54.dp),
     ) {
-        item { HomeHero(home, viewModel) }
+        item { HomeHero(home, homeClock, viewModel, initialFocus) }
         if (home.continueWatching.isNotEmpty()) {
             item {
-                MediaShelf("Continue Watching", home.continueWatching, viewModel) {
-                    viewModel.selectDestination(Destination.LIBRARY)
-                    viewModel.openLibrary(LibraryLocation.fromEntry(LibraryEntry("continue", "Continue Watching", "continue")))
-                }
+                MediaShelf(
+                    title = "Continue Watching",
+                    items = home.continueWatching,
+                    viewModel = viewModel,
+                    onMore = {
+                        viewModel.selectDestination(Destination.LIBRARY)
+                        viewModel.openLibrary(continueLocation)
+                    },
+                )
+            }
+        }
+        if (liveItems.isNotEmpty()) {
+            item {
+                MediaShelf(
+                    title = "Live on Tater Tube",
+                    items = liveItems,
+                    viewModel = viewModel,
+                    onMore = { viewModel.selectDestination(Destination.LIVE_TV) },
+                    onItemClick = { viewModel.play(it, resume = false) },
+                )
             }
         }
         if (home.recentlyAdded.isNotEmpty()) {
@@ -367,46 +430,68 @@ private fun HomeScreen(viewModel: PlayerViewModel) {
                 )
             }
         }
-        if (home.liveChannels.isNotEmpty()) {
-            item { MediaShelf("Live on Tater Tube", home.liveChannels, viewModel) { viewModel.selectDestination(Destination.LIVE_TV) } }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            homeClock = System.currentTimeMillis()
         }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "home:${home.capabilities.tubeTV}",
+        enabled = !state.menuVisible && state.selectedMedia == null,
+    )
 }
 
 @Composable
-private fun HomeHero(home: PlayerHome, viewModel: PlayerViewModel) {
-    GlassSurface(Modifier.fillMaxWidth().height(300.dp), cornerRadius = 30.dp) {
+private fun HomeHero(
+    home: PlayerHome,
+    clock: Long,
+    viewModel: PlayerViewModel,
+    initialFocus: FocusRequester,
+) {
+    GlassSurface(Modifier.fillMaxWidth().height(320.dp), cornerRadius = 36.dp) {
         Row(
-            Modifier.fillMaxSize().padding(start = 42.dp, end = 16.dp),
+            Modifier.fillMaxSize().padding(horizontal = 55.dp, vertical = 35.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(54.dp),
         ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Text(
-                    home.hero.eyebrow.uppercase(),
+                    homeEyebrow(clock),
                     color = TaterColors.OrangeBright,
-                    fontSize = 15.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.4.sp,
+                    letterSpacing = 2.5.sp,
                 )
                 Text(
-                    home.hero.message,
+                    homeMessage(clock),
                     color = Color.White,
-                    fontSize = 34.sp,
+                    fontSize = 52.sp,
                     fontWeight = FontWeight.Bold,
-                    lineHeight = 42.sp,
-                    maxLines = 3,
+                    lineHeight = 60.sp,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TaterButton("Browse Library", { viewModel.selectDestination(Destination.LIBRARY) })
+                    if (home.capabilities.tubeTV) {
+                        TaterButton(
+                            "Watch Live",
+                            { viewModel.selectDestination(Destination.LIVE_TV) },
+                            Modifier.focusRequester(initialFocus),
+                        )
+                    }
+                    TaterButton(
+                        "Browse Library",
+                        { viewModel.selectDestination(Destination.LIBRARY) },
+                        if (home.capabilities.tubeTV) Modifier else Modifier.focusRequester(initialFocus),
+                    )
                     if (home.capabilities.newznab) {
                         TaterButton("Discover", { viewModel.selectDestination(Destination.DISCOVER) })
                     }
                     if (home.capabilities.taterLink) {
                         TaterButton("Tater Picks", { viewModel.selectDestination(Destination.TATER_PICKS) })
-                    }
-                    if (home.capabilities.tubeTV) {
-                        TaterButton("Watch Live", { viewModel.selectDestination(Destination.LIVE_TV) })
                     }
                 }
             }
@@ -414,10 +499,49 @@ private fun HomeHero(home: PlayerHome, viewModel: PlayerViewModel) {
                 painter = painterResource(R.drawable.tater_hero_remote),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.width(420.dp).fillMaxHeight(),
+                modifier = Modifier.width(300.dp).height(260.dp),
             )
         }
     }
+}
+
+private fun homeEyebrow(clock: Long): String {
+    val calendar = Calendar.getInstance().apply { timeInMillis = clock }
+    val weekday = SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(clock)).uppercase()
+    val timeOfDay = when (calendar.get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> "MORNING"
+        in 12..16 -> "AFTERNOON"
+        in 17..21 -> "EVENING"
+        else -> "LATE NIGHT"
+    }
+    return "$weekday $timeOfDay"
+}
+
+private fun homeMessage(clock: Long): String {
+    val calendar = Calendar.getInstance().apply { timeInMillis = clock }
+    val messages = when (calendar.get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> listOf(
+            "Start the day with something good.",
+            "Your morning watch is ready.",
+            "Ease into something worth watching.",
+        )
+        in 12..16 -> listOf(
+            "Take a break with something good.",
+            "There’s always time for one more.",
+            "Your afternoon watch is ready.",
+        )
+        in 17..21 -> listOf(
+            "Settle in and press play.",
+            "Your next watch starts here.",
+            "Everything good is right where you left it.",
+        )
+        else -> listOf(
+            "One more before calling it a night?",
+            "Your late-night watch is ready.",
+            "Everything good is still right where you left it.",
+        )
+    }
+    return messages[calendar.get(Calendar.DAY_OF_YEAR) % messages.size]
 }
 
 @Composable
@@ -430,25 +554,53 @@ private fun MediaShelf(
 ) {
     Column {
         SectionHeading(title)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+        ) {
             items(items, key = { it.id }) { item ->
                 MediaCard(
                     item = item,
-                    artworkUrl = viewModel.artworkUrl(item),
+                    artworkUrl = viewModel.wideArtworkUrl(item),
                     token = viewModel.token,
                     onClick = { onItemClick?.invoke(item) ?: viewModel.openDetails(item) },
                 )
             }
             if (onMore != null) {
                 item {
-                    TaterButton(
+                    ShelfDestinationCard(
                         text = if (title == "Live on Tater Tube") "Open Guide" else "See All",
                         onClick = onMore,
-                        modifier = Modifier.width(160.dp).height(146.dp),
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ShelfDestinationCard(text: String, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "destination-scale")
+    val shape = RoundedCornerShape(22.dp)
+    Column(
+        Modifier
+            .width(190.dp)
+            .height(202.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .taterFocusGlow(focused, shape)
+            .background(TaterColors.Glass, shape)
+            .border(if (focused) 4.dp else 1.dp, if (focused) TaterColors.OrangeBright else Color.White.copy(alpha = .1f), shape),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("→", color = TaterColors.OrangeBright, fontSize = 54.sp, fontWeight = FontWeight.Bold)
+        Text(text, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -494,6 +646,8 @@ private fun SimpleDestination(
 
 @Composable
 private fun SettingsScreen(viewModel: PlayerViewModel) {
+    val state = viewModel.state
+    val initialFocus = remember { FocusRequester() }
     Column(
         Modifier.fillMaxSize().padding(horizontal = 58.dp, vertical = 48.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
@@ -513,10 +667,15 @@ private fun SettingsScreen(viewModel: PlayerViewModel) {
                     fontSize = 17.sp,
                     lineHeight = 25.sp,
                 )
-                TaterButton("Disconnect", viewModel::disconnect)
+                TaterButton("Disconnect", viewModel::disconnect, Modifier.focusRequester(initialFocus))
             }
         }
     }
+    RestoreInitialFocus(
+        requester = initialFocus,
+        focusKey = "settings",
+        enabled = !state.menuVisible && state.selectedMedia == null,
+    )
 }
 
 @Composable
@@ -586,17 +745,31 @@ private fun MenuItem(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val borderColor by animateColorAsState(
+        if (focused) TaterColors.OrangeBright
+        else if (selected) TaterColors.Orange.copy(alpha = 0.46f)
+        else Color.Transparent,
+        label = "menu-border",
+    )
+    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "menu-scale")
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .taterFocusGlow(focused, shape, 15.dp)
             .background(
                 if (focused) Color.Black.copy(alpha = 0.92f)
                 else if (selected) TaterColors.Orange.copy(alpha = 0.16f)
                 else Color.Transparent,
-                RoundedCornerShape(16.dp),
+                shape,
             )
+            .border(if (focused) 4.dp else if (selected) 1.dp else 0.dp, borderColor, shape)
             .padding(horizontal = 17.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -651,7 +824,10 @@ private fun MediaDetailOverlay(item: MediaItem, viewModel: PlayerViewModel) {
             }
         }
     }
-    LaunchedEffect(item.id) { playFocus.requestFocus() }
+    LaunchedEffect(item.id) {
+        delay(120)
+        playFocus.requestFocus()
+    }
 }
 
 @Composable

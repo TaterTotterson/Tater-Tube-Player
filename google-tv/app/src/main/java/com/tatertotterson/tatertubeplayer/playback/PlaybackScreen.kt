@@ -1,6 +1,7 @@
 package com.tatertotterson.tatertubeplayer.playback
 
 import android.app.Activity
+import android.net.Uri
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -31,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -42,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -56,18 +59,23 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import com.tatertotterson.tatertubeplayer.ui.PlaybackSession
+import com.tatertotterson.tatertubeplayer.model.LiveGuide
 import com.tatertotterson.tatertubeplayer.ui.components.GlassSurface
 import com.tatertotterson.tatertubeplayer.ui.components.TaterArtwork
 import com.tatertotterson.tatertubeplayer.ui.theme.TaterColors
 import kotlinx.coroutines.delay
+import java.util.Locale
+import java.util.UUID
 
 @OptIn(UnstableApi::class)
 @Composable
 fun PlaybackScreen(
     session: PlaybackSession,
     token: String?,
+    liveGuide: LiveGuide? = null,
     onExit: (positionMs: Long, durationMs: Long, completed: Boolean) -> Unit,
     onAudioTrackChange: (trackIndex: Int, positionMs: Long) -> Unit,
+    onFirstFrame: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -83,6 +91,18 @@ fun PlaybackScreen(
     var audioLabel by remember(session.item.id) { mutableStateOf("AUTO") }
     var subtitleLabel by remember(session.item.id) { mutableStateOf("OFF") }
     val playbackFocus = remember(session.item.id) { FocusRequester() }
+    val initialServerPosition = session.startPositionMs.takeIf { session.plan.mode != "direct" && it > 0 } ?: 0L
+    var serverStartedPosition by remember(session.plan.streamUrl) { mutableLongStateOf(initialServerPosition) }
+    var pendingSeekTargetMs by remember(session.plan.streamUrl) { mutableStateOf<Long?>(null) }
+    val initialPlaybackUrl = remember(session.plan.streamUrl, initialServerPosition) {
+        session.plan.streamUrlAt(initialServerPosition, session.item.isLiveChannel)
+    }
+    val initialPlayerPosition = if (initialServerPosition > 0) 0L else session.startPositionMs
+    val plannedDurationMs = session.plan.source.durationSeconds
+        ?.times(1000.0)
+        ?.toLong()
+        ?.takeIf { it > 0 }
+        ?: session.item.durationMs
 
     val httpFactory = remember(token) {
         DefaultHttpDataSource.Factory().apply {
@@ -100,9 +120,15 @@ fun PlaybackScreen(
             .apply {
                 trackSelectionParameters = trackSelectionParameters.buildUpon()
                     .setPreferredAudioLanguage("en")
+                    .setForceHighestSupportedBitrate(true)
+                    .setMaxAudioChannelCount(session.plan.outputAudioChannels?.takeIf { it > 0 } ?: 2)
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                     .build()
-                setMediaItem(MediaItem.fromUri(session.plan.streamUrl), session.startPositionMs)
+                val mediaItem = MediaItem.Builder()
+                    .setUri(initialPlaybackUrl)
+                    .apply { session.plan.media3MimeType()?.let(::setMimeType) }
+                    .build()
+                setMediaItem(mediaItem, initialPlayerPosition)
                 prepare()
                 playWhenReady = true
             }
@@ -136,7 +162,7 @@ fun PlaybackScreen(
             val current = sourceTracks.indexOfFirst { it.index == session.plan.selectedAudioTrack }.coerceAtLeast(0)
             val next = sourceTracks[(current + 1) % sourceTracks.size]
             audioLabel = next.displayLabel()
-            onAudioTrackChange(next.index, player.currentPosition.coerceAtLeast(0))
+            onAudioTrackChange(next.index, serverStartedPosition + player.currentPosition.coerceAtLeast(0))
             overlayVisible = true
         }
     }
@@ -164,8 +190,10 @@ fun PlaybackScreen(
         if (hasExited) return
         hasExited = true
         onExit(
-            player.currentPosition.coerceAtLeast(0),
-            player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: durationMs,
+            serverStartedPosition + player.currentPosition.coerceAtLeast(0),
+            plannedDurationMs.takeIf { it > 0 }
+                ?: player.duration.takeIf { it > 0 && it != C.TIME_UNSET }
+                ?: durationMs,
             completed,
         )
     }
@@ -178,8 +206,13 @@ fun PlaybackScreen(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                onFirstFrame()
                 errorMessage = error.localizedMessage ?: "Native playback stopped unexpectedly."
                 overlayVisible = true
+            }
+
+            override fun onRenderedFirstFrame() {
+                onFirstFrame()
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -198,10 +231,34 @@ fun PlaybackScreen(
 
     LaunchedEffect(player) {
         while (!hasExited) {
-            positionMs = player.currentPosition.coerceAtLeast(0)
-            player.duration.takeIf { it > 0 && it != C.TIME_UNSET }?.let { durationMs = it }
+            positionMs = pendingSeekTargetMs
+                ?: serverStartedPosition + player.currentPosition.coerceAtLeast(0)
+            if (plannedDurationMs > 0) {
+                durationMs = plannedDurationMs
+            } else {
+                player.duration.takeIf { it > 0 && it != C.TIME_UNSET }?.let { durationMs = it }
+            }
             delay(500)
         }
+    }
+
+    LaunchedEffect(pendingSeekTargetMs) {
+        val target = pendingSeekTargetMs ?: return@LaunchedEffect
+        delay(650)
+        if (session.plan.mode == "direct") {
+            player.seekTo(target)
+        } else {
+            val remainPaused = !player.playWhenReady
+            serverStartedPosition = target
+            val replacement = MediaItem.Builder()
+                .setUri(session.plan.streamUrlAt(target, session.item.isLiveChannel))
+                .apply { session.plan.media3MimeType()?.let(::setMimeType) }
+                .build()
+            player.setMediaItem(replacement, 0L)
+            player.prepare()
+            player.playWhenReady = !remainPaused
+        }
+        pendingSeekTargetMs = null
     }
 
     LaunchedEffect(overlayVisible, interactiveOverlay) {
@@ -234,7 +291,16 @@ fun PlaybackScreen(
                     KeyEvent.KEYCODE_DPAD_LEFT -> {
                         if (interactiveOverlay) {
                             if (selectedControl == 0) cycleAudio() else cycleSubtitles()
-                        } else player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+                        } else {
+                            pendingSeekTargetMs = playbackSeekTarget(
+                                isLiveChannel = session.item.isLiveChannel,
+                                originMs = pendingSeekTargetMs
+                                    ?: serverStartedPosition + player.currentPosition.coerceAtLeast(0),
+                                deltaMs = -10_000,
+                                durationMs = plannedDurationMs,
+                            )
+                            pendingSeekTargetMs?.let { positionMs = it }
+                        }
                         overlayVisible = true
                         true
                     }
@@ -242,9 +308,29 @@ fun PlaybackScreen(
                         if (interactiveOverlay) {
                             if (selectedControl == 0) cycleAudio() else cycleSubtitles()
                         } else {
-                            val target = player.currentPosition + 10_000
-                            player.seekTo(if (durationMs > 0) target.coerceAtMost(durationMs) else target)
+                            pendingSeekTargetMs = playbackSeekTarget(
+                                isLiveChannel = session.item.isLiveChannel,
+                                originMs = pendingSeekTargetMs
+                                    ?: serverStartedPosition + player.currentPosition.coerceAtLeast(0),
+                                deltaMs = 10_000,
+                                durationMs = plannedDurationMs,
+                            )
+                            pendingSeekTargetMs?.let { positionMs = it }
                         }
+                        overlayVisible = true
+                        true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_REWIND,
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        val deltaMs = if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_REWIND) -10_000L else 10_000L
+                        pendingSeekTargetMs = playbackSeekTarget(
+                            isLiveChannel = session.item.isLiveChannel,
+                            originMs = pendingSeekTargetMs
+                                ?: serverStartedPosition + player.currentPosition.coerceAtLeast(0),
+                            deltaMs = deltaMs,
+                            durationMs = plannedDurationMs,
+                        )
+                        pendingSeekTargetMs?.let { positionMs = it }
                         overlayVisible = true
                         true
                     }
@@ -292,6 +378,7 @@ fun PlaybackScreen(
             factory = {
                 PlayerView(it).apply {
                     useController = false
+                    setKeepContentOnPlayerReset(true)
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -305,7 +392,18 @@ fun PlaybackScreen(
         )
 
         val logoUrl = session.item.channelLogoUrl
-        if (session.item.isLiveChannel && session.item.channelLogoOverlayEnabled == true && !logoUrl.isNullOrBlank()) {
+        val currentSegmentIsInterstitial = liveGuide?.let { guide ->
+            channelProgramIsInterstitial(
+                guide = guide,
+                channelNumber = session.item.channelNumber,
+                elapsed = guide.elapsedSeconds(),
+            )
+        } == true
+        if (session.item.isLiveChannel &&
+            session.item.channelLogoOverlayEnabled == true &&
+            !logoUrl.isNullOrBlank() &&
+            !currentSegmentIsInterstitial
+        ) {
             TaterArtwork(
                 item = session.item,
                 artworkUrl = logoUrl,
@@ -315,7 +413,9 @@ fun PlaybackScreen(
                     .align(session.item.channelLogoPosition.logoAlignment())
                     .padding(28.dp)
                     .width(154.dp)
-                    .height(92.dp),
+                    .height(92.dp)
+                    .alpha(0.74f),
+                backgroundColor = Color.Transparent,
             )
         }
 
@@ -335,12 +435,85 @@ fun PlaybackScreen(
                 subtitleLabel = subtitleLabel,
                 audioAvailable = maxOf(audioOptions.size, session.plan.source.audioTracks.size) > 1,
                 subtitlesAvailable = subtitleOptions.isNotEmpty(),
+                isLiveChannel = session.item.isLiveChannel,
                 interactive = interactiveOverlay,
                 selectedControl = selectedControl,
                 errorMessage = errorMessage,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+}
+
+internal fun channelProgramIsInterstitial(
+    guide: LiveGuide,
+    channelNumber: String?,
+    elapsed: Double,
+): Boolean {
+    val number = channelNumber?.takeIf { it.isNotBlank() } ?: return false
+    val channel = guide.channels.firstOrNull { it.number == number } ?: return false
+    return channel.schedule.firstOrNull { program ->
+        program.start <= elapsed && elapsed < program.end
+    }?.isInterstitial == true
+}
+
+private fun String.withReplacedQueryParameters(replacements: Map<String, String?>): String {
+    val source = Uri.parse(this)
+    // Preserve the server's application/x-www-form-urlencoded path exactly.
+    // Parsing and rebuilding it through Uri turns an encoded `+` space into a
+    // literal plus and makes the local-media path return 404.
+    val replacedNames = replacements.keys
+    val query = buildList {
+        source.encodedQuery.orEmpty().split('&')
+            .filterTo(this) { part ->
+                part.isNotEmpty() && Uri.decode(part.substringBefore('=')) !in replacedNames
+            }
+        replacements.forEach { (name, value) ->
+            if (value != null) add("${Uri.encode(name)}=${Uri.encode(value)}")
+        }
+    }.joinToString("&")
+    return source.buildUpon().encodedQuery(query.ifEmpty { null }).build().toString()
+}
+
+private fun com.tatertotterson.tatertubeplayer.model.PlaybackPlan.streamUrlAt(
+    positionMs: Long,
+    isLive: Boolean,
+): String {
+    if (mode == "direct") return streamUrl
+    return streamUrl.withReplacedQueryParameters(
+        buildMap {
+            put("start", positionMs.takeIf { it > 0 }?.let { String.format(Locale.US, "%.3f", it / 1000.0) })
+            if (!isLive) put("tater_hls_generation", UUID.randomUUID().toString().lowercase())
+        },
+    )
+}
+
+internal fun clampedSeekTarget(originMs: Long, deltaMs: Long, durationMs: Long): Long {
+    val target = (originMs + deltaMs).coerceAtLeast(0)
+    if (durationMs <= 0) return target
+    val lastPlayable = if (durationMs > 1_000) durationMs - 1_000 else durationMs
+    return target.coerceAtMost(lastPlayable)
+}
+
+internal fun playbackSeekTarget(
+    isLiveChannel: Boolean,
+    originMs: Long,
+    deltaMs: Long,
+    durationMs: Long,
+): Long? = if (isLiveChannel) null else clampedSeekTarget(originMs, deltaMs, durationMs)
+
+@OptIn(UnstableApi::class)
+private fun com.tatertotterson.tatertubeplayer.model.PlaybackPlan.media3MimeType(): String? {
+    val uri = Uri.parse(streamUrl)
+    val container = outputContainer?.lowercase()
+    return when {
+        container == "hls" || container == "m3u8" -> MimeTypes.APPLICATION_M3U8
+        uri.lastPathSegment?.endsWith(".m3u8", ignoreCase = true) == true -> MimeTypes.APPLICATION_M3U8
+        uri.getQueryParameter("tater_output_container").equals("hls", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
+        container == "mp4" || container == "mov" -> MimeTypes.VIDEO_MP4
+        container == "matroska" || container == "mkv" -> MimeTypes.VIDEO_MATROSKA
+        container == "mpegts" || container == "mpeg_ts" || container == "ts" -> MimeTypes.VIDEO_MP2T
+        else -> null
     }
 }
 
@@ -354,6 +527,7 @@ private fun PlaybackOverlay(
     subtitleLabel: String,
     audioAvailable: Boolean,
     subtitlesAvailable: Boolean,
+    isLiveChannel: Boolean,
     interactive: Boolean,
     selectedControl: Int,
     errorMessage: String?,
@@ -368,9 +542,36 @@ private fun PlaybackOverlay(
         Column(Modifier.padding(horizontal = 26.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(title, color = Color.White, fontSize = 22.sp)
-                Text("${formatTime(positionMs)}  /  ${formatTime(durationMs)}", color = Color.White, fontSize = 17.sp)
+                if (!isLiveChannel) {
+                    Text("${formatTime(positionMs)}  /  ${formatTime(durationMs)}", color = Color.White, fontSize = 17.sp)
+                }
             }
-            Box(
+            val progress = if (durationMs > 0) {
+                (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+            } else if (isLiveChannel) 1f else 0f
+            if (isLiveChannel) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Text("LIVE", color = TaterColors.OrangeBright, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(6.dp)
+                            .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(3.dp))
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(progress)
+                                .height(6.dp)
+                                .background(TaterColors.Orange, RoundedCornerShape(3.dp))
+                        )
+                    }
+                    Text("ON AIR", color = TaterColors.SecondaryText, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                }
+            } else Box(
                 Modifier
                     .fillMaxWidth()
                     .height(6.dp)
@@ -378,7 +579,7 @@ private fun PlaybackOverlay(
             ) {
                 Box(
                     Modifier
-                        .fillMaxWidth(if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f)
+                        .fillMaxWidth(progress)
                         .height(6.dp)
                         .background(TaterColors.Orange, RoundedCornerShape(3.dp))
                 )
