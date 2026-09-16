@@ -153,6 +153,56 @@ private fun StartingScreen() {
 }
 
 @Composable
+private fun ServerBootstrapScreen(
+    busy: Boolean,
+    onRetry: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    val retryFocus = remember { FocusRequester() }
+    Column(
+        Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.tater_tube_logo),
+            contentDescription = "Tater Tube",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.width(520.dp),
+        )
+        Spacer(Modifier.height(18.dp))
+        Text(
+            if (busy) "WAKING THE TATERS…" else "THE SERVER TOOK A NAP",
+            color = TaterColors.OrangeBright,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        if (!busy) {
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "This player is paired. Try loading the library again, or pair with another server.",
+                color = TaterColors.SecondaryText,
+                fontSize = 16.sp,
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                TaterButton(
+                    text = "Try Again",
+                    onClick = onRetry,
+                    modifier = Modifier.width(220.dp).focusRequester(retryFocus),
+                )
+                TaterButton(
+                    text = "Pair Another Server",
+                    onClick = onDisconnect,
+                    modifier = Modifier.width(280.dp),
+                )
+            }
+            LaunchedEffect(Unit) { retryFocus.requestFocus() }
+        }
+    }
+}
+
+@Composable
 private fun PairingScreen(
     busy: Boolean,
     onPair: (String, String) -> Unit,
@@ -350,7 +400,11 @@ private fun HomeScreen(viewModel: PlayerViewModel) {
     val state = viewModel.state
     val home = state.home
     if (home == null) {
-        StartingScreen()
+        ServerBootstrapScreen(
+            busy = state.isRefreshing,
+            onRetry = { viewModel.refreshHome(showError = true) },
+            onDisconnect = viewModel::disconnect,
+        )
         return
     }
     val initialFocus = remember { FocusRequester() }

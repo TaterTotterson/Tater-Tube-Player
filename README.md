@@ -170,7 +170,7 @@ feature-parity roadmap.
 ### Unified release builds
 
 Publishing a GitHub Release whose tag matches the CMake version (for example,
-`v0.3.28`) runs the `Release builds` workflow. It produces an audited
+`v0.3.29`) runs the `Release builds` workflow. It produces an audited
 Steam/Linux depot with its corresponding-source archives, an unsigned Apple TV
 Simulator package for testing, and a signed Google TV AAB. Each artifact is
 published with a SHA-256 checksum on the same GitHub Release.

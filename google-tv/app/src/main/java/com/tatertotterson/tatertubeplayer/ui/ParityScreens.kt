@@ -178,7 +178,11 @@ private fun LibraryCollection(location: LibraryLocation, viewModel: PlayerViewMo
     val firstItemId = items.firstOrNull()?.id
     val initialFocus = remember { FocusRequester() }
     val isEpisodePage = items.isNotEmpty() && items.count { it.isEpisode } >= items.size / 2
-    val showHero = location.mediaType.orEmpty().lowercase() in setOf("show", "series", "season", "tvshow")
+    val isAllShowsCollection = location.categoryId == LibraryLocation.AllShows.categoryId &&
+        location.sourceIndex == LibraryLocation.AllShows.sourceIndex &&
+        location.path.isBlank()
+    val showHero = !isAllShowsCollection &&
+        location.mediaType.orEmpty().lowercase() in setOf("show", "series", "season", "tvshow")
 
     Box(Modifier.fillMaxSize()) {
         if (showHero && !location.backdrop.isNullOrBlank()) {
@@ -224,7 +228,7 @@ private fun LibraryCollection(location: LibraryLocation, viewModel: PlayerViewMo
                     modifier = Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(22.dp),
                     verticalArrangement = Arrangement.spacedBy(26.dp),
-                    contentPadding = PaddingValues(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 18.dp),
                 ) {
                     items(items, key = { it.id }) { item ->
                         PosterCard(
@@ -280,23 +284,24 @@ private fun CollectionHero(location: LibraryLocation, items: List<MediaItem>, vi
 @Composable
 private fun PosterCard(item: MediaItem, viewModel: PlayerViewModel, modifier: Modifier = Modifier, onClick: () -> Unit) {
     FocusCard(onClick, modifier.width(248.dp), 20.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             TaterArtwork(
                 item,
                 viewModel.artworkUrl(item),
                 viewModel.token,
                 Modifier.fillMaxWidth().height(365.dp).clip(RoundedCornerShape(18.dp)),
             )
-            Text(item.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
+            Text(item.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 14.dp))
             val count = maxOf(item.episodeCount, item.leafCount)
             Text(
                 item.resumeTitle?.let { "Continue $it" } ?: if (count > 0) "$count episodes" else item.subtitle.orEmpty(),
                 color = if (item.resumeTitle != null) TaterColors.OrangeBright else TaterColors.SecondaryText,
                 fontSize = 20.sp,
                 maxLines = 1,
-                modifier = Modifier.padding(horizontal = 8.dp),
+                modifier = Modifier.padding(horizontal = 14.dp),
             )
             ProgressBar(item.progressPercent.toFloat())
+            Spacer(Modifier.height(6.dp))
         }
     }
 }
