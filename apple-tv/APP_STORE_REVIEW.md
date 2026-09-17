@@ -27,8 +27,8 @@ Suggested App Review explanation:
 
 ## Review access
 
-The app includes a fictional demo catalog for interface review without a
-server. Add `--demo` to the scheme launch arguments when running a development
-build. Before App Store submission, provide either review-server pairing
-instructions or a review build/configuration that exposes the demo entry point
-without a launch argument.
+The app includes a fictional demo catalog for review without a server. Choose
+`Try Demo` on the pairing screen. Home, Library, and Tube TV remain fully
+navigable, and every demo title or channel plays the bundled 24-second,
+rights-safe preview without network access. Discovery and Tater Picks are
+server-backed extras and are intentionally hidden in Demo mode.

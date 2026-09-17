@@ -1500,16 +1500,18 @@ private extension KeyedDecodingContainer {
 }
 
 enum DemoCatalog {
+    static let playbackDurationMS: Int64 = 24_000
+
     static let home = PlayerHome(
         protocolVersion: "1",
         serverName: "Tater Tube Demo",
         serverVersion: "demo",
         capabilities: PlayerCapabilities(
             localMedia: true,
-            newznab: true,
+            newznab: false,
             tubeTV: true,
             commercials: true,
-            taterLink: true
+            taterLink: false
         ),
         hero: HomeHero(
             personalized: false,

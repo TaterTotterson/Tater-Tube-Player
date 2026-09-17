@@ -51,6 +51,7 @@ final class PlaybackCoordinator: ObservableObject {
     private var playbackPlanWasCached = false
     private var playbackPlanRecoveryAttempts = 0
     private var playbackRecoveryInFlight = false
+    private var isDemoPlayback = false
 
     private var activeDisplayManager: AVDisplayManager? {
         let windows = UIApplication.shared.connectedScenes
@@ -153,6 +154,7 @@ final class PlaybackCoordinator: ObservableObject {
         playbackPlanWasCached = false
         playbackPlanRecoveryAttempts = 0
         playbackRecoveryInFlight = false
+        isDemoPlayback = false
         self.client = client
         currentItem = item
         plan = nil
@@ -197,6 +199,75 @@ final class PlaybackCoordinator: ObservableObject {
         }
     }
 
+    func startDemo(item: MediaItem, url: URL, resume: Bool) async {
+        streamSeekTask?.cancel()
+        streamSeekTask = nil
+        pendingSeekTargetMS = nil
+        cleanupPlayer()
+        prematureHLSRecoveryAttempts = 0
+        playbackPlanCacheKey = nil
+        playbackPlanWasCached = false
+        playbackPlanRecoveryAttempts = 0
+        playbackRecoveryInFlight = false
+        isDemoPlayback = true
+        client = nil
+        currentItem = item
+        state = .preparing
+        shouldDismiss = false
+        isCompleting = false
+        playbackControlMessage = nil
+        isPaused = false
+        resetViewingSession()
+
+        let durationSeconds = Double(DemoCatalog.playbackDurationMS) / 1000
+        let demoPlan = PlaybackPlan(
+            streamURL: url.absoluteString,
+            mode: "direct",
+            videoMode: "direct",
+            audioMode: "direct",
+            videoCodec: "h264",
+            audioCodec: "aac",
+            qualityLabel: "Rights-safe demo",
+            reason: "Bundled offline preview",
+            resolutionLabel: "1080p",
+            outputContainer: "mp4",
+            outputAudioChannels: 2,
+            sourceVideoRange: "sdr",
+            outputVideoRange: "sdr",
+            outputFrameRate: 30,
+            selectedAudioTrack: 0,
+            source: PlaybackMediaInfo(
+                container: "mp4",
+                durationSeconds: durationSeconds,
+                videoCodec: "h264",
+                width: 1920,
+                height: 1080,
+                videoRange: "sdr",
+                audioCodec: "aac",
+                audioChannels: 2,
+                audioTracks: nil
+            )
+        )
+        plan = demoPlan
+
+        let progress = min(max(item.progressPercent ?? 0, 0), 95)
+        let resumePositionMS = resume
+            ? Int64(Double(DemoCatalog.playbackDurationMS) * progress / 100)
+            : 0
+        do {
+            try await beginPlayback(
+                item: item,
+                plan: demoPlan,
+                resume: false,
+                positionOverrideMS: resumePositionMS
+            )
+        } catch {
+            guard !Task.isCancelled else { return }
+            debugPlayback("demo start failed: \(diagnosticDescription(error))")
+            state = .failed(error.localizedDescription)
+        }
+    }
+
     func stop() async {
         streamSeekTask?.cancel()
         streamSeekTask = nil
@@ -227,6 +298,7 @@ final class PlaybackCoordinator: ObservableObject {
         playbackPlanWasCached = false
         playbackPlanRecoveryAttempts = 0
         playbackRecoveryInFlight = false
+        isDemoPlayback = false
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
@@ -657,7 +729,8 @@ final class PlaybackCoordinator: ObservableObject {
         let message = error?.localizedDescription ?? "This video could not be played."
         guard !playbackRecoveryInFlight else { return }
 
-        if playbackPlanRecoveryAttempts < 1,
+        if !isDemoPlayback,
+           playbackPlanRecoveryAttempts < 1,
            let item = currentItem,
            !isCompleting {
             playbackRecoveryInFlight = true
@@ -702,7 +775,15 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     private func handlePlaybackEnd() async {
-        guard !isCompleting, let item = currentItem, let client else { return }
+        guard !isCompleting, let item = currentItem else { return }
+        if isDemoPlayback {
+            isCompleting = true
+            state = .finished
+            shouldDismiss = true
+            UIApplication.shared.isIdleTimerDisabled = false
+            return
+        }
+        guard let client else { return }
         if await recoverPrematureHLSEndIfNeeded(item: item) {
             return
         }

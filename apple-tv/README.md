@@ -13,7 +13,7 @@ expectations.
 - Pairing credentials stored in the tvOS Keychain
 - Authenticated requests cannot redirect to another host or downgrade HTTPS
 - Cached home, library, guide, Discovery, and artwork data appear before background refreshes finish
-- Demo mode uses the same fictional, rights-safe catalog as the Steam store build
+- Demo mode uses a focused fictional catalog with bundled, rights-safe offline playback
 - Apple TV-native hero shortcuts and shelf destination cards preserve the Steam browsing workflows
 
 Open `TaterTubePlayerTV.xcodeproj` in Xcode and select an Apple TV simulator or a
@@ -22,6 +22,11 @@ runtime.
 
 Add `--demo` to the scheme's launch arguments to start directly in the fictional
 demo catalog without pairing to a server.
+
+The review demo intentionally exposes Home, Library, Tube TV, and Settings.
+Discovery and Tater Picks remain available after pairing to a server, but are
+hidden from Demo mode because their server-backed workflows cannot be reviewed
+meaningfully offline.
 
 See [`APP_STORE_REVIEW.md`](APP_STORE_REVIEW.md) for the local-network ATS
 justification and the review-access checklist.

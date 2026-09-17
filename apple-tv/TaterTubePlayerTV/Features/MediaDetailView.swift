@@ -62,7 +62,7 @@ struct MediaDetailView: View {
                         ) {
                             Label("Resume", systemImage: "play.fill")
                         }
-                        .disabled(!hasPlayableSource || store.isDemo || store.isPreparingDiscovery)
+                        .disabled(!hasPlayableSource || store.isPreparingDiscovery)
                         .prefersDefaultFocus(true, in: popupFocusScope)
                     }
 
@@ -72,9 +72,14 @@ struct MediaDetailView: View {
                         },
                         requestedFocus: $playHasFocus
                     ) {
-                        Label(item.resumeOffsetMS > 0 ? "Start Over" : "Play", systemImage: "play")
+                        Label(
+                            store.isDemo
+                                ? "Play Demo"
+                                : (item.resumeOffsetMS > 0 ? "Start Over" : "Play"),
+                            systemImage: "play"
+                        )
                     }
-                    .disabled(!hasPlayableSource || store.isDemo || store.isPreparingDiscovery)
+                    .disabled(!hasPlayableSource || store.isPreparingDiscovery)
                     .prefersDefaultFocus(item.resumeOffsetMS <= 0, in: popupFocusScope)
 
                     if item.resumeOffsetMS > 0 {
@@ -145,7 +150,7 @@ struct MediaDetailView: View {
     }
 
     private var hasPlayableSource: Bool {
-        item.streamURL?.isEmpty == false || item.nzbURL?.isEmpty == false
+        store.isDemo || item.streamURL?.isEmpty == false || item.nzbURL?.isEmpty == false
     }
 }
 

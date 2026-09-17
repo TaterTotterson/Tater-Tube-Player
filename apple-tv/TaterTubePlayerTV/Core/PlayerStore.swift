@@ -81,9 +81,9 @@ final class PlayerStore: ObservableObject {
             home = DemoCatalog.home
             libraryRows = DemoCatalog.libraryRows
             liveGuide = DemoCatalog.liveGuide
-            discoverCategories = DemoCatalog.discoveryCategories
-            recommendationBatch = DemoCatalog.recommendations.batch
-            recommendations = DemoCatalog.recommendations.items
+            discoverCategories = []
+            recommendationBatch = nil
+            recommendations = []
             phase = .ready
             Task { await publishTopShelf() }
         }
@@ -154,9 +154,9 @@ final class PlayerStore: ObservableObject {
         home = DemoCatalog.home
         libraryRows = DemoCatalog.libraryRows
         liveGuide = DemoCatalog.liveGuide
-        discoverCategories = DemoCatalog.discoveryCategories
-        recommendationBatch = DemoCatalog.recommendations.batch
-        recommendations = DemoCatalog.recommendations.items
+        discoverCategories = []
+        recommendationBatch = nil
+        recommendations = []
         libraryPages.removeAll()
         discoverPages.removeAll()
         errorMessage = nil
@@ -450,7 +450,21 @@ final class PlayerStore: ObservableObject {
     }
 
     func play(_ item: MediaItem, resume: Bool) async {
-        guard !isDemo, let client else {
+        if isDemo {
+            guard let demoURL = Bundle.main.url(
+                forResource: "tater-demo-reel",
+                withExtension: "mp4"
+            ) else {
+                errorMessage = "The bundled demo video is unavailable."
+                return
+            }
+            selectedMedia = nil
+            isPlaybackPresented = true
+            await playback.startDemo(item: item, url: demoURL, resume: resume)
+            return
+        }
+
+        guard let client else {
             errorMessage = "Pair with your Tater Tube Server to play this title."
             return
         }
