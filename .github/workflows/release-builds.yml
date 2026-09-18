@@ -134,6 +134,39 @@ jobs:
             echo "::error::The generated Google TV app bundle is not signed."
             exit 1
           fi
+          python3 - "$source_path" <<'PY'
+          import json
+          import sys
+          import zipfile
+
+          bundle_path = sys.argv[1]
+          metadata_path = "BUNDLE-METADATA/com.android.tools/r8.json"
+          mapping_path = "BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map"
+
+          with zipfile.ZipFile(bundle_path) as bundle:
+              names = set(bundle.namelist())
+              if metadata_path not in names:
+                  raise SystemExit("R8 metadata is missing from the Google TV bundle")
+              if mapping_path not in names:
+                  raise SystemExit("R8 deobfuscation mapping is missing from the Google TV bundle")
+              metadata = json.loads(bundle.read(metadata_path))
+
+          options = metadata.get("options", {})
+          required_options = (
+              "isObfuscationEnabled",
+              "isOptimizationsEnabled",
+              "isShrinkingEnabled",
+          )
+          disabled = [name for name in required_options if options.get(name) is not True]
+          if disabled:
+              raise SystemExit(f"Required R8 options are disabled: {', '.join(disabled)}")
+
+          resource_optimization = metadata.get("resourceOptimization", {})
+          if resource_optimization.get("isOptimizedShrinkingEnabled") is not True:
+              raise SystemExit("Optimized resource shrinking is disabled")
+
+          print("Verified R8 code and resource optimization metadata")
+          PY
           mkdir -p release-assets
           cp "$source_path" "release-assets/$output_name"
           cd release-assets
