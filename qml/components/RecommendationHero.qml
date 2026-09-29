@@ -52,23 +52,11 @@ Rectangle {
         }
     }
 
-    Image {
-        anchors.right: parent.right
-        anchors.rightMargin: 32
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 16
-        width: Math.min(245, hero.width * 0.21)
-        height: Math.min(260, hero.height - 32)
-        source: "../../assets/mascot/tater-hero-remote.png"
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-    }
-
     Column {
         id: messageColumn
         x: 34
         anchors.verticalCenter: parent.verticalCenter
-        width: hero.width - Math.min(290, hero.width * 0.25) - 68
+        width: hero.width - 68
         spacing: 14
 
         Text {

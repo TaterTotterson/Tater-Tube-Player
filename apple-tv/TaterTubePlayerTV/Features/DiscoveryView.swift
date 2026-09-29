@@ -123,12 +123,7 @@ struct DiscoveryView: View {
                     .lineLimit(3)
                     .frame(maxWidth: 980, alignment: .leading)
             }
-
-            Spacer(minLength: 20)
-
-            BundledImageView(name: "tater-hero-remote")
-                .scaledToFit()
-                .frame(width: 250, height: 210)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 48)
         .padding(.vertical, 30)

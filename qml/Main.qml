@@ -2941,23 +2941,11 @@ ApplicationWindow {
                     border.color: "#0fff8a3d"
                 }
 
-                Image {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 82
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 3
-                    width: 340
-                    height: 292
-                    source: "../assets/mascot/tater-hero-remote.png"
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                }
-
                 Column {
                     anchors.left: parent.left
                     anchors.leftMargin: 42
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(720, parent.width - 480)
+                    width: Math.min(920, parent.width - 84)
                     spacing: 13
 
                     Row {
@@ -3573,23 +3561,6 @@ ApplicationWindow {
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 14
 
-                            Rectangle {
-                                width: 58
-                                height: 58
-                                radius: 18
-                                color: "#2b211b"
-                                border.width: 1
-                                border.color: "#70401f"
-
-                                Image {
-                                    anchors.fill: parent
-                                    anchors.margins: 3
-                                    source: "../assets/mascot/tater-wave.png"
-                                    fillMode: Image.PreserveAspectFit
-                                    smooth: true
-                                }
-                            }
-
                             Column {
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: 3
@@ -3871,14 +3842,6 @@ ApplicationWindow {
                                     visible: status === Image.Ready
                                 }
 
-                                Image {
-                                    anchors.centerIn: parent
-                                    width: 120
-                                    height: 120
-                                    source: "../assets/mascot/tater-salute.png"
-                                    fillMode: Image.PreserveAspectFit
-                                    visible: !heroPosterArtwork.visible
-                                }
                             }
                         }
 
@@ -4120,13 +4083,6 @@ ApplicationWindow {
                             anchors.leftMargin: 24
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 14
-
-                            Image {
-                                width: 62
-                                height: 62
-                                source: "../assets/mascot/tater-salute.png"
-                                fillMode: Image.PreserveAspectFit
-                            }
 
                             Column {
                                 anchors.verticalCenter: parent.verticalCenter

@@ -75,6 +75,9 @@ struct HomeView: View {
                     minimumInterval: 10,
                     reportErrors: false
                 )
+                if store.home?.capabilities.tubeTV == true {
+                    await store.refreshLiveGuide(minimumInterval: 55)
+                }
             }
         }
         .onReceive(heroClockTimer) { date in
@@ -84,6 +87,9 @@ struct HomeView: View {
                     minimumInterval: 55,
                     reportErrors: false
                 )
+                if store.home?.capabilities.tubeTV == true {
+                    await store.refreshLiveGuide(minimumInterval: 55)
+                }
             }
         }
     }
@@ -142,12 +148,7 @@ struct HomeView: View {
                 }
                 .font(.system(size: 20, weight: .bold, design: .rounded))
             }
-
-            Spacer(minLength: 20)
-
-            BundledImageView(name: "tater-hero-remote")
-                .scaledToFit()
-                .frame(width: 300, height: 260)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 55)
         .padding(.vertical, 35)

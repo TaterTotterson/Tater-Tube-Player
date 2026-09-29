@@ -3,6 +3,7 @@ package com.tatertotterson.tatertubeplayer.ui
 import android.app.Application
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -115,6 +116,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var spokenBatchId: String? = null
     private var pendingDeepLinkId: String? = null
     private var discoverPageJob: Job? = null
+    private var lastLiveGuideRefreshAtMs: Long? = null
 
     var state by mutableStateOf(PlayerUiState())
         private set
@@ -175,7 +177,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     state = state.copy(home = home, isRefreshing = false, errorMessage = null)
                     viewModelScope.launch { WatchNextPublisher.publish(getApplication(), home.continueWatching) }
                     openPendingDeepLink()
-                    if (home.capabilities.tubeTV) refreshLiveGuide()
+                    if (home.capabilities.tubeTV) refreshLiveGuide(minimumIntervalMs = 55_000L)
                 }
                 .onFailure { error ->
                     state = state.copy(
@@ -334,14 +336,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun refreshLiveGuide() {
+    fun refreshLiveGuide(minimumIntervalMs: Long = 0L) {
         if (state.isDemo || state.isLiveGuideRefreshing) return
         val api = client ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (
+            minimumIntervalMs > 0 &&
+            lastLiveGuideRefreshAtMs?.let { now - it < minimumIntervalMs } == true
+        ) return
+        state = state.copy(isLiveGuideRefreshing = true)
         viewModelScope.launch {
-            state = state.copy(isLiveGuideRefreshing = true)
             runCatching { api.liveGuide() }
                 .onSuccess { (raw, guide) ->
                     guideCache.writeText(raw)
+                    lastLiveGuideRefreshAtMs = SystemClock.elapsedRealtime()
                     state = state.copy(liveGuide = guide, isLiveGuideRefreshing = false)
                 }
                 .onFailure { error ->
@@ -690,6 +698,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         cacheRoot.mkdirs()
         connection = null
         client = null
+        lastLiveGuideRefreshAtMs = null
         state = PlayerUiState(phase = AppPhase.PAIRING)
     }
 
@@ -726,6 +735,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun connect(saved: SavedConnection) {
         connection = saved
         client = TaterApiClient(saved.serverUrl, saved.token)
+        lastLiveGuideRefreshAtMs = null
         capabilities = DeviceCapabilities.read(getApplication())
     }
 

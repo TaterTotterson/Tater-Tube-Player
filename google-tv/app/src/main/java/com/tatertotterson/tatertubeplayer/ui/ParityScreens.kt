@@ -728,7 +728,6 @@ private fun DiscoveryHero(title: String, message: String) {
                 Text(title, color = Color.White, fontSize = 31.sp, fontWeight = FontWeight.Bold)
                 Text(message, color = TaterColors.SecondaryText, fontSize = 16.sp, lineHeight = 23.sp, maxLines = 3)
             }
-            Image(painterResource(R.drawable.tater_hero_remote), null, Modifier.width(190.dp).fillMaxHeight(), contentScale = ContentScale.Fit)
         }
     }
 }
@@ -798,7 +797,6 @@ private fun PicksHero(focused: RecommendationItem?, viewModel: PlayerViewModel) 
                 }
                 Text(speech, color = TaterColors.SecondaryText, fontSize = 13.sp, maxLines = 1)
             }
-            Image(painterResource(R.drawable.tater_hero_remote), null, Modifier.width(200.dp).fillMaxHeight(), contentScale = ContentScale.Fit)
         }
     }
 }

@@ -485,10 +485,16 @@ private fun HomeScreen(viewModel: PlayerViewModel) {
             }
         }
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(home.capabilities.tubeTV) {
+        if (home.capabilities.tubeTV) {
+            viewModel.refreshLiveGuide(minimumIntervalMs = 55_000L)
+        }
         while (true) {
             delay(60_000)
             homeClock = System.currentTimeMillis()
+            if (home.capabilities.tubeTV) {
+                viewModel.refreshLiveGuide(minimumIntervalMs = 55_000L)
+            }
         }
     }
     RestoreInitialFocus(
@@ -549,12 +555,6 @@ private fun HomeHero(
                     }
                 }
             }
-            Image(
-                painter = painterResource(R.drawable.tater_hero_remote),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.width(300.dp).height(260.dp),
-            )
         }
     }
 }

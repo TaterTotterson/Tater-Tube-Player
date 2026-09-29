@@ -51,6 +51,7 @@ final class PlayerStore: ObservableObject {
     private let libraryShuffleSeed = UUID().uuidString
     private var homeRefreshInFlight = false
     private var lastHomeRefreshAt: Date?
+    private var lastLiveGuideRefreshAt: Date?
     private var libraryRowsRefreshInFlight = false
     private var lastLibraryRowsRefreshAt: Date?
     private var lastLibraryLocation: LibraryLocation?
@@ -225,13 +226,22 @@ final class PlayerStore: ObservableObject {
         client?.localArtworkURL(for: program) ?? program.artworkValue
     }
 
-    func refreshLiveGuide(showActivity: Bool = false) async {
+    func refreshLiveGuide(
+        showActivity: Bool = false,
+        minimumInterval: TimeInterval = 0
+    ) async {
         guard !isDemo, !isLiveGuideRefreshing, let client else { return }
+        if minimumInterval > 0,
+           let lastLiveGuideRefreshAt,
+           Date().timeIntervalSince(lastLiveGuideRefreshAt) < minimumInterval {
+            return
+        }
         isLiveGuideRefreshing = true
         defer { isLiveGuideRefreshing = false }
 
         do {
             let response = try await client.liveGuide()
+            lastLiveGuideRefreshAt = Date()
             liveGuide = response.value
             try? response.encodedEnvelope.write(to: liveGuideCacheURL, options: .atomic)
             liveGuideError = nil
@@ -551,6 +561,8 @@ final class PlayerStore: ObservableObject {
         )
         connection = nil
         client = nil
+        lastHomeRefreshAt = nil
+        lastLiveGuideRefreshAt = nil
         selectedMedia = nil
         isPlaybackPresented = false
         home = nil

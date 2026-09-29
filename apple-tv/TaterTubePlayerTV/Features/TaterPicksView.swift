@@ -165,12 +165,7 @@ private struct TaterPicksContent: View {
                             .lineLimit(2)
                     }
                 }
-
-                Spacer(minLength: 18)
-
-                BundledImageView(name: "tater-hero-remote")
-                    .scaledToFit()
-                    .frame(width: 250, height: 245)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 46)
             .padding(.vertical, 30)
