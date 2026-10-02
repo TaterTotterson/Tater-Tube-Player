@@ -478,7 +478,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				CODE_SIGN_ENTITLEMENTS = TaterTubePlayerTV/TaterTubePlayerTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = 8BHV7Y2D9D;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TaterTubePlayerTV/Info.plist;
@@ -487,7 +487,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -506,7 +506,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				CODE_SIGN_ENTITLEMENTS = TaterTubePlayerTV/TaterTubePlayerTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = 8BHV7Y2D9D;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TaterTubePlayerTV/Info.plist;
@@ -515,7 +515,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -534,7 +534,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TopShelfExtension/TopShelfExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = 8BHV7Y2D9D;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TopShelfExtension/Info.plist;
@@ -543,7 +543,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV.TopShelf;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -563,7 +563,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TopShelfExtension/TopShelfExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = 8BHV7Y2D9D;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TopShelfExtension/Info.plist;
@@ -572,7 +572,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV.TopShelf;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
