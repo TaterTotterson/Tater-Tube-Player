@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LiveTVView: View {
     @EnvironmentObject private var store: PlayerStore
-    @Binding var selectedTab: Int
+    let onReturnToTopNavigation: () -> Void
     @State private var clock = Date()
 
     private var guide: TubeTVGuide? {
@@ -22,7 +22,7 @@ struct LiveTVView: View {
                 guideContent
             }
         }
-        .onExitCommand { selectedTab = 0 }
+        .onExitCommand(perform: onReturnToTopNavigation)
         .task(id: store.isPlaybackPresented) {
             guard !store.isPlaybackPresented else { return }
             clock = Date()
@@ -146,20 +146,31 @@ private struct LiveGuideRow: View {
             ForEach(0..<3, id: \.self) { index in
                 if programs.indices.contains(index) {
                     let program = programs[index]
-                    GuideFocusButton {
-                        guard isCurrent(program, index: index) else { return }
-                        Task { await store.play(channel) }
-                    } label: {
+                    if isCurrent(program, index: index) {
+                        GuideFocusButton {
+                            Task { await store.play(channel) }
+                        } label: {
+                            LiveProgramCard(
+                                program: program,
+                                artworkURL: store.guideArtworkURL(for: program),
+                                guide: guide,
+                                elapsed: elapsed,
+                                isCurrent: true,
+                                position: index
+                            )
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else {
                         LiveProgramCard(
                             program: program,
                             artworkURL: store.guideArtworkURL(for: program),
                             guide: guide,
                             elapsed: elapsed,
-                            isCurrent: isCurrent(program, index: index),
+                            isCurrent: false,
                             position: index
                         )
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
                 } else {
                     GuidePlaceholderCard(position: index)
                         .frame(maxWidth: .infinity)
@@ -359,15 +370,6 @@ private struct GuidePlaceholderCard: View {
 
 private struct GuideGlowBackground: View {
     var body: some View {
-        ZStack {
-            Color.black
-            RadialGradient(
-                colors: [TaterTheme.orange.opacity(0.18), Color.clear],
-                center: .topTrailing,
-                startRadius: 20,
-                endRadius: 980
-            )
-        }
-        .ignoresSafeArea()
+        Color.black.ignoresSafeArea()
     }
 }

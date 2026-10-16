@@ -40,6 +40,9 @@
 		A10000000000000000000026 /* northern-lights.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* northern-lights.png */; };
 		A10000000000000000000027 /* orange-county-skies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* orange-county-skies.png */; };
 		A10000000000000000000028 /* after-midnight.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* after-midnight.png */; };
+		A10000000000000000000029 /* cosmic-drift.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000029 /* cosmic-drift.png */; };
+		A1000000000000000000002A /* cartoon-channel.png in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002A /* cartoon-channel.png */; };
+		A1000000000000000000002B /* creature-features.png in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002B /* creature-features.png */; };
 		A10000000000000000000040 /* popular-movies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000040 /* popular-movies.png */; };
 		A10000000000000000000041 /* new-movies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000041 /* new-movies.png */; };
 		A10000000000000000000042 /* featured-movies.png in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000042 /* featured-movies.png */; };
@@ -114,6 +117,9 @@
 		A20000000000000000000026 /* northern-lights.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "northern-lights.png"; path = "../assets/demo/northern-lights.png"; sourceTree = "<group>"; };
 		A20000000000000000000027 /* orange-county-skies.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "orange-county-skies.png"; path = "../assets/demo/orange-county-skies.png"; sourceTree = "<group>"; };
 		A20000000000000000000028 /* after-midnight.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "after-midnight.png"; path = "../assets/demo/after-midnight.png"; sourceTree = "<group>"; };
+		A20000000000000000000029 /* cosmic-drift.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "cosmic-drift.png"; path = "../assets/demo/cosmic-drift.png"; sourceTree = "<group>"; };
+		A2000000000000000000002A /* cartoon-channel.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "cartoon-channel.png"; path = "../assets/demo/cartoon-channel.png"; sourceTree = "<group>"; };
+		A2000000000000000000002B /* creature-features.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "creature-features.png"; path = "../assets/demo/creature-features.png"; sourceTree = "<group>"; };
 		A20000000000000000000030 /* TaterTubePlayerTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TaterTubePlayerTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000040 /* popular-movies.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "popular-movies.png"; path = "../assets/discovery/popular-movies.png"; sourceTree = "<group>"; };
 		A20000000000000000000041 /* new-movies.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "new-movies.png"; path = "../assets/discovery/new-movies.png"; sourceTree = "<group>"; };
@@ -240,6 +246,9 @@
 				A20000000000000000000026 /* northern-lights.png */,
 				A20000000000000000000027 /* orange-county-skies.png */,
 				A20000000000000000000028 /* after-midnight.png */,
+				A20000000000000000000029 /* cosmic-drift.png */,
+				A2000000000000000000002A /* cartoon-channel.png */,
+				A2000000000000000000002B /* creature-features.png */,
 				A2000000000000000000004E /* tater-demo-reel.mp4 */,
 			);
 			name = Resources;
@@ -370,6 +379,9 @@
 				A10000000000000000000026 /* northern-lights.png in Resources */,
 				A10000000000000000000027 /* orange-county-skies.png in Resources */,
 				A10000000000000000000028 /* after-midnight.png in Resources */,
+				A10000000000000000000029 /* cosmic-drift.png in Resources */,
+				A1000000000000000000002A /* cartoon-channel.png in Resources */,
+				A1000000000000000000002B /* creature-features.png in Resources */,
 				A1000000000000000000004E /* tater-demo-reel.mp4 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -478,7 +490,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				CODE_SIGN_ENTITLEMENTS = TaterTubePlayerTV/TaterTubePlayerTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 8BHV7Y2D9D;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TaterTubePlayerTV/Info.plist;
@@ -487,7 +499,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -506,7 +518,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				CODE_SIGN_ENTITLEMENTS = TaterTubePlayerTV/TaterTubePlayerTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 8BHV7Y2D9D;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TaterTubePlayerTV/Info.plist;
@@ -515,7 +527,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -534,7 +546,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TopShelfExtension/TopShelfExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 8BHV7Y2D9D;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TopShelfExtension/Info.plist;
@@ -543,7 +555,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV.TopShelf;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -563,7 +575,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TopShelfExtension/TopShelfExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 8BHV7Y2D9D;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TopShelfExtension/Info.plist;
@@ -572,7 +584,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatertotterson.TaterTubePlayerTV.TopShelf;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;

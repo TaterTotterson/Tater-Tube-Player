@@ -1,5 +1,50 @@
 import SwiftUI
 
+struct TopLevelLibraryView: View {
+    @Binding var selectedTab: Int
+    let onReturnToTopNavigation: () -> Void
+    let contentFocusRequest: Int
+    @State private var navigationPath: [LibraryLocation] = []
+
+    let location: LibraryLocation
+
+    init(
+        location: LibraryLocation,
+        selectedTab: Binding<Int>,
+        onReturnToTopNavigation: @escaping () -> Void,
+        contentFocusRequest: Int = 0
+    ) {
+        self.location = location
+        _selectedTab = selectedTab
+        self.onReturnToTopNavigation = onReturnToTopNavigation
+        self.contentFocusRequest = contentFocusRequest
+    }
+
+    var body: some View {
+        NavigationStack(path: $navigationPath) {
+            LibraryCollectionView(
+                location: location,
+                contentFocusRequest: contentFocusRequest,
+                onNavigate: { navigationPath.append($0) }
+            )
+            .navigationDestination(for: LibraryLocation.self) { destination in
+                LibraryCollectionView(
+                    location: destination,
+                    contentFocusRequest: contentFocusRequest,
+                    onNavigate: { navigationPath.append($0) }
+                )
+            }
+        }
+        .onExitCommand {
+            if navigationPath.isEmpty {
+                onReturnToTopNavigation()
+            } else {
+                navigationPath.removeLast()
+            }
+        }
+    }
+}
+
 struct LibraryView: View {
     @EnvironmentObject private var store: PlayerStore
     @Binding var selectedTab: Int
@@ -170,6 +215,7 @@ struct LibraryCollectionView: View {
     @FocusState private var focusedItemID: String?
 
     let location: LibraryLocation
+    var contentFocusRequest = 0
     let onNavigate: (LibraryLocation) -> Void
 
     private var page: LibraryPage? { store.libraryPage(for: location) }
@@ -183,7 +229,20 @@ struct LibraryCollectionView: View {
             ScrollViewReader { scrollProxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 44) {
-                        if stage.showsHero {
+                        if stage == .seasons {
+                            SeriesDetailContent(
+                                location: location,
+                                seasons: items,
+                                contentFocusRequest: contentFocusRequest,
+                                onPrepareSeasonNavigation: {
+                                    var transaction = Transaction()
+                                    transaction.disablesAnimations = true
+                                    withTransaction(transaction) {
+                                        scrollProxy.scrollTo("library-collection-top", anchor: .top)
+                                    }
+                                }
+                            )
+                        } else if stage.showsHero {
                             LibraryContextHero(
                                 location: location,
                                 items: items,
@@ -191,7 +250,9 @@ struct LibraryCollectionView: View {
                             )
                         }
 
-                        if let page, page.items.isEmpty {
+                        if stage == .seasons {
+                            EmptyView()
+                        } else if let page, page.items.isEmpty {
                             LibraryEmptyState(
                                 title: "Nothing here yet",
                                 message: "This collection is currently empty on your Tater Tube Server."
@@ -244,13 +305,29 @@ struct LibraryCollectionView: View {
     private var collectionBackground: some View {
         if stage.showsHero,
            location.backdrop != nil || location.poster != nil || location.demoArtworkName != nil {
-            ArtworkView(
-                remoteValue: location.backdrop ?? location.poster,
-                demoName: location.demoArtworkName
-            )
+            ZStack {
+                ArtworkView(
+                    remoteValue: location.backdrop ?? location.poster,
+                    demoName: location.demoArtworkName
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
-                .overlay(Color.black.opacity(0.65))
-                .blur(radius: 10)
+
+                LinearGradient(
+                    colors: [Color.black.opacity(0.94), Color.black.opacity(0.45), Color.black.opacity(0.10)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .ignoresSafeArea()
+                LinearGradient(
+                    colors: [Color.black.opacity(0.12), Color.black.opacity(0.60), Color.black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea()
         } else {
             LibraryGlowBackground()
         }
@@ -275,16 +352,12 @@ struct LibraryCollectionView: View {
     }
 
     private var episodeGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 690, maximum: 790), spacing: 34)],
-            alignment: .leading,
-            spacing: 30
-        ) {
+        LazyVStack(alignment: .leading, spacing: 22) {
             ForEach(items) { item in
-                TaterCardButton(cornerRadius: 24) {
+                TaterCardButton(cornerRadius: 20) {
                     store.openDetails(for: item)
                 } label: {
-                    EpisodeCardView(item: item)
+                    CinematicEpisodeRow(item: item)
                 }
                 .focused($focusedItemID, equals: item.id)
             }
@@ -354,6 +427,457 @@ private struct LibraryItemLink: View {
             return
         }
         onNavigate(LibraryLocation(item: item, parent: parent))
+    }
+}
+
+private struct SeriesDetailContent: View {
+    @EnvironmentObject private var store: PlayerStore
+    @State private var selectedSeasonID: String?
+    @State private var isSeasonNavigationActive = false
+    @State private var isEpisodeNavigationActive = false
+    @State private var isEnteringEpisodes = false
+    @State private var isEnteringSeason = false
+    @State private var requestedSeasonFocusID: String?
+    @State private var episodeToRestoreID: String?
+    @FocusState private var focusedSeasonID: String?
+    @FocusState private var focusedEpisodeID: String?
+    @FocusState private var episodeFocusLandingHasFocus: Bool
+
+    let location: LibraryLocation
+    let seasons: [MediaItem]
+    let contentFocusRequest: Int
+    let onPrepareSeasonNavigation: () -> Void
+
+    private var selectedSeason: MediaItem? {
+        seasons.first(where: { $0.id == selectedSeasonID }) ?? seasons.first
+    }
+
+    private var selectedSeasonLocation: LibraryLocation? {
+        selectedSeason.map { LibraryLocation(item: $0, parent: location) }
+    }
+
+    private var episodes: [MediaItem] {
+        guard let selectedSeasonLocation else { return [] }
+        return store.libraryPage(for: selectedSeasonLocation)?.items.naturallySorted ?? []
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 30) {
+            seriesHero
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 28) {
+                    ForEach(seasons) { season in
+                        SeasonSelectorButton(
+                            id: season.id,
+                            title: season.title.uppercased(),
+                            selected: season.id == selectedSeason?.id,
+                            visuallyFocused: isSeasonNavigationActive
+                                && season.id == (requestedSeasonFocusID ?? focusedSeasonID),
+                            focusedSeasonID: $focusedSeasonID,
+                            action: { selectedSeasonID = season.id }
+                        )
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+            }
+            .scrollClipDisabled()
+            .contentMargins(.horizontal, -18, for: .scrollContent)
+            .focusSection()
+            .disabled(isEpisodeNavigationActive)
+
+            if let selectedSeasonLocation,
+               store.loadingLibraryPages.contains(selectedSeasonLocation.cacheKey),
+               episodes.isEmpty {
+                HStack(spacing: 16) {
+                    ProgressView().tint(TaterTheme.orange)
+                    Text("Loading \(selectedSeasonLocation.title)…")
+                        .font(.system(size: 23, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TaterTheme.secondaryText)
+                }
+                .frame(maxWidth: .infinity, minHeight: 220)
+            } else if episodes.isEmpty {
+                LibraryEmptyState(
+                    title: "No episodes found",
+                    message: "This season does not have any episodes available yet."
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    EpisodeFocusLanding(
+                        isEnabled: !isEnteringSeason
+                            && (isSeasonNavigationActive
+                                || isEpisodeNavigationActive
+                                || isEnteringEpisodes),
+                        hasFocus: $episodeFocusLandingHasFocus,
+                        onFocus: handleEpisodeBoundaryFocus
+                    )
+
+                    LazyVStack(alignment: .leading, spacing: 22) {
+                        ForEach(episodes) { episode in
+                            TaterCardButton(cornerRadius: 20) {
+                                episodeToRestoreID = episode.id
+                                store.openDetails(for: episode)
+                            } label: {
+                                CinematicEpisodeRow(item: episode)
+                            }
+                            .focused($focusedEpisodeID, equals: episode.id)
+                        }
+                    }
+                    .disabled(isSeasonNavigationActive)
+                }
+                .focusSection()
+            }
+        }
+        .task(id: seasons.map(\.id)) {
+            if selectedSeasonID == nil || !seasons.contains(where: { $0.id == selectedSeasonID }) {
+                selectedSeasonID = preferredSeasonID
+            }
+        }
+        .task(id: selectedSeasonID) {
+            guard let selectedSeasonLocation else { return }
+            await store.loadLibraryPage(selectedSeasonLocation)
+        }
+        .onChange(of: focusedSeasonID) { previous, current in
+            guard let current else { return }
+            isSeasonNavigationActive = true
+            isEpisodeNavigationActive = false
+
+            if let requestedSeasonFocusID {
+                guard current == requestedSeasonFocusID else {
+                    DispatchQueue.main.async {
+                        guard self.requestedSeasonFocusID == requestedSeasonFocusID else { return }
+                        withoutFocusAnimation {
+                            focusedSeasonID = requestedSeasonFocusID
+                        }
+                    }
+                    return
+                }
+
+                self.requestedSeasonFocusID = nil
+                return
+            }
+
+            if current != selectedSeasonID {
+                selectedSeasonID = current
+            }
+        }
+        .onChange(of: focusedEpisodeID) { _, current in
+            guard current != nil else { return }
+
+            // Clearing a focused episode while returning to the season strip
+            // can make tvOS briefly propose episode one as a replacement.
+            // Do not let that transient focus cancel the season handoff.
+            if isEnteringSeason {
+                withoutFocusAnimation {
+                    focusedEpisodeID = nil
+                }
+                return
+            }
+
+            isEpisodeNavigationActive = true
+            isSeasonNavigationActive = false
+        }
+        .onChange(of: contentFocusRequest) { _, _ in
+            restoreEpisodeFocusAfterDetails()
+        }
+        .modifier(
+            SeasonNavigationBackModifier(
+                enabled: store.selectedMedia == nil
+                    && !isSeasonNavigationActive
+                    && focusedSeasonID == nil
+                    && selectedSeason != nil,
+                action: enterSeasonNavigation
+            )
+        )
+    }
+
+    private func enterSeasonNavigation() {
+        guard !isEnteringSeason, let seasonID = selectedSeason?.id else { return }
+        isEnteringSeason = true
+        episodeFocusLandingHasFocus = false
+        requestedSeasonFocusID = seasonID
+        isSeasonNavigationActive = true
+        isEpisodeNavigationActive = false
+        focusedEpisodeID = nil
+        onPrepareSeasonNavigation()
+
+        // The selector may be several screens above the focused episode. Wait
+        // for the nonanimated scroll to lay it out before transferring focus.
+        DispatchQueue.main.async {
+            withoutFocusAnimation {
+                focusedSeasonID = seasonID
+            }
+
+            DispatchQueue.main.async {
+                withoutFocusAnimation {
+                    focusedSeasonID = seasonID
+                }
+                isEnteringSeason = false
+            }
+        }
+    }
+
+    private func enterEpisodeNavigation() {
+        guard isSeasonNavigationActive, !isEnteringEpisodes else { return }
+        guard let firstEpisodeID = episodes.first?.id else { return }
+
+        // Keep the landing target focused while the episode rows re-enter the
+        // focus system. This prevents tvOS from briefly choosing a lower row by
+        // geometry before we transfer directly to episode one.
+        isEnteringEpisodes = true
+        withoutFocusAnimation {
+            requestedSeasonFocusID = nil
+            isSeasonNavigationActive = false
+            focusedSeasonID = nil
+        }
+
+        Task { @MainActor in
+            await Task.yield()
+            guard episodes.contains(where: { $0.id == firstEpisodeID }) else {
+                isEnteringEpisodes = false
+                return
+            }
+            withoutFocusAnimation {
+                focusedEpisodeID = firstEpisodeID
+            }
+            await Task.yield()
+            isEnteringEpisodes = false
+        }
+    }
+
+    private func handleEpisodeBoundaryFocus() {
+        if isEpisodeNavigationActive {
+            enterSeasonNavigation()
+        } else {
+            enterEpisodeNavigation()
+        }
+    }
+
+    private func restoreEpisodeFocusAfterDetails() {
+        guard let episodeID = episodeToRestoreID,
+              episodes.contains(where: { $0.id == episodeID }) else { return }
+
+        // This is a one-time handoff from the dismissed detail popup. Leaving
+        // it armed lets a later content-focus request pull focus back to this
+        // stale episode while the user is moving into the season selector.
+        episodeToRestoreID = nil
+
+        isEnteringEpisodes = false
+        requestedSeasonFocusID = nil
+        isSeasonNavigationActive = false
+        isEpisodeNavigationActive = true
+        focusedSeasonID = nil
+
+        Task { @MainActor in
+            // The popup has already left the focus tree when this request is
+            // delivered. Yield once so the episode row is focusable again,
+            // then restore the exact row that opened it.
+            await Task.yield()
+            withoutFocusAnimation {
+                focusedEpisodeID = episodeID
+            }
+        }
+    }
+
+    private func withoutFocusAnimation(_ updates: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction, updates)
+    }
+
+    private var seriesHero: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text(location.title)
+                .font(.system(size: 58, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+
+            Text(seriesMetadata)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.80))
+
+            if let summary = location.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(.system(size: 24, weight: .regular, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.80))
+                    .lineLimit(3)
+                    .frame(maxWidth: 820, alignment: .leading)
+            }
+
+            if let upNextLabel {
+                Text("Up next: \(upNextLabel)")
+                    .font(.system(size: 21, weight: .semibold, design: .rounded))
+                    .foregroundStyle(TaterTheme.orangeBright)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 255, alignment: .bottomLeading)
+    }
+
+    private var seriesMetadata: String {
+        let episodeCount = seasons.reduce(0) { $0 + max($1.episodeCount, $1.leafCount) }
+        return "\(seasons.count) \(seasons.count == 1 ? "Season" : "Seasons")"
+            + (episodeCount > 0 ? "  •  \(episodeCount) Episodes" : "")
+    }
+
+    private var upNextLabel: String? {
+        seasons.compactMap(\.resumeTitle).first(where: { !$0.isEmpty })
+    }
+
+    private var preferredSeasonID: String? {
+        if let resumable = seasons.first(where: { $0.resumeTitle?.isEmpty == false }) {
+            return resumable.id
+        }
+        return seasons.first?.id
+    }
+}
+
+private struct EpisodeFocusLanding: View {
+    let isEnabled: Bool
+    let hasFocus: FocusState<Bool>.Binding
+    let onFocus: () -> Void
+
+    var body: some View {
+        Color.white.opacity(0.001)
+            .frame(maxWidth: .infinity)
+            .frame(height: 12)
+            .contentShape(Rectangle())
+            .focusable(isEnabled)
+            .focused(hasFocus)
+            .focusEffectDisabled()
+            .onChange(of: hasFocus.wrappedValue) { _, focused in
+                if focused { onFocus() }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+private struct SeasonSelectorButton: View {
+    let id: String
+    let title: String
+    let selected: Bool
+    let visuallyFocused: Bool
+    let focusedSeasonID: FocusState<String?>.Binding
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .tracking(2.6)
+                .foregroundStyle(
+                    visuallyFocused
+                        ? TaterTheme.orangeBright
+                        : (selected ? Color.white : Color.white.opacity(0.72))
+                )
+
+            Capsule()
+                .fill(selected || visuallyFocused ? TaterTheme.orange : Color.clear)
+                .frame(height: 4)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .focusable()
+        .focused(focusedSeasonID, equals: id)
+        .focusEffectDisabled()
+        .scaleEffect(visuallyFocused ? 1.05 : 1)
+        .animation(.easeOut(duration: 0.15), value: visuallyFocused)
+        .onTapGesture(perform: action)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+}
+
+private struct SeasonNavigationBackModifier: ViewModifier {
+    let enabled: Bool
+    let action: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.onExitCommand(perform: action)
+        } else {
+            content
+        }
+    }
+}
+
+private struct CinematicEpisodeRow: View {
+    let item: MediaItem
+
+    var body: some View {
+        HStack(spacing: 30) {
+            ArtworkView(
+                remoteValue: item.episodeStill ?? item.backdrop ?? item.poster ?? item.seasonPoster,
+                demoName: item.wideDemoArtworkName
+            )
+            .frame(width: 390, height: 210)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(episodeLabel)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .tracking(2)
+                    .foregroundStyle(.white.opacity(0.72))
+
+                Text(item.title)
+                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+
+                if let summary = item.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.system(size: 19, weight: .regular, design: .rounded))
+                        .foregroundStyle(TaterTheme.secondaryText)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 24)
+
+            VStack(alignment: .trailing, spacing: 16) {
+                if let duration = item.durationDisplay, !duration.isEmpty {
+                    Text(duration)
+                        .font(.system(size: 19, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+
+                if item.visibleProgress >= 0.95 {
+                    Label("Watched", systemImage: "checkmark.circle")
+                        .font(.system(size: 19, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.76))
+                } else if item.visibleProgress > 0 {
+                    VStack(alignment: .trailing, spacing: 8) {
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.20))
+                                Capsule()
+                                    .fill(TaterTheme.orange)
+                                    .frame(width: geometry.size.width * item.visibleProgress)
+                            }
+                        }
+                        .frame(width: 190, height: 7)
+
+                        Text("\(Int(item.visibleProgress * 100))% watched")
+                            .font(.system(size: 17, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.68))
+                    }
+                }
+            }
+            .frame(width: 220, alignment: .trailing)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, minHeight: 246, alignment: .leading)
+        .background(Color.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        }
+    }
+
+    private var episodeLabel: String {
+        if let subtitle = item.subtitle, !subtitle.isEmpty { return subtitle.uppercased() }
+        return "EPISODE"
     }
 }
 
@@ -573,16 +1097,7 @@ private struct LibraryEmptyState: View {
 
 private struct LibraryGlowBackground: View {
     var body: some View {
-        ZStack {
-            TaterTheme.background
-            RadialGradient(
-                colors: [TaterTheme.orange.opacity(0.16), Color.clear],
-                center: .topLeading,
-                startRadius: 20,
-                endRadius: 900
-            )
-        }
-        .ignoresSafeArea()
+        Color.black.ignoresSafeArea()
     }
 }
 
@@ -614,7 +1129,7 @@ private enum LibraryStage: Equatable {
     var showsHero: Bool { self == .seasons || self == .episodes }
 }
 
-private extension MediaItem {
+extension MediaItem {
     var isBrowsableLibraryItem: Bool {
         guard streamURL?.isEmpty != false else { return false }
         let kind = mediaType?.lowercased() ?? ""

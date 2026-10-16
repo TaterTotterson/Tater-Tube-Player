@@ -11,9 +11,11 @@ import com.tatertotterson.tatertubeplayer.model.LiveProgram
 import com.tatertotterson.tatertubeplayer.model.ModelParser
 import com.tatertotterson.tatertubeplayer.model.PairResponse
 import com.tatertotterson.tatertubeplayer.model.PlaybackPlan
+import com.tatertotterson.tatertubeplayer.model.PlaybackProcessingInfo
 import com.tatertotterson.tatertubeplayer.model.PlayerHome
 import com.tatertotterson.tatertubeplayer.model.Recommendations
 import com.tatertotterson.tatertubeplayer.model.TtsRequest
+import com.tatertotterson.tatertubeplayer.model.TaterBumperSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -107,6 +109,13 @@ class TaterApiClient(
         return raw to ModelParser.recommendations(raw)
     }
 
+    suspend fun nextTaterBumper(source: TaterBumperSource): MediaItem? {
+        val raw = request(pathWithQuery("/api/tater/bumpers/next", "source" to source.wireValue))
+        return ModelParser.taterBumper(raw)?.let { item ->
+            item.copy(streamUrl = item.streamUrl?.let(::resolveUrl))
+        }?.takeIf { !it.streamUrl.isNullOrBlank() }
+    }
+
     suspend fun createRecommendationSpeech(batchId: String): TtsRequest {
         val body = JSONObject()
             .put("profile_id", "household")
@@ -166,6 +175,9 @@ class TaterApiClient(
             plan.copy(streamUrl = isolated)
         }
     }
+
+    suspend fun activePlaybackStreams(): List<PlaybackProcessingInfo> =
+        ModelParser.activePlaybackStreams(request("/api/tater/streams/active", timeoutMs = 8_000))
 
     suspend fun clearPlayState(item: MediaItem) {
         val body = playStateBody(item, 0, 0, completed = true, playbackActive = false)

@@ -218,6 +218,20 @@ final class APIClient: @unchecked Sendable {
         )
     }
 
+    func nextTaterBumper(for source: TaterBumperSource) async throws -> MediaItem? {
+        let path = pathWithQuery(
+            "/api/tater/bumpers/next",
+            items: [URLQueryItem(name: "source", value: source.rawValue)]
+        )
+        let data = try await request(path: path)
+        let response = try decodeEnvelope(TaterBumperResponse.self, from: data)
+        guard response.enabled,
+              let item = response.item,
+              item.streamURL?.isEmpty == false
+        else { return nil }
+        return item
+    }
+
     func createRecommendationSpeech(batchID: String, localHour: Int) async throws -> TaterTTSRequestState {
         let payload = TaterTTSCreateRequest(
             profileID: "household",
@@ -474,6 +488,11 @@ final class APIClient: @unchecked Sendable {
             }
         }
         return PlaybackPlanLookup(plan: plan, cacheKey: cacheKey, wasCached: false)
+    }
+
+    func activePlaybackStreams() async throws -> [PlaybackProcessingInfo] {
+        let data = try await request(path: "/api/tater/streams/active", timeout: 8)
+        return try decodeEnvelope([PlaybackProcessingInfo].self, from: data)
     }
 
     func invalidatePlaybackPlan(cacheKey: String?) {

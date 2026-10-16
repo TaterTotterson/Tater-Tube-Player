@@ -3,9 +3,16 @@ import SwiftUI
 struct TaterPicksView: View {
     @EnvironmentObject private var store: PlayerStore
     @Binding var selectedTab: Int
+    let onReturnToTopNavigation: () -> Void
+    let contentFocusRequest: Int
 
     var body: some View {
-        TaterPicksContent(speech: store.recommendationSpeech, selectedTab: $selectedTab)
+        TaterPicksContent(
+            speech: store.recommendationSpeech,
+            selectedTab: $selectedTab,
+            onReturnToTopNavigation: onReturnToTopNavigation,
+            contentFocusRequest: contentFocusRequest
+        )
     }
 }
 
@@ -13,69 +20,64 @@ private struct TaterPicksContent: View {
     @EnvironmentObject private var store: PlayerStore
     @ObservedObject var speech: RecommendationSpeechCoordinator
     @Binding var selectedTab: Int
+    let onReturnToTopNavigation: () -> Void
+    let contentFocusRequest: Int
 
-    @FocusState private var focusedPickID: String?
+    @State private var highlightedPickID: String?
     @State private var spokenBatchID: String?
     @State private var navigationPath: [LibraryLocation] = []
-
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 26), count: 4)
+    @FocusState private var entryCardHasFocus: Bool
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            ZStack {
-                picksBackground
+            ZStack(alignment: .topLeading) {
+                TaterPicksBackdrop(item: highlightedRecommendation?.launch)
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 38) {
-                        hero
+                VStack(alignment: .leading, spacing: 0) {
+                    hero
+                        .padding(.horizontal, 70)
 
-                        if !displayedRecommendations.isEmpty {
-                            LazyVGrid(columns: columns, spacing: 28) {
-                                ForEach(displayedRecommendations) { recommendation in
-                                    TaterCardButton(
-                                        cornerRadius: 24,
-                                        action: { activate(recommendation) },
-                                        onFocusChange: { focused in
-                                            if focused {
-                                                focusedPickID = recommendation.id
-                                            } else if focusedPickID == recommendation.id {
-                                                focusedPickID = nil
-                                            }
-                                        }
-                                    ) {
-                                        TaterPickCard(recommendation: recommendation)
-                                    }
-                                }
+                    if !displayedRecommendations.isEmpty {
+                        VStack(alignment: .leading, spacing: 24) {
+                            ForEach(pickRails) { rail in
+                                TaterPicksShelf(
+                                    rail: rail,
+                                    highlightedPickID: $highlightedPickID,
+                                    requestedEntryFocus: rail.id == pickRails.first?.id ? $entryCardHasFocus : nil,
+                                    onSelect: activate
+                                )
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .focusSection()
-                        } else if store.isRecommendationsRefreshing {
-                            TaterPicksStatePanel(
-                                icon: "wand.and.stars",
-                                title: "Tater is checking your shelves…",
-                                message: "Your next set of picks is on the way.",
-                                showsProgress: true
-                            )
-                        } else if let error = store.recommendationsError {
-                            TaterPicksStatePanel(
-                                icon: "exclamationmark.triangle.fill",
-                                title: "Tater Picks couldn’t load",
-                                message: error
-                            )
-                        } else {
-                            TaterPicksStatePanel(
-                                icon: "wand.and.stars",
-                                title: "Tater is still getting to know you",
-                                message: "Watch a few movies, shows, or Tube TV programs and Tater Core will prepare picks on its next schedule."
-                            )
                         }
+                        .padding(.horizontal, 70)
+                        .padding(.top, 8)
+                        .padding(.bottom, 82)
+                    } else {
+                        Group {
+                            if store.isRecommendationsRefreshing {
+                                TaterPicksStatePanel(
+                                    icon: "wand.and.stars",
+                                    title: "Tater is checking your shelves…",
+                                    message: "Your next set of picks is on the way.",
+                                    showsProgress: true
+                                )
+                            } else if let error = store.recommendationsError {
+                                TaterPicksStatePanel(
+                                    icon: "exclamationmark.triangle.fill",
+                                    title: "Tater Picks couldn’t load",
+                                    message: error
+                                )
+                            } else {
+                                TaterPicksStatePanel(
+                                    icon: "wand.and.stars",
+                                    title: "Tater is still getting to know you",
+                                    message: "Watch a few movies, shows, or Tube TV programs and Tater Core will prepare picks on its next schedule."
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 78)
+                        .padding(.top, 24)
                     }
-                    .padding(.horizontal, 78)
-                    .padding(.top, 34)
-                    .padding(.bottom, 120)
                 }
-                .refreshable { await store.refreshRecommendations() }
-                .onExitCommand { selectedTab = 0 }
             }
             .navigationDestination(for: LibraryLocation.self) { location in
                 LibraryCollectionView(
@@ -84,13 +86,26 @@ private struct TaterPicksContent: View {
                 )
             }
         }
+        .onExitCommand {
+            if navigationPath.isEmpty {
+                onReturnToTopNavigation()
+            } else {
+                navigationPath.removeLast()
+            }
+        }
         .task {
             queueSpeechIfPossible()
             await store.refreshRecommendations()
+            seedHighlightedPick()
             queueSpeechIfPossible()
         }
         .onChange(of: store.recommendationBatch?.id) { _, _ in
+            seedHighlightedPick(reset: true)
+            requestEntryFocusIfNeeded()
             queueSpeechIfPossible()
+        }
+        .onChange(of: contentFocusRequest) { _, _ in
+            requestEntryFocusIfNeeded()
         }
         .onDisappear {
             spokenBatchID = nil
@@ -98,81 +113,65 @@ private struct TaterPicksContent: View {
         }
     }
 
-    @ViewBuilder
-    private var picksBackground: some View {
-        if let artwork = focusedRecommendation?.launch.backdrop
-            ?? focusedRecommendation?.launch.poster,
-           !artwork.isEmpty {
-            ArtworkView(remoteValue: artwork, demoName: focusedRecommendation?.launch.demoArtworkName)
-                .ignoresSafeArea()
-                .overlay(Color.black.opacity(0.82))
-                .blur(radius: 18)
-        } else {
-            ZStack {
-                TaterTheme.background
-                RadialGradient(
-                    colors: [TaterTheme.orange.opacity(0.18), .clear],
-                    center: UnitPoint(x: 0.20, y: 0.06),
-                    startRadius: 10,
-                    endRadius: 920
-                )
-            }
-            .ignoresSafeArea()
-        }
-    }
-
     private var hero: some View {
-        ZStack {
-            if let recommendation = focusedRecommendation {
-                ArtworkView(
-                    remoteValue: recommendation.launch.backdrop ?? recommendation.launch.poster,
-                    demoName: recommendation.launch.demoArtworkName
-                )
-                .opacity(0.11)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(heroEyebrow)
+                .font(.system(size: 19, weight: .bold, design: .rounded))
+                .tracking(2.5)
+                .foregroundStyle(TaterTheme.orangeBright)
+
+            Text(heroTitle)
+                .font(.system(size: 58, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            if let metadata = heroMetadata {
+                Text(metadata)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(1)
             }
 
-            HStack(spacing: 44) {
-                VStack(alignment: .leading, spacing: 15) {
-                    Text(heroEyebrow)
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .tracking(2.4)
-                        .foregroundStyle(TaterTheme.orange)
+            if !heroMessage.isEmpty {
+                Text(heroMessage)
+                    .font(.system(size: 22, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(3)
+                    .frame(maxWidth: 850, alignment: .leading)
+            }
 
-                    Text(heroTitle)
-                        .font(.system(size: 45, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-
-                    if !heroMessage.isEmpty {
-                        Text(heroMessage)
-                            .font(.system(size: 24, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.82))
-                            .lineLimit(4)
-                    }
-
-                    HStack(spacing: 11) {
-                        if speech.state == .loading {
-                            ProgressView()
-                                .tint(TaterTheme.orange)
-                        } else if speech.state == .speaking {
-                            Image(systemName: "waveform")
-                                .foregroundStyle(TaterTheme.orange)
-                        }
-
-                        Text(speechStatus)
-                            .font(.system(size: 18, weight: .semibold, design: .rounded))
-                            .foregroundStyle(speechFailed ? Color.orange.opacity(0.78) : TaterTheme.secondaryText)
-                            .lineLimit(2)
+            if let recommendation = highlightedRecommendation {
+                HStack(spacing: 10) {
+                    ForEach(recommendation.launch.cinematicMetadataChips, id: \.self) { value in
+                        Text(value)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.90))
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                            .background(Color.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 6))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.white.opacity(0.32), lineWidth: 1.3)
+                            }
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 46)
-            .padding(.vertical, 30)
+
+            HStack(spacing: 10) {
+                if speech.state == .loading {
+                    ProgressView().tint(TaterTheme.orange)
+                } else if speech.state == .speaking {
+                    Image(systemName: "waveform").foregroundStyle(TaterTheme.orange)
+                }
+
+                Text(speechStatus)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(speechFailed ? Color.orange.opacity(0.78) : .white.opacity(0.58))
+                    .lineLimit(1)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 300)
-        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-        .taterGlass(cornerRadius: 34)
+        .frame(maxWidth: .infinity, minHeight: 320, alignment: .bottomLeading)
+        .padding(.bottom, 18)
     }
 
     private var displayedRecommendations: [TaterRecommendationItem] {
@@ -185,9 +184,12 @@ private struct TaterPicksContent: View {
         }
     }
 
-    private var focusedRecommendation: TaterRecommendationItem? {
-        guard let focusedPickID else { return nil }
-        return displayedRecommendations.first { $0.id == focusedPickID }
+    private var highlightedRecommendation: TaterRecommendationItem? {
+        if let highlightedPickID,
+           let recommendation = displayedRecommendations.first(where: { $0.id == highlightedPickID }) {
+            return recommendation
+        }
+        return displayedRecommendations.first
     }
 
     private var assistantName: String {
@@ -196,17 +198,17 @@ private struct TaterPicksContent: View {
     }
 
     private var heroEyebrow: String {
-        focusedRecommendation == nil
+        highlightedRecommendation == nil
             ? "A NOTE FROM \(assistantName.uppercased())"
             : "WHY \(assistantName.uppercased()) PICKED THIS"
     }
 
     private var heroTitle: String {
-        focusedRecommendation?.title ?? "Tater Picks"
+        highlightedRecommendation?.title ?? "Tater Picks"
     }
 
     private var heroMessage: String {
-        if let focusedRecommendation { return focusedRecommendation.reason }
+        if let highlightedRecommendation { return highlightedRecommendation.reason }
         let summary = store.recommendationBatch?.summary.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !summary.isEmpty { return summary }
         return store.recommendationBatch?.picksBriefing?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -229,6 +231,65 @@ private struct TaterPicksContent: View {
     private var speechFailed: Bool {
         if case .failed = speech.state { return true }
         return false
+    }
+
+    private var heroMetadata: String? {
+        guard let item = highlightedRecommendation?.launch else { return nil }
+        let values = [
+            item.date,
+            item.contentRating,
+            item.durationDisplay
+        ].compactMap { value -> String? in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }
+        return values.isEmpty ? nil : values.joined(separator: "  •  ")
+    }
+
+    private var pickRails: [TaterPickRail] {
+        let sorted = displayedRecommendations.sorted { $0.rank < $1.rank }
+        let moviePicks = sorted.filter { isMovie($0.launch) }
+        let seriesPicks = sorted.filter { isSeries($0.launch) }
+        let classifiedIDs = Set((moviePicks + seriesPicks).map(\.id))
+        let otherPicks = sorted.filter { !classifiedIDs.contains($0.id) }
+
+        if !moviePicks.isEmpty && !seriesPicks.isEmpty {
+            return [
+                TaterPickRail(id: "movie-picks", title: "MOVIE PICKS", detail: "Hand-picked for movie night", items: moviePicks + otherPicks),
+                TaterPickRail(id: "series-picks", title: "SERIES PICKS", detail: "Your next great series", items: seriesPicks)
+            ]
+        }
+
+        guard sorted.count > 1 else {
+            return [TaterPickRail(id: "top-picks", title: "TATER’S PICKS", detail: "Chosen for you", items: sorted)]
+        }
+        let splitIndex = max(1, Int(ceil(Double(sorted.count) / 2.0)))
+        return [
+            TaterPickRail(id: "top-picks", title: "TATER’S TOP PICKS", detail: "Start with these", items: Array(sorted.prefix(splitIndex))),
+            TaterPickRail(id: "more-picks", title: "MORE FOR YOU", detail: "Keep exploring", items: Array(sorted.dropFirst(splitIndex)))
+        ].filter { !$0.items.isEmpty }
+    }
+
+    private func isMovie(_ item: MediaItem) -> Bool {
+        ["movie", "film"].contains((item.mediaType ?? item.type ?? "").lowercased())
+    }
+
+    private func isSeries(_ item: MediaItem) -> Bool {
+        ["show", "series", "tv", "tvshow", "season", "episode"].contains((item.mediaType ?? item.type ?? "").lowercased())
+    }
+
+    private func seedHighlightedPick(reset: Bool = false) {
+        if reset || highlightedPickID == nil {
+            highlightedPickID = displayedRecommendations.first?.id
+        }
+    }
+
+    private func requestEntryFocusIfNeeded() {
+        guard pickRails.first?.items.isEmpty == false else { return }
+        Task { @MainActor in
+            await Task.yield()
+            entryCardHasFocus = true
+        }
     }
 
     private func queueSpeechIfPossible() {
@@ -275,49 +336,145 @@ private struct TaterPicksContent: View {
     }
 }
 
+private struct TaterPickRail: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let items: [TaterRecommendationItem]
+}
+
+private struct TaterPicksShelf: View {
+    let rail: TaterPickRail
+    @Binding var highlightedPickID: String?
+    let requestedEntryFocus: FocusState<Bool>.Binding?
+    let onSelect: (TaterRecommendationItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .lastTextBaseline) {
+                Text(rail.title)
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                    .tracking(3)
+                Spacer()
+                Text(rail.detail)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.58))
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 24) {
+                    ForEach(rail.items) { recommendation in
+                        TaterCardButton(
+                            cornerRadius: 22,
+                            action: { onSelect(recommendation) },
+                            onFocusChange: { focused in
+                                guard focused else { return }
+                                var transaction = Transaction()
+                                transaction.animation = nil
+                                transaction.disablesAnimations = true
+                                withTransaction(transaction) {
+                                    highlightedPickID = recommendation.id
+                                }
+                            },
+                            requestedFocus: recommendation.id == rail.items.first?.id ? requestedEntryFocus : nil
+                        ) {
+                            TaterPickCard(recommendation: recommendation)
+                        }
+                    }
+                }
+                .padding(.horizontal, 30)
+                .padding(.vertical, 18)
+            }
+            .scrollClipDisabled()
+            .contentMargins(.horizontal, -30, for: .scrollContent)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
+    }
+}
+
+private struct TaterPicksBackdrop: View {
+    let item: MediaItem?
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            TaterTheme.background
+
+            if let item {
+                ArtworkView(
+                    remoteValue: item.wideShelfArtwork,
+                    demoName: item.wideDemoArtworkName,
+                    showsPlaceholder: false
+                )
+                .frame(maxWidth: .infinity)
+                .frame(height: 760, alignment: .top)
+                .clipped()
+            }
+
+            LinearGradient(
+                colors: [Color.black.opacity(0.97), Color.black.opacity(0.56), Color.black.opacity(0.08)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            LinearGradient(
+                colors: [Color.black.opacity(0.04), Color.black.opacity(0.22), Color.black.opacity(0.96), .black],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .ignoresSafeArea()
+    }
+}
+
 private struct TaterPickCard: View {
     let recommendation: TaterRecommendationItem
 
     private var item: MediaItem { recommendation.launch }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            ZStack(alignment: .topTrailing) {
-                ArtworkView(
-                    remoteValue: item.backdrop ?? item.episodeStill ?? item.poster,
-                    demoName: item.demoArtworkName
-                )
-                .frame(maxWidth: .infinity)
-                .frame(height: 185)
-                .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+        ZStack(alignment: .bottomLeading) {
+            ArtworkView(
+                remoteValue: item.wideShelfArtwork,
+                demoName: item.wideDemoArtworkName
+            )
 
-                Text(String(format: "%02d", max(recommendation.rank, 1)))
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+            LinearGradient(
+                colors: [.clear, Color.black.opacity(0.18), Color.black.opacity(0.94)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TATER PICK  •  \((item.mediaType ?? recommendation.mediaType ?? "video").uppercased())")
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .tracking(1.25)
+                    .foregroundStyle(TaterTheme.orangeBright)
+
+                Text(recommendation.title)
+                    .font(.system(size: 25, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
-                    .background(TaterTheme.orange.opacity(0.90), in: Capsule())
-                    .padding(12)
+                    .lineLimit(1)
+
+                Text(recommendation.reason)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
             }
+            .padding(20)
 
-            Text("TATER PICK  •  \((item.mediaType ?? recommendation.mediaType ?? "video").uppercased())")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .tracking(1.0)
-                .foregroundStyle(TaterTheme.orangeBright)
-
-            Text(recommendation.title)
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-
-            Text(recommendation.reason)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.72))
-                .lineLimit(2)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity)
-        .contentShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+        .frame(width: 360, height: 203)
+        .overlay(alignment: .topTrailing) {
+            Text(String(format: "%02d", max(recommendation.rank, 1)))
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(TaterTheme.orange.opacity(0.90), in: Capsule())
+                .padding(12)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 

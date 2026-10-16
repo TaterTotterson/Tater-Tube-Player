@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,14 +54,17 @@ import kotlinx.coroutines.delay
 
 private val GlassShape = RoundedCornerShape(22.dp)
 
+val LocalTopNavigationFocused = compositionLocalOf { false }
+
 @Composable
 fun RestoreInitialFocus(
     requester: FocusRequester,
     focusKey: Any?,
     enabled: Boolean,
 ) {
-    LaunchedEffect(focusKey, enabled) {
-        if (!enabled) return@LaunchedEffect
+    val topNavigationFocused = LocalTopNavigationFocused.current
+    LaunchedEffect(focusKey, enabled, topNavigationFocused) {
+        if (!enabled || topNavigationFocused) return@LaunchedEffect
         delay(120)
         runCatching { requester.requestFocus() }
     }
@@ -129,6 +133,7 @@ fun TaterArtwork(
     token: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    alignment: Alignment = Alignment.Center,
     backgroundColor: Color = Color(0xFF171717),
 ) {
     if (item.artworkResource != null) {
@@ -136,6 +141,7 @@ fun TaterArtwork(
             painter = painterResource(item.artworkResource),
             contentDescription = item.title,
             contentScale = contentScale,
+            alignment = alignment,
             modifier = modifier,
         )
         return
@@ -162,6 +168,7 @@ fun TaterArtwork(
         model = model,
         contentDescription = item.title,
         contentScale = contentScale,
+        alignment = alignment,
         modifier = modifier.background(backgroundColor),
         error = painterResource(R.drawable.tater_launcher_icon),
         fallback = painterResource(R.drawable.tater_launcher_icon),
@@ -175,6 +182,7 @@ fun MediaCard(
     token: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onFocus: ((Boolean) -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val borderColor by animateColorAsState(
@@ -190,7 +198,10 @@ fun MediaCard(
                 scaleX = scale
                 scaleY = scale
             }
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocus?.invoke(it.isFocused)
+            }
             .clickable(onClick = onClick)
             .taterFocusGlow(focused, GlassShape)
             .clip(GlassShape)

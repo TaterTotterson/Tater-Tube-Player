@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var store: PlayerStore
     @Binding var selectedTab: Int
+    let onReturnToTopNavigation: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
@@ -43,6 +44,6 @@ struct SettingsView: View {
                 ProgressView().tint(TaterTheme.orange).padding(36)
             }
         }
-        .onExitCommand { selectedTab = 0 }
+        .onExitCommand(perform: onReturnToTopNavigation)
     }
 }

@@ -65,4 +65,40 @@ class ModelParserTest {
         assertEquals("episode-2", next?.id)
         assertEquals(1_320_000L, next?.durationMs)
     }
+
+    @Test
+    fun parsesEnabledServerBumperAndClassifiesPlaybackSources() {
+        val bumper = ModelParser.taterBumper(
+            """{"success":true,"data":{"enabled":true,"source":"local_movies","item":{"type":"tater_bumper","mediaType":"bumper","title":"Tater Time","streamUrl":"/api/tater/bumpers/file/tater.mp4","durationSeconds":8}}}"""
+        )
+
+        assertTrue(bumper?.isTaterBumper == true)
+        assertEquals(8_000L, bumper?.durationMs)
+        assertEquals(null, bumper?.taterBumperSource)
+        assertEquals(
+            TaterBumperSource.LOCAL_SERIES,
+            MediaItem("episode", "Episode", mediaType = "episode").taterBumperSource,
+        )
+        assertEquals(
+            TaterBumperSource.NZB_MOVIES,
+            MediaItem("discover", "Movie", type = "nzbStream").taterBumperSource,
+        )
+        assertEquals(
+            TaterBumperSource.LOCAL_MOVIES,
+            MediaItem("movie", "Movie", mediaType = "movie").taterBumperSource,
+        )
+        assertEquals(
+            null,
+            MediaItem("channel", "Channel", mediaType = "channel").taterBumperSource,
+        )
+    }
+
+    @Test
+    fun ignoresDisabledServerBumper() {
+        val bumper = ModelParser.taterBumper(
+            """{"success":true,"data":{"enabled":false,"source":"local_movies"}}"""
+        )
+
+        assertEquals(null, bumper)
+    }
 }

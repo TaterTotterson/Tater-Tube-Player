@@ -28,9 +28,11 @@ import com.tatertotterson.tatertubeplayer.model.LiveProgram
 import com.tatertotterson.tatertubeplayer.model.MediaItem
 import com.tatertotterson.tatertubeplayer.model.ModelParser
 import com.tatertotterson.tatertubeplayer.model.PlaybackPlan
+import com.tatertotterson.tatertubeplayer.model.PlaybackProcessingInfo
 import com.tatertotterson.tatertubeplayer.model.PlayerHome
 import com.tatertotterson.tatertubeplayer.model.RecommendationBatch
 import com.tatertotterson.tatertubeplayer.model.RecommendationItem
+import com.tatertotterson.tatertubeplayer.model.TaterBumperSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -44,8 +46,9 @@ enum class AppPhase { STARTING, PAIRING, READY }
 
 enum class Destination(val label: String, val glyph: String) {
     HOME("Home", "⌂"),
-    LIBRARY("Library", "▤"),
     LIVE_TV("Live TV", "▣"),
+    MOVIES("Movies", "▶"),
+    SERIES("Series", "▤"),
     DISCOVER("Discover", "✦"),
     TATER_PICKS("Tater Picks", "✧"),
     SETTINGS("Settings", "⚙"),
@@ -66,6 +69,12 @@ data class PlaybackSession(
     val startPositionMs: Long,
 )
 
+private data class QueuedPlayback(
+    val item: MediaItem,
+    val resume: Boolean,
+    val holdDiscoveryOverlay: Boolean,
+)
+
 data class PlayerUiState(
     val phase: AppPhase = AppPhase.STARTING,
     val home: PlayerHome? = null,
@@ -73,6 +82,7 @@ data class PlayerUiState(
     val menuVisible: Boolean = false,
     val selectedMedia: MediaItem? = null,
     val playback: PlaybackSession? = null,
+    val playbackProcessing: PlaybackProcessingInfo? = null,
     val isRefreshing: Boolean = false,
     val isPreparingPlayback: Boolean = false,
     val isDemo: Boolean = false,
@@ -96,6 +106,8 @@ data class PlayerUiState(
     val recommendations: List<RecommendationItem> = emptyList(),
     val isRecommendationsRefreshing: Boolean = false,
     val speechState: TaterSpeechState = TaterSpeechState.Idle,
+    val taterPicksFocusId: String? = null,
+    val returningToTaterPicks: Boolean = false,
 )
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
@@ -111,12 +123,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var client: TaterApiClient? = null
     private var capabilities: PlaybackCapabilities = DeviceCapabilities.read(application)
     private var speechJob: Job? = null
+    private var playbackProcessingJob: Job? = null
     private var speechPlayer: MediaPlayer? = null
     private var speechRequestId: String? = null
     private var spokenBatchId: String? = null
     private var pendingDeepLinkId: String? = null
     private var discoverPageJob: Job? = null
     private var lastLiveGuideRefreshAtMs: Long? = null
+    private var queuedPlayback: QueuedPlayback? = null
 
     var state by mutableStateOf(PlayerUiState())
         private set
@@ -196,10 +210,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             destination = destination,
             menuVisible = false,
             selectedMedia = null,
-            libraryStack = if (destination == Destination.LIBRARY) state.libraryStack else emptyList(),
+            libraryStack = emptyList(),
+            returningToTaterPicks = false,
         )
         when (destination) {
-            Destination.LIBRARY -> refreshLibraryRows()
+            Destination.MOVIES, Destination.SERIES -> refreshLibraryRows()
             Destination.LIVE_TV -> refreshLiveGuide()
             Destination.DISCOVER -> refreshDiscoverCatalog()
             Destination.TATER_PICKS -> refreshRecommendations()
@@ -211,8 +226,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         when {
             state.selectedMedia != null -> closeDetails()
             state.menuVisible -> hideMenu()
-            state.destination == Destination.LIBRARY && state.libraryStack.isNotEmpty() ->
-                state = state.copy(libraryStack = state.libraryStack.dropLast(1))
+            state.destination in setOf(Destination.MOVIES, Destination.SERIES) && state.libraryStack.isNotEmpty() -> {
+                if (state.returningToTaterPicks && state.libraryStack.size == 1) {
+                    state = state.copy(destination = Destination.TATER_PICKS, libraryStack = emptyList())
+                } else {
+                    state = state.copy(libraryStack = state.libraryStack.dropLast(1))
+                }
+            }
             state.destination == Destination.DISCOVER && state.discoverStage != DiscoverStage.CATEGORIES -> {
                 when (state.discoverStage) {
                     DiscoverStage.FILES -> state = state.copy(
@@ -525,8 +545,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun activateRecommendation(recommendation: RecommendationItem) {
         stopRecommendationSpeech()
         val item = recommendation.launch
+        state = state.copy(taterPicksFocusId = recommendation.id)
         if (item.isBrowsable) {
-            state = state.copy(destination = Destination.LIBRARY)
+            val libraryDestination = if (
+                item.mediaType.orEmpty().lowercase() in setOf("show", "series", "season", "episode", "tvshow")
+            ) Destination.SERIES else Destination.MOVIES
+            state = state.copy(
+                destination = libraryDestination,
+                libraryStack = emptyList(),
+                returningToTaterPicks = true,
+            )
             openLibrary(LibraryLocation(
                 categoryId = item.categoryId.orEmpty(),
                 title = item.title,
@@ -538,6 +566,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 mediaType = item.mediaType,
             ))
         } else openDetails(item)
+    }
+
+    fun rememberTaterPicksFocus(id: String) {
+        if (state.taterPicksFocusId != id) state = state.copy(taterPicksFocusId = id)
+    }
+
+    fun completeTaterPicksReturn() {
+        if (state.returningToTaterPicks) state = state.copy(returningToTaterPicks = false)
     }
 
     fun play(item: MediaItem, resume: Boolean) {
@@ -560,11 +596,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
             return
         }
-        startPlayback(item, resume)
+        startPlayback(
+            item = item,
+            resume = resume,
+            // Series bumpers are reserved for the automatic episode-to-episode
+            // transition. A user choosing an episode should start it directly.
+            allowBumper = item.taterBumperSource != TaterBumperSource.LOCAL_SERIES,
+        )
     }
 
-    private fun startPlayback(item: MediaItem, resume: Boolean, holdDiscoveryOverlay: Boolean = false) {
+    private fun startPlayback(
+        item: MediaItem,
+        resume: Boolean,
+        holdDiscoveryOverlay: Boolean = false,
+        allowBumper: Boolean = true,
+    ) {
         if (state.isDemo) {
+            queuedPlayback = null
             val durationMs = DemoCatalog.playbackDurationMs
             val resumePositionMs = if (resume) {
                 (durationMs * item.progressPercent.coerceIn(0.0, 95.0) / 100.0).toLong()
@@ -583,6 +631,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     plan = DemoCatalog.playbackPlan(resourceUri),
                     startPositionMs = resumePositionMs,
                 ),
+                playbackProcessing = null,
                 errorMessage = null,
             )
             return
@@ -602,13 +651,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             state = state.copy(isPreparingPlayback = true, errorMessage = null)
             val playbackCapabilities = DeviceCapabilities.read(getApplication()).also { capabilities = it }
-            runCatching { api.playbackPlan(item, playbackCapabilities) }
+            // A bumper is a pre-roll for a new viewing session. Resuming should
+            // return directly to the saved position without replaying it.
+            val bumper = if (allowBumper && !resume) {
+                item.taterBumperSource?.let { source ->
+                    runCatching { api.nextTaterBumper(source) }.getOrNull()
+                }
+            } else null
+            val playbackItem = bumper ?: item
+            if (bumper != null) {
+                queuedPlayback = QueuedPlayback(item, resume, holdDiscoveryOverlay)
+            } else if (allowBumper) {
+                queuedPlayback = null
+            }
+            runCatching { api.playbackPlan(playbackItem, playbackCapabilities) }
                 .onSuccess { plan ->
-                    val duration = item.durationMs.takeIf { it > 0 }
+                    val duration = playbackItem.durationMs.takeIf { it > 0 }
                         ?: plan.source.durationSeconds?.times(1000)?.toLong().orZero()
-                    val playable = item.copy(
+                    val playable = playbackItem.copy(
                         durationMs = duration,
-                        channelLogoUrl = item.channelLogoUrl?.let(api::resolveUrl),
+                        channelLogoUrl = playbackItem.channelLogoUrl?.let(api::resolveUrl),
                     )
                     state = state.copy(
                         isPreparingPlayback = false,
@@ -616,22 +678,51 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         playback = PlaybackSession(
                             item = playable,
                             plan = plan,
-                            startPositionMs = if (resume) item.viewOffsetMs else 0,
+                            startPositionMs = if (playable.isTaterBumper) 0 else if (resume) item.viewOffsetMs else 0,
                         ),
+                        playbackProcessing = null,
                     )
-                    runCatching { api.savePlayState(playable, state.playback?.startPositionMs ?: 0, duration, false, true) }
+                    if (!playable.isTaterBumper) {
+                        pollPlaybackProcessing(api)
+                        runCatching {
+                            api.savePlayState(playable, state.playback?.startPositionMs ?: 0, duration, false, true)
+                        }
+                    }
                 }
-                .onFailure { error -> state = state.copy(
-                    isPreparingPlayback = false,
-                    isPreparingDiscovery = if (holdDiscoveryOverlay) false else state.isPreparingDiscovery,
-                    errorMessage = error.userMessage(),
-                ) }
+                .onFailure { error ->
+                    if (playbackItem.isTaterBumper && queuedPlayback != null) {
+                        state = state.copy(isPreparingPlayback = false)
+                        startQueuedPlayback()
+                    } else {
+                        state = state.copy(
+                            isPreparingPlayback = false,
+                            isPreparingDiscovery = if (holdDiscoveryOverlay) false else state.isPreparingDiscovery,
+                            errorMessage = error.userMessage(),
+                        )
+                    }
+                }
         }
     }
 
     fun stopPlayback(positionMs: Long, durationMs: Long, completed: Boolean) {
         val session = state.playback ?: return
-        state = state.copy(playback = null, isPreparingDiscovery = false)
+        playbackProcessingJob?.cancel()
+        playbackProcessingJob = null
+        if (session.item.isTaterBumper) {
+            if (completed && queuedPlayback != null) {
+                startQueuedPlayback()
+            } else {
+                queuedPlayback = null
+                state = state.copy(
+                    playback = null,
+                    playbackProcessing = null,
+                    isPreparingDiscovery = false,
+                )
+            }
+            return
+        }
+        queuedPlayback = null
+        state = state.copy(playback = null, playbackProcessing = null, isPreparingDiscovery = false)
         updateVisibleProgress(session.item, positionMs, durationMs, completed)
         state.home?.let { home ->
             viewModelScope.launch { WatchNextPublisher.publish(getApplication(), home.continueWatching) }
@@ -654,6 +745,25 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun handlePlaybackFailure() {
+        if (state.playback?.item?.isTaterBumper == true && queuedPlayback != null) {
+            playbackProcessingJob?.cancel()
+            playbackProcessingJob = null
+            startQueuedPlayback()
+        }
+    }
+
+    private fun startQueuedPlayback() {
+        val queued = queuedPlayback ?: return
+        queuedPlayback = null
+        startPlayback(
+            item = queued.item,
+            resume = queued.resume,
+            holdDiscoveryOverlay = queued.holdDiscoveryOverlay,
+            allowBumper = false,
+        )
+    }
+
     fun changeAudioTrack(trackIndex: Int, positionMs: Long) {
         val session = state.playback ?: return
         val api = client ?: return
@@ -665,7 +775,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     state = state.copy(
                         isPreparingPlayback = false,
                         playback = PlaybackSession(session.item, plan, positionMs.coerceAtLeast(0)),
+                        playbackProcessing = null,
                     )
+                    pollPlaybackProcessing(api)
                 }
                 .onFailure { error ->
                     state = state.copy(isPreparingPlayback = false, errorMessage = error.userMessage())
@@ -691,6 +803,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun disconnect() {
+        playbackProcessingJob?.cancel()
+        playbackProcessingJob = null
         stopRecommendationSpeech()
         viewModelScope.launch { WatchNextPublisher.clear(getApplication()) }
         credentials.clear()
@@ -700,6 +814,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         client = null
         lastLiveGuideRefreshAtMs = null
         state = PlayerUiState(phase = AppPhase.PAIRING)
+    }
+
+    private fun pollPlaybackProcessing(api: TaterApiClient) {
+        playbackProcessingJob?.cancel()
+        playbackProcessingJob = viewModelScope.launch {
+            val delays = listOf(350L, 650L, 1_000L, 2_000L, 3_000L)
+            for (waitMs in delays) {
+                delay(waitMs)
+                if (!isActive || state.playback == null) return@launch
+                val streams = runCatching { api.activePlaybackStreams() }.getOrNull() ?: continue
+                val active = streams.filter { it.isActive }
+                val candidates = active.ifEmpty { streams.filter { it.activityAgeSeconds <= 5 } }
+                candidates.minByOrNull { it.activityAgeSeconds }?.let { current ->
+                    state = state.copy(playbackProcessing = current)
+                }
+            }
+        }
     }
 
     fun artworkUrl(item: MediaItem): String? = item.preferredArtwork?.let(::resolveArtworkUrl)

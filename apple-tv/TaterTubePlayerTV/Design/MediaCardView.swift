@@ -44,11 +44,12 @@ struct MediaCardView: View {
 
 struct WideMediaCardView: View {
     let item: MediaItem
+    var width: CGFloat = 340
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             ArtworkView(remoteValue: item.wideShelfArtwork, demoName: item.wideDemoArtworkName)
-                .frame(width: 340, height: 202)
+                .frame(width: width, height: 202)
 
             LinearGradient(
                 colors: [Color.black.opacity(0.08), Color.black.opacity(0.38), Color.black.opacity(0.92)],
@@ -92,7 +93,7 @@ struct WideMediaCardView: View {
                 }
             }
         }
-        .frame(width: 340, height: 202)
+        .frame(width: width, height: 202)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
@@ -215,7 +216,7 @@ struct LiveChannelCardView: View {
     }
 }
 
-private extension MediaItem {
+extension MediaItem {
     var wideShelfArtwork: String? {
         firstArtwork(backdrop, localBackdropVariant, episodeStill, poster, seasonPoster, seriesPoster)
     }

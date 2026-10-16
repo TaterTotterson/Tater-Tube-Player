@@ -18,8 +18,6 @@
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
-	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -31,17 +29,24 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.entertainment</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Tater Tube Server is user-hosted and commonly addressed by a private
-		     LAN IP. APIClient rejects non-local HTTP hosts; public hosts require HTTPS. -->
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Tater Tube Player connects to your Tater Tube Server on the local network.</string>
+	<key>TVTopShelfImage</key>
+	<dict>
+		<key>TVTopShelfPrimaryImage</key>
+		<string>Top Shelf Image</string>
+		<key>TVTopShelfPrimaryImageWide</key>
+		<string>Top Shelf Image Wide</string>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -51,13 +56,6 @@
 	<array>
 		<string>arm64</string>
 	</array>
-	<key>TVTopShelfImage</key>
-	<dict>
-		<key>TVTopShelfPrimaryImage</key>
-		<string>Top Shelf Image</string>
-		<key>TVTopShelfPrimaryImageWide</key>
-		<string>Top Shelf Image Wide</string>
-	</dict>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 </dict>

@@ -94,6 +94,7 @@ struct TaterCardButton<Label: View>: View {
     let usesDarkFocusSurface: Bool
     let action: () -> Void
     let onFocusChange: ((Bool) -> Void)?
+    let requestedFocus: FocusState<Bool>.Binding?
     let label: Label
 
     @Environment(\.isEnabled) private var isEnabled
@@ -104,41 +105,47 @@ struct TaterCardButton<Label: View>: View {
         usesDarkFocusSurface: Bool = false,
         action: @escaping () -> Void,
         onFocusChange: ((Bool) -> Void)? = nil,
+        requestedFocus: FocusState<Bool>.Binding? = nil,
         @ViewBuilder label: () -> Label
     ) {
         self.cornerRadius = cornerRadius
         self.usesDarkFocusSurface = usesDarkFocusSurface
         self.action = action
         self.onFocusChange = onFocusChange
+        self.requestedFocus = requestedFocus
         self.label = label()
     }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let activeFocus = requestedFocus ?? $isFocused
 
         label
             .contentShape(shape)
             .focusable(isEnabled)
-            .focused($isFocused)
+            .focused(activeFocus)
             .focusEffectDisabled()
             .background {
-                if usesDarkFocusSurface && isFocused {
+                if usesDarkFocusSurface && activeFocus.wrappedValue {
                     shape.fill(Color.black.opacity(0.90))
                 }
             }
             .overlay {
                 shape.stroke(
-                    isFocused ? TaterTheme.orangeBright : Color.clear,
-                    lineWidth: isFocused ? 4 : 0
+                    activeFocus.wrappedValue ? TaterTheme.orangeBright : Color.clear,
+                    lineWidth: activeFocus.wrappedValue ? 4 : 0
                 )
             }
             .shadow(
-                color: isFocused ? TaterTheme.orange.opacity(0.34) : .clear,
-                radius: isFocused ? 18 : 0
+                color: activeFocus.wrappedValue ? TaterTheme.orange.opacity(0.34) : .clear,
+                radius: activeFocus.wrappedValue ? 18 : 0
             )
-            .scaleEffect(isFocused ? 1.025 : 1)
+            .scaleEffect(activeFocus.wrappedValue ? 1.025 : 1)
             .opacity(isEnabled ? 1 : 0.45)
-            .animation(.easeOut(duration: 0.16), value: isFocused)
+            .animation(.easeOut(duration: 0.16), value: activeFocus.wrappedValue)
+            .onChange(of: activeFocus.wrappedValue) { _, focused in
+                onFocusChange?(focused)
+            }
             .onTapGesture {
                 guard isEnabled else { return }
                 action()

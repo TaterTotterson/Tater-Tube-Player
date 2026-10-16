@@ -15,6 +15,7 @@ private struct NativePlayerContent: View {
         case surface
         case audio
         case subtitles
+        case seek
     }
 
     @EnvironmentObject private var store: PlayerStore
@@ -55,12 +56,13 @@ private struct NativePlayerContent: View {
             }
 
             if controlsVisible,
-               playback.state == .playing || playback.state == .preparing {
+               (playback.state == .playing || playback.state == .preparing) {
                 TaterPlaybackOverlay(
                     playback: playback,
                     focusedControl: $focusedControl,
                     audioFocus: .audio,
                     subtitleFocus: .subtitles,
+                    seekFocus: .seek,
                     onAudio: {
                         revealControls()
                         Task { await playback.cycleAudioTrack() }
@@ -68,7 +70,8 @@ private struct NativePlayerContent: View {
                     onSubtitles: {
                         revealControls()
                         playback.cycleSubtitleTrack()
-                    }
+                    },
+                    seekFocused: focusedControl == .seek
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
@@ -76,7 +79,7 @@ private struct NativePlayerContent: View {
         .animation(.easeOut(duration: 0.22), value: controlsVisible)
         .onAppear {
             focusedControl = .surface
-            revealControls()
+            revealControls(preferTrackControl: true)
         }
         .onDisappear { hideControlsTask?.cancel() }
         .task(id: channelLogoURLToLoad) {
@@ -100,14 +103,20 @@ private struct NativePlayerContent: View {
         .onMoveCommand { direction in
             handleMove(direction)
         }
-        .onExitCommand { Task { await store.stopPlayback() } }
-        .onChange(of: focusedControl) { _, focus in
-            if focus == .audio || focus == .subtitles {
-                controlsVisible = true
-                hideControlsTask?.cancel()
+        .onExitCommand {
+            if controlsVisible,
+               playback.state == .playing || playback.state == .preparing {
+                hideControls()
             } else {
-                scheduleControlsHide()
+                Task { await store.stopPlayback() }
             }
+        }
+        .onChange(of: focusedControl) { _, _ in
+            if controlsVisible { scheduleControlsHide() }
+        }
+        .onChange(of: playback.plan) { _, _ in
+            guard controlsVisible, focusedControl == .surface else { return }
+            selectInitialControl()
         }
         .onChange(of: playback.isPaused) { _, paused in
             if paused { revealControls(autoHide: false) }
@@ -185,18 +194,22 @@ private struct NativePlayerContent: View {
 
     private func handleMove(_ direction: MoveCommandDirection) {
         controlsVisible = true
-        if focusedControl == .surface {
+        if focusedControl == .surface || focusedControl == .seek {
             switch direction {
             case .left:
                 playback.seek(by: -10)
             case .right:
                 playback.seek(by: 10)
-            case .down:
+            case .down where focusedControl == .surface:
                 if playback.hasMultipleAudioTracks {
                     focusedControl = .audio
                 } else if playback.hasSubtitles {
                     focusedControl = .subtitles
+                } else {
+                    requestFocus(.seek)
                 }
+            case .up where focusedControl == .seek:
+                selectInitialControl()
             default:
                 break
             }
@@ -206,8 +219,8 @@ private struct NativePlayerContent: View {
                 focusedControl = .subtitles
             case (.subtitles, .left) where playback.hasMultipleAudioTracks:
                 focusedControl = .audio
-            case (_, .up):
-                focusedControl = .surface
+            case (.audio, .down), (.subtitles, .down):
+                requestFocus(.seek)
             default:
                 break
             }
@@ -218,26 +231,53 @@ private struct NativePlayerContent: View {
     private func toggleControls() {
         controlsVisible.toggle()
         if !controlsVisible {
-            focusedControl = .surface
-            hideControlsTask?.cancel()
+            hideControls()
         } else {
+            selectInitialControl()
             scheduleControlsHide()
         }
     }
 
-    private func revealControls(autoHide: Bool = true) {
+    private func revealControls(autoHide: Bool = true, preferTrackControl: Bool = false) {
+        let wasHidden = !controlsVisible
         controlsVisible = true
         hideControlsTask?.cancel()
+        if wasHidden || preferTrackControl { selectInitialControl() }
         if autoHide { scheduleControlsHide() }
+    }
+
+    private func selectInitialControl() {
+        if playback.hasMultipleAudioTracks {
+            focusedControl = .audio
+        } else if playback.hasSubtitles {
+            focusedControl = .subtitles
+        } else {
+            focusedControl = .surface
+        }
+    }
+
+    private func requestFocus(_ control: PlayerFocus) {
+        // Directional commands arrive while tvOS is still resolving its native
+        // focus update. Apply our explicit destination on the next main-loop turn
+        // so the system cannot restore the previously focused control afterward.
+        DispatchQueue.main.async {
+            focusedControl = control
+        }
+    }
+
+    private func hideControls() {
+        controlsVisible = false
+        focusedControl = .surface
+        hideControlsTask?.cancel()
     }
 
     private func scheduleControlsHide() {
         hideControlsTask?.cancel()
-        guard !playback.isPaused, focusedControl == .surface else { return }
+        guard !playback.isPaused else { return }
         hideControlsTask = Task {
             try? await Task.sleep(for: .seconds(4.5))
-            guard !Task.isCancelled, !playback.isPaused, focusedControl == .surface else { return }
-            controlsVisible = false
+            guard !Task.isCancelled, !playback.isPaused else { return }
+            hideControls()
         }
     }
 }
@@ -247,11 +287,14 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
     var focusedControl: FocusState<Focus?>.Binding
     let audioFocus: Focus
     let subtitleFocus: Focus
+    let seekFocus: Focus
     let onAudio: () -> Void
     let onSubtitles: () -> Void
+    let seekFocused: Bool
 
     private var item: MediaItem? { playback.currentItem }
     private var plan: PlaybackPlan? { playback.plan }
+    private var processing: PlaybackProcessingInfo? { playback.processingInfo }
 
     var body: some View {
         VStack {
@@ -259,27 +302,10 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
 
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(item?.title ?? "Now Playing")
-                            .font(.system(size: 31, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-
-                        HStack(spacing: 10) {
-                            playbackBadge
-
-                            if let resolution = plan?.resolutionLabel, !resolution.isEmpty {
-                                Label(resolution, systemImage: "rectangle.inset.filled")
-                                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.78))
-                            }
-
-                            Text(pathDetail)
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundStyle(TaterTheme.secondaryText)
-                                .lineLimit(1)
-                        }
-                    }
+                    Text(item?.title ?? "Now Playing")
+                        .font(.system(size: 31, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
 
                     Spacer(minLength: 20)
 
@@ -301,6 +327,8 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
                         action: onSubtitles
                     )
                 }
+
+                processingBadges
 
                 if let message = playback.playbackControlMessage, !message.isEmpty {
                     Text(message)
@@ -364,38 +392,61 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private var playbackBadge: some View {
-        Label(processingLabel, systemImage: processingIcon)
-            .font(.system(size: 17, weight: .bold, design: .rounded))
-            .foregroundStyle(processingColor)
-            .padding(.horizontal, 13)
-            .padding(.vertical, 7)
-            .background(processingColor.opacity(0.14), in: Capsule())
-            .overlay(Capsule().stroke(processingColor.opacity(0.38), lineWidth: 1))
+    private var processingBadges: some View {
+        HStack(spacing: 10) {
+            if let label = resolutionLabel {
+                PlaybackProcessingBadge(label: label, style: .resolution)
+            }
+            PlaybackProcessingBadge(label: videoProcessingLabel, style: videoBadgeStyle)
+            if let label = upscalingLabel {
+                PlaybackProcessingBadge(label: label, systemImage: "sparkles", style: .upscaling)
+            }
+            PlaybackProcessingBadge(label: audioProcessingLabel, systemImage: "waveform", style: .audio)
+        }
     }
 
     private var timeline: some View {
-        HStack(spacing: 15) {
-            Text(item?.isLiveChannel == true ? "LIVE" : format(playback.playbackPositionMS))
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(item?.isLiveChannel == true ? TaterTheme.orangeBright : .white)
-                .frame(width: 88, alignment: .leading)
+        Button(action: {}) {
+            HStack(spacing: 15) {
+                Text(item?.isLiveChannel == true ? "LIVE" : format(playback.playbackPositionMS))
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(item?.isLiveChannel == true ? TaterTheme.orangeBright : .white)
+                    .frame(width: 88, alignment: .leading)
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.20))
-                    Capsule()
-                        .fill(TaterTheme.orange)
-                        .frame(width: proxy.size.width * progress)
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.20))
+                        Capsule()
+                            .fill(TaterTheme.orange)
+                            .frame(width: proxy.size.width * progress)
+                    }
                 }
-            }
-            .frame(height: 7)
+                .frame(height: 7)
 
-            Text(item?.isLiveChannel == true ? "ON AIR" : format(playback.playbackDurationMS))
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
-                .foregroundStyle(TaterTheme.secondaryText)
-                .frame(width: 88, alignment: .trailing)
+                Text(item?.isLiveChannel == true ? "ON AIR" : format(playback.playbackDurationMS))
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(TaterTheme.secondaryText)
+                    .frame(width: 88, alignment: .trailing)
+            }
         }
+        .buttonStyle(.plain)
+        .padding(.horizontal, seekFocused ? 16 : 0)
+        .padding(.vertical, seekFocused ? 12 : 0)
+        .background(
+            seekFocused ? Color.black.opacity(0.72) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(seekFocused ? TaterTheme.orangeBright : Color.clear, lineWidth: 2.5)
+        }
+        .shadow(color: seekFocused ? TaterTheme.orange.opacity(0.42) : .clear, radius: 14)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .focusEffectDisabled()
+        .focused(focusedControl, equals: seekFocus)
+        .animation(.easeOut(duration: 0.15), value: seekFocused)
+        .accessibilityLabel("Seek")
+        .accessibilityHint("Press left or right to move through the video")
     }
 
     private var progress: CGFloat {
@@ -403,55 +454,151 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
         return min(1, max(0, CGFloat(playback.playbackPositionMS) / CGFloat(playback.playbackDurationMS)))
     }
 
-    private var processingLabel: String {
-        switch plan?.mode.lowercased() {
-        case "direct": return "Direct Play"
-        case "audio_transcode": return "Audio Transcode"
-        case "video_transcode": return "Video Transcode"
-        case "full_transcode": return "Full Transcode"
-        default: return plan?.qualityLabel ?? "Preparing"
-        }
-    }
-
-    private var processingIcon: String {
-        plan?.mode.lowercased() == "direct" ? "checkmark.circle.fill" : "bolt.horizontal.circle.fill"
-    }
-
-    private var processingColor: Color {
-        plan?.mode.lowercased() == "direct" ? Color.green : TaterTheme.orangeBright
-    }
-
-    private var pathDetail: String {
-        guard let plan else { return "PREPARING STREAM" }
-        var video = modeLabel(plan.videoMode, fallback: plan.videoCodec)
-        if let outputRange = plan.outputVideoRange?.lowercased(), outputRange != "sdr" {
-            video += " " + outputRange.replacingOccurrences(of: "_", with: " ").uppercased()
-        }
-        if let frameRate = plan.outputFrameRate, frameRate > 0 {
-            video += " " + String(format: "%.2f FPS", frameRate)
-        }
-        let audio: String
-        if plan.audioMode.lowercased() == "transcode" {
-            let codec = (plan.audioCodec?.isEmpty == false ? plan.audioCodec! : "AAC").uppercased()
-            let channels: String
-            switch plan.outputAudioChannels {
-            case 6: channels = " 5.1"
-            case 8: channels = " 7.1"
-            case 2: channels = " STEREO"
-            default: channels = ""
+    private var resolutionLabel: String? {
+        if let processing,
+           let source = formatResolution(width: processing.sourceWidth, height: processing.sourceHeight) {
+            if let output = formatResolution(width: processing.outputWidth, height: processing.outputHeight),
+               processing.videoMode?.lowercased() == "transcode" {
+                return "\(source) → \(output)"
             }
-            audio = "TRANSCODE \(codec)\(channels)"
-        } else {
-            audio = modeLabel(plan.audioMode, fallback: plan.audioCodec)
+            return source
         }
-        return "VIDEO \(video)  •  AUDIO \(audio)"
+        return plan?.resolutionLabel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
-    private func modeLabel(_ mode: String, fallback: String?) -> String {
-        switch mode.lowercased() {
-        case "direct", "copy": return "DIRECT"
-        case "transcode": return "TRANSCODE"
-        default: return (fallback?.isEmpty == false ? fallback! : mode).uppercased()
+    private var videoProcessingLabel: String {
+        let mode = processing?.videoMode?.lowercased() ?? plan?.videoMode.lowercased() ?? "preparing"
+        switch mode {
+        case "direct", "copy":
+            return "VIDEO · DIRECT"
+        case "transcode":
+            if processing?.hardwareActive == true {
+                return "HW \(hardwareLabel(processing?.hardwareAcceleration))"
+            }
+            if processing != nil { return "SW TRANSCODE" }
+            return "VIDEO · TRANSCODE"
+        default:
+            return "VIDEO · \(mode.uppercased())"
+        }
+    }
+
+    private var videoBadgeStyle: PlaybackProcessingBadge.Style {
+        let mode = processing?.videoMode?.lowercased() ?? plan?.videoMode.lowercased()
+        return mode == "direct" || mode == "copy" || processing?.hardwareActive == true
+            ? .hardware
+            : .software
+    }
+
+    private var upscalingLabel: String? {
+        if let processing, processing.upscalingActive {
+            let method = processing.upscalingMethod?.lowercased() ?? ""
+            let requested = processing.upscalingRequested?.lowercased() ?? ""
+            if method == "ai" {
+                return "AI · \(upscalerModelLabel(processing.upscalingModel))"
+            }
+            let scaler = method == "spline36" ? "Spline36" : method.capitalized
+            if requested == "ai" || requested == "auto" {
+                return "AI FALLBACK · \(scaler.nilIfEmpty ?? "Spline36")"
+            }
+            return "UPSCALE · \(scaler.nilIfEmpty ?? "Spline36")"
+        }
+
+        guard let plan,
+              let components = URLComponents(string: plan.streamURL),
+              let scaler = components.queryItems?.first(where: { $0.name == "tater_scaler" })?.value?.lowercased(),
+              !scaler.isEmpty
+        else { return nil }
+        if scaler == "ai" || scaler == "auto" {
+            let model = components.queryItems?.first(where: { $0.name == "tater_ai_model" })?.value
+            return "AI · \(upscalerModelLabel(model))"
+        }
+        return "UPSCALE · \(scaler == "spline36" ? "Spline36" : scaler.capitalized)"
+    }
+
+    private var audioProcessingLabel: String {
+        guard let plan else { return "AUDIO · PREPARING" }
+        let mode = processing?.audioMode?.lowercased() ?? plan.audioMode.lowercased()
+        let selectedTrack = plan.source.audioTracks?.first { $0.index == plan.selectedAudioTrack }
+        let sourceCodec = codecLabel(selectedTrack?.codec ?? plan.source.audioCodec)
+        let sourceChannels = channelLabel(selectedTrack?.channels ?? plan.source.audioChannels)
+        let outputCodec = codecLabel(processing?.audioCodec ?? plan.audioCodec)
+        let outputChannels = channelLabel(processing?.audioChannels ?? plan.outputAudioChannels)
+        let source = [sourceCodec, sourceChannels].compactMap { $0 }.joined(separator: " ")
+        let output = [outputCodec, outputChannels].compactMap { $0 }.joined(separator: " ")
+
+        switch mode {
+        case "transcode":
+            if !source.isEmpty, !output.isEmpty, source != output {
+                return "AUDIO · \(source) → \(output)"
+            }
+            return "AUDIO · TRANSCODE\(output.isEmpty ? "" : " · \(output)")"
+        case "bitstream", "passthrough":
+            return "AUDIO · BITSTREAM\(source.isEmpty ? "" : " · \(source)")"
+        case "none":
+            return "AUDIO · NONE"
+        default:
+            return "AUDIO · DIRECT\(source.isEmpty ? "" : " · \(source)")"
+        }
+    }
+
+    private func formatResolution(width: Int?, height: Int?) -> String? {
+        guard let height, height > 0 else { return nil }
+        if height >= 2160 || (width ?? 0) >= 3840 { return "4K" }
+        if height >= 1440 { return "1440p" }
+        if height >= 1080 { return "1080p" }
+        if height >= 720 { return "720p" }
+        return "\(height)p"
+    }
+
+    private func hardwareLabel(_ value: String?) -> String {
+        switch value?.lowercased() {
+        case "nvenc", "cuda": return "NVENC"
+        case "qsv", "quicksync", "quick_sync": return "QUICK SYNC"
+        case "videotoolbox": return "VIDEOTOOLBOX"
+        case "vaapi": return "VAAPI"
+        case "v4l2m2m": return "V4L2"
+        case let value?: return value.uppercased()
+        case nil: return "TRANSCODE"
+        }
+    }
+
+    private func upscalerModelLabel(_ value: String?) -> String {
+        switch value?.lowercased() {
+        case "fsrcnnx-8": return "FSRCNNX Fast"
+        case "fsrcnnx-16": return "FSRCNNX Quality"
+        case "anime4k-cnn-m": return "Anime4K Balanced"
+        case "anime4k-cnn-l": return "Anime4K Quality"
+        case "artcnn-c4f16": return "ArtCNN Balanced"
+        case "artcnn-c4f16-ds": return "ArtCNN Restore"
+        case "artcnn-c4f32": return "ArtCNN Quality"
+        case let value?: return value.replacingOccurrences(of: "-", with: " ").capitalized
+        case nil: return "AI Upscaling"
+        }
+    }
+
+    private func codecLabel(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !value.isEmpty
+        else { return nil }
+        switch value {
+        case "ac3": return "AC-3"
+        case "eac3", "e-ac-3": return "E-AC-3"
+        case "truehd": return "TRUEHD"
+        case "dts_hd_ma", "dts-hd-ma": return "DTS-HD MA"
+        case "dts_hd", "dts-hd": return "DTS-HD"
+        case "pcm_s16le", "pcm_s24le", "pcm": return "PCM"
+        default: return value.uppercased()
+        }
+    }
+
+    private func channelLabel(_ channels: Int?) -> String? {
+        switch channels {
+        case 1: return "MONO"
+        case 2: return "STEREO"
+        case 6: return "5.1"
+        case 8: return "7.1"
+        case let channels? where channels > 0: return "\(channels) CH"
+        default: return nil
         }
     }
 
@@ -463,6 +610,68 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
         if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
         return String(format: "%d:%02d", minutes, seconds)
     }
+}
+
+private struct PlaybackProcessingBadge: View {
+    enum Style {
+        case resolution
+        case hardware
+        case software
+        case upscaling
+        case audio
+    }
+
+    let label: String
+    var systemImage: String?
+    let style: Style
+
+    var body: some View {
+        Group {
+            if let systemImage {
+                Label(label, systemImage: systemImage)
+            } else {
+                Text(label)
+            }
+        }
+        .font(.system(size: 16, weight: .bold, design: .rounded))
+        .foregroundStyle(foreground)
+        .lineLimit(1)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(background, in: Capsule())
+        .overlay(Capsule().stroke(border, lineWidth: 1.5))
+    }
+
+    private var foreground: Color {
+        style == .hardware ? Color.black.opacity(0.88) : primaryColor
+    }
+
+    private var background: Color {
+        switch style {
+        case .hardware: return Color(red: 0.38, green: 0.85, blue: 0.52)
+        case .software: return TaterTheme.orange.opacity(0.16)
+        case .upscaling: return Color.white.opacity(0.12)
+        case .audio: return Color(red: 0.24, green: 0.67, blue: 0.76).opacity(0.15)
+        case .resolution: return Color.black.opacity(0.36)
+        }
+    }
+
+    private var border: Color {
+        style == .hardware ? Color.clear : primaryColor.opacity(0.92)
+    }
+
+    private var primaryColor: Color {
+        switch style {
+        case .resolution, .software: return TaterTheme.orangeBright
+        case .hardware: return Color.black
+        case .upscaling: return Color.white.opacity(0.88)
+        case .audio: return Color(red: 0.54, green: 0.88, blue: 0.96)
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 private struct PlayerLayerView: UIViewRepresentable {

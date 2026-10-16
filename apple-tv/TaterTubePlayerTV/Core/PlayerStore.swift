@@ -378,13 +378,15 @@ final class PlayerStore: ObservableObject {
 
     func playPreparedDiscovery(_ file: DiscoverPreparedFile, resume: Bool) async {
         guard let client else { return }
+        let bumper = resume ? nil : await nextTaterBumper(for: file.playbackItem, using: client)
         selectedMedia = nil
         isPlaybackPresented = true
         await playback.start(
             item: file.playbackItem,
             client: client,
             resume: resume,
-            reportsViewing: home?.capabilities.taterLink == true
+            reportsViewing: home?.capabilities.taterLink == true,
+            preRoll: bumper
         )
     }
 
@@ -488,18 +490,29 @@ final class PlayerStore: ObservableObject {
             }
             return
         }
+        // Series bumpers belong between automatically advancing episodes, not
+        // in front of an episode the viewer explicitly chose or resumed.
+        let bumper = (!resume && item.taterBumperSource != .localSeries)
+            ? await nextTaterBumper(for: item, using: client)
+            : nil
         selectedMedia = nil
         isPlaybackPresented = true
         await playback.start(
             item: item,
             client: client,
             resume: resume,
-            reportsViewing: home?.capabilities.taterLink == true
+            reportsViewing: home?.capabilities.taterLink == true,
+            preRoll: bumper
         )
     }
 
     func play(_ channel: LiveChannel) async {
         await play(channel.playbackItem, resume: false)
+    }
+
+    private func nextTaterBumper(for item: MediaItem, using client: APIClient) async -> MediaItem? {
+        guard let source = item.taterBumperSource else { return nil }
+        return try? await client.nextTaterBumper(for: source)
     }
 
     func stopPlayback() async {
@@ -587,11 +600,9 @@ final class PlayerStore: ObservableObject {
     }
 
     private func publishTopShelf() async {
-        await TopShelfPublisher.publish(
-            items: home?.continueWatching ?? [],
-            client: client,
-            isDemo: isDemo
-        )
+        // Top Shelf now uses only the app's static branded background. Clear
+        // snapshots from earlier builds so tvOS cannot retain media cards.
+        TopShelfPublisher.clear()
     }
 
     private func openPendingTopShelfItemIfPossible() async {

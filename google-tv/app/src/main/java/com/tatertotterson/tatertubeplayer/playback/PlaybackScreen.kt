@@ -8,6 +8,7 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +61,8 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import com.tatertotterson.tatertubeplayer.ui.PlaybackSession
 import com.tatertotterson.tatertubeplayer.model.LiveGuide
+import com.tatertotterson.tatertubeplayer.model.PlaybackPlan
+import com.tatertotterson.tatertubeplayer.model.PlaybackProcessingInfo
 import com.tatertotterson.tatertubeplayer.ui.components.GlassSurface
 import com.tatertotterson.tatertubeplayer.ui.components.TaterArtwork
 import com.tatertotterson.tatertubeplayer.ui.theme.TaterColors
@@ -72,10 +75,12 @@ import java.util.UUID
 fun PlaybackScreen(
     session: PlaybackSession,
     token: String?,
+    processingInfo: PlaybackProcessingInfo? = null,
     liveGuide: LiveGuide? = null,
     onExit: (positionMs: Long, durationMs: Long, completed: Boolean) -> Unit,
     onAudioTrackChange: (trackIndex: Int, positionMs: Long) -> Unit,
     onFirstFrame: () -> Unit = {},
+    onPlaybackFailure: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -84,7 +89,7 @@ fun PlaybackScreen(
     var overlayVisible by remember(session.item.id) { mutableStateOf(true) }
     var errorMessage by remember(session.item.id) { mutableStateOf<String?>(null) }
     var hasExited by remember(session.item.id) { mutableStateOf(false) }
-    var interactiveOverlay by remember(session.item.id) { mutableStateOf(false) }
+    var interactiveOverlay by remember(session.item.id) { mutableStateOf(true) }
     var selectedControl by remember(session.item.id) { mutableIntStateOf(0) }
     var audioOptions by remember(session.item.id) { mutableStateOf<List<TrackOption>>(emptyList()) }
     var subtitleOptions by remember(session.item.id) { mutableStateOf<List<TrackOption>>(emptyList()) }
@@ -133,7 +138,15 @@ fun PlaybackScreen(
                 playWhenReady = true
             }
     }
-    val mediaSession = remember(player) { MediaSession.Builder(context, player).build() }
+    // Compose can create the next playback screen before the previous screen's
+    // DisposableEffect has released its MediaSession. This is expected during
+    // the short bumper -> requested title handoff, so each player needs its own
+    // Media3 session ID instead of briefly competing for the default empty ID.
+    val mediaSession = remember(player) {
+        MediaSession.Builder(context, player)
+            .setId("tater-playback-${UUID.randomUUID()}")
+            .build()
+    }
 
     fun updateTrackOptions(tracks: Tracks = player.currentTracks) {
         audioOptions = tracks.groups.trackOptions(C.TRACK_TYPE_AUDIO)
@@ -207,6 +220,7 @@ fun PlaybackScreen(
 
             override fun onPlayerError(error: PlaybackException) {
                 onFirstFrame()
+                onPlaybackFailure()
                 errorMessage = error.localizedMessage ?: "Native playback stopped unexpectedly."
                 overlayVisible = true
             }
@@ -262,18 +276,19 @@ fun PlaybackScreen(
     }
 
     LaunchedEffect(overlayVisible, interactiveOverlay) {
-        if (overlayVisible && !interactiveOverlay && errorMessage == null) {
+        if (overlayVisible && errorMessage == null && player.playWhenReady) {
             delay(4_000)
             overlayVisible = false
+            interactiveOverlay = false
         }
     }
 
     LaunchedEffect(player) { playbackFocus.requestFocus() }
 
     BackHandler {
-        if (interactiveOverlay) {
+        if (overlayVisible) {
             interactiveOverlay = false
-            overlayVisible = true
+            overlayVisible = false
         } else {
             finish(completed = false)
         }
@@ -290,7 +305,19 @@ fun PlaybackScreen(
                 when (event.nativeKeyEvent.keyCode) {
                     KeyEvent.KEYCODE_DPAD_LEFT -> {
                         if (interactiveOverlay) {
-                            if (selectedControl == 0) cycleAudio() else cycleSubtitles()
+                            when (selectedControl) {
+                                1 -> selectedControl = 0
+                                2 -> {
+                                    pendingSeekTargetMs = playbackSeekTarget(
+                                        isLiveChannel = session.item.isLiveChannel,
+                                        originMs = pendingSeekTargetMs
+                                            ?: serverStartedPosition + player.currentPosition.coerceAtLeast(0),
+                                        deltaMs = -10_000,
+                                        durationMs = plannedDurationMs,
+                                    )
+                                    pendingSeekTargetMs?.let { positionMs = it }
+                                }
+                            }
                         } else {
                             pendingSeekTargetMs = playbackSeekTarget(
                                 isLiveChannel = session.item.isLiveChannel,
@@ -306,7 +333,19 @@ fun PlaybackScreen(
                     }
                     KeyEvent.KEYCODE_DPAD_RIGHT -> {
                         if (interactiveOverlay) {
-                            if (selectedControl == 0) cycleAudio() else cycleSubtitles()
+                            when (selectedControl) {
+                                0 -> selectedControl = 1
+                                2 -> {
+                                    pendingSeekTargetMs = playbackSeekTarget(
+                                        isLiveChannel = session.item.isLiveChannel,
+                                        originMs = pendingSeekTargetMs
+                                            ?: serverStartedPosition + player.currentPosition.coerceAtLeast(0),
+                                        deltaMs = 10_000,
+                                        durationMs = plannedDurationMs,
+                                    )
+                                    pendingSeekTargetMs?.let { positionMs = it }
+                                }
+                            }
                         } else {
                             pendingSeekTargetMs = playbackSeekTarget(
                                 isLiveChannel = session.item.isLiveChannel,
@@ -338,25 +377,32 @@ fun PlaybackScreen(
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                         if (interactiveOverlay) {
-                            if (selectedControl == 0) cycleAudio() else cycleSubtitles()
+                            when (selectedControl) {
+                                0 -> cycleAudio()
+                                1 -> cycleSubtitles()
+                                2 -> Unit
+                            }
                         } else if (player.isPlaying) player.pause() else player.play()
                         overlayVisible = true
                         true
                     }
                     KeyEvent.KEYCODE_DPAD_UP -> {
-                        if (interactiveOverlay) selectedControl = 0 else interactiveOverlay = true
+                        interactiveOverlay = true
+                        // The seek bar is above the track controls on Android.
+                        selectedControl = 2
                         overlayVisible = true
                         true
                     }
                     KeyEvent.KEYCODE_DPAD_DOWN -> {
                         interactiveOverlay = true
-                        selectedControl = 1
+                        selectedControl = 0
                         overlayVisible = true
                         true
                     }
                     KeyEvent.KEYCODE_INFO,
                     KeyEvent.KEYCODE_MENU -> {
-                        interactiveOverlay = !interactiveOverlay
+                        interactiveOverlay = true
+                        selectedControl = 0
                         overlayVisible = true
                         true
                     }
@@ -424,13 +470,8 @@ fun PlaybackScreen(
                 title = session.item.title,
                 positionMs = positionMs,
                 durationMs = durationMs,
-                path = listOfNotNull(
-                    session.plan.resolutionLabel,
-                    "Video ${session.plan.videoMode}",
-                    "Audio ${session.plan.audioMode}",
-                    session.plan.videoCodec,
-                    session.plan.audioCodec,
-                ).joinToString("  ·  "),
+                plan = session.plan,
+                processingInfo = processingInfo,
                 audioLabel = audioLabel,
                 subtitleLabel = subtitleLabel,
                 audioAvailable = maxOf(audioOptions.size, session.plan.source.audioTracks.size) > 1,
@@ -439,6 +480,7 @@ fun PlaybackScreen(
                 interactive = interactiveOverlay,
                 selectedControl = selectedControl,
                 errorMessage = errorMessage,
+                seekSelected = interactiveOverlay && selectedControl == 2,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -522,7 +564,8 @@ private fun PlaybackOverlay(
     title: String,
     positionMs: Long,
     durationMs: Long,
-    path: String,
+    plan: PlaybackPlan,
+    processingInfo: PlaybackProcessingInfo?,
     audioLabel: String,
     subtitleLabel: String,
     audioAvailable: Boolean,
@@ -531,6 +574,7 @@ private fun PlaybackOverlay(
     interactive: Boolean,
     selectedControl: Int,
     errorMessage: String?,
+    seekSelected: Boolean,
     modifier: Modifier = Modifier,
 ) {
     GlassSurface(
@@ -549,40 +593,55 @@ private fun PlaybackOverlay(
             val progress = if (durationMs > 0) {
                 (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
             } else if (isLiveChannel) 1f else 0f
-            if (isLiveChannel) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Text("LIVE", color = TaterColors.OrangeBright, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(6.dp)
-                            .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(3.dp))
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth(progress)
-                                .height(6.dp)
-                                .background(TaterColors.Orange, RoundedCornerShape(3.dp))
-                        )
-                    }
-                    Text("ON AIR", color = TaterColors.SecondaryText, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                }
-            } else Box(
+            Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(6.dp)
-                    .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(3.dp))
+                    .background(
+                        if (seekSelected) Color.Black.copy(alpha = .72f) else Color.Transparent,
+                        RoundedCornerShape(16.dp),
+                    )
+                    .border(
+                        if (seekSelected) 2.dp else 0.dp,
+                        if (seekSelected) TaterColors.OrangeBright else Color.Transparent,
+                        RoundedCornerShape(16.dp),
+                    )
+                    .padding(horizontal = if (seekSelected) 14.dp else 0.dp, vertical = if (seekSelected) 10.dp else 0.dp)
             ) {
-                Box(
+                if (isLiveChannel) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Text("LIVE", color = TaterColors.OrangeBright, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(6.dp)
+                                .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(3.dp))
+                        ) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth(progress)
+                                    .height(6.dp)
+                                    .background(TaterColors.Orange, RoundedCornerShape(3.dp))
+                            )
+                        }
+                        Text("ON AIR", color = TaterColors.SecondaryText, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                    }
+                } else Box(
                     Modifier
-                        .fillMaxWidth(progress)
-                        .height(6.dp)
-                        .background(TaterColors.Orange, RoundedCornerShape(3.dp))
-                )
+                        .fillMaxWidth()
+                        .height(if (seekSelected) 9.dp else 6.dp)
+                        .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(5.dp))
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(progress)
+                            .height(if (seekSelected) 9.dp else 6.dp)
+                            .background(TaterColors.Orange, RoundedCornerShape(5.dp))
+                    )
+                }
             }
             if (errorMessage != null) {
                 Text(errorMessage, color = Color(0xFFFFB4A7), fontSize = 16.sp)
@@ -592,11 +651,12 @@ private fun PlaybackOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("PLAYBACK PATH", color = TaterColors.OrangeBright, fontSize = 13.sp)
-                        Spacer(Modifier.width(14.dp))
-                        Text(path, color = TaterColors.SecondaryText, fontSize = 15.sp)
-                    }
+                    PlaybackProcessingBadges(
+                        plan = plan,
+                        processing = processingInfo,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         TrackPill("AUDIO  $audioLabel", audioAvailable, interactive && selectedControl == 0)
                         TrackPill("CC  $subtitleLabel", subtitlesAvailable, interactive && selectedControl == 1)
@@ -605,6 +665,193 @@ private fun PlaybackOverlay(
             }
         }
     }
+}
+
+private enum class ProcessingBadgeStyle { RESOLUTION, HARDWARE, SOFTWARE, UPSCALING, AUDIO }
+
+private data class ProcessingBadgeSpec(
+    val label: String,
+    val style: ProcessingBadgeStyle,
+)
+
+@Composable
+private fun PlaybackProcessingBadges(
+    plan: PlaybackPlan,
+    processing: PlaybackProcessingInfo?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        playbackProcessingBadges(plan, processing).forEach { badge ->
+            ProcessingBadge(badge)
+        }
+    }
+}
+
+@Composable
+private fun ProcessingBadge(badge: ProcessingBadgeSpec) {
+    val primary = when (badge.style) {
+        ProcessingBadgeStyle.RESOLUTION, ProcessingBadgeStyle.SOFTWARE -> TaterColors.OrangeBright
+        ProcessingBadgeStyle.HARDWARE -> Color.Black.copy(alpha = .88f)
+        ProcessingBadgeStyle.UPSCALING -> Color.White.copy(alpha = .90f)
+        ProcessingBadgeStyle.AUDIO -> Color(0xFF8ADFEB)
+    }
+    val background = when (badge.style) {
+        ProcessingBadgeStyle.RESOLUTION -> Color.Black.copy(alpha = .38f)
+        ProcessingBadgeStyle.HARDWARE -> Color(0xFF61D985)
+        ProcessingBadgeStyle.SOFTWARE -> TaterColors.Orange.copy(alpha = .16f)
+        ProcessingBadgeStyle.UPSCALING -> Color.White.copy(alpha = .12f)
+        ProcessingBadgeStyle.AUDIO -> Color(0xFF3DABB9).copy(alpha = .16f)
+    }
+    val border = if (badge.style == ProcessingBadgeStyle.HARDWARE) Color.Transparent else primary.copy(alpha = .92f)
+
+    Text(
+        badge.label,
+        color = primary,
+        fontSize = 13.sp,
+        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .widthIn(max = if (badge.style == ProcessingBadgeStyle.AUDIO) 330.dp else 230.dp)
+            .background(background, RoundedCornerShape(50))
+            .border(1.2.dp, border, RoundedCornerShape(50))
+            .padding(horizontal = 13.dp, vertical = 8.dp),
+    )
+}
+
+private fun playbackProcessingBadges(
+    plan: PlaybackPlan,
+    processing: PlaybackProcessingInfo?,
+): List<ProcessingBadgeSpec> = buildList {
+    val videoMode = (processing?.videoMode ?: plan.videoMode).lowercase()
+    val sourceResolution = resolutionLabel(processing?.sourceWidth, processing?.sourceHeight)
+        ?: plan.resolutionLabel?.takeIf { it.isNotBlank() }
+    val outputResolution = resolutionLabel(processing?.outputWidth, processing?.outputHeight)
+    val resolution = if (videoMode == "transcode" && sourceResolution != null && outputResolution != null) {
+        "$sourceResolution → $outputResolution"
+    } else sourceResolution
+    resolution?.let { add(ProcessingBadgeSpec(it, ProcessingBadgeStyle.RESOLUTION)) }
+
+    when (videoMode) {
+        "direct", "copy" -> add(ProcessingBadgeSpec("VIDEO · DIRECT", ProcessingBadgeStyle.HARDWARE))
+        "transcode" -> {
+            if (processing?.hardwareActive == true) {
+                add(ProcessingBadgeSpec("HW ${hardwareLabel(processing.hardwareAccel)}", ProcessingBadgeStyle.HARDWARE))
+            } else {
+                val label = if (processing == null) "VIDEO · TRANSCODE" else "SW TRANSCODE"
+                add(ProcessingBadgeSpec(label, ProcessingBadgeStyle.SOFTWARE))
+            }
+        }
+        else -> add(ProcessingBadgeSpec("VIDEO · ${videoMode.uppercase()}", ProcessingBadgeStyle.SOFTWARE))
+    }
+
+    upscalingLabel(plan, processing)?.let {
+        add(ProcessingBadgeSpec("✦  $it", ProcessingBadgeStyle.UPSCALING))
+    }
+    add(ProcessingBadgeSpec(audioProcessingLabel(plan, processing), ProcessingBadgeStyle.AUDIO))
+}
+
+private fun resolutionLabel(width: Int?, height: Int?): String? {
+    val resolvedHeight = height?.takeIf { it > 0 } ?: return null
+    return when {
+        resolvedHeight >= 2160 || (width ?: 0) >= 3840 -> "4K"
+        resolvedHeight >= 1440 -> "1440p"
+        resolvedHeight >= 1080 -> "1080p"
+        resolvedHeight >= 720 -> "720p"
+        else -> "${resolvedHeight}p"
+    }
+}
+
+private fun hardwareLabel(value: String?): String = when (value?.lowercase()) {
+    "nvenc", "cuda" -> "NVENC"
+    "qsv", "quicksync", "quick_sync" -> "QUICK SYNC"
+    "videotoolbox" -> "VIDEOTOOLBOX"
+    "vaapi" -> "VAAPI"
+    "v4l2m2m" -> "V4L2"
+    null, "" -> "TRANSCODE"
+    else -> value.uppercase()
+}
+
+private fun upscalingLabel(plan: PlaybackPlan, processing: PlaybackProcessingInfo?): String? {
+    if (processing?.upscalingActive == true) {
+        val method = processing.upscalingMethod.orEmpty().lowercase()
+        val requested = processing.upscalingRequested.orEmpty().lowercase()
+        if (method == "ai") return "AI · ${upscalerModelLabel(processing.upscalingModel)}"
+        val scaler = if (method == "spline36") "Spline36" else method.replaceFirstChar { it.uppercase() }
+        return if (requested == "ai" || requested == "auto") {
+            "AI FALLBACK · ${scaler.ifBlank { "Spline36" }}"
+        } else {
+            "UPSCALE · ${scaler.ifBlank { "Spline36" }}"
+        }
+    }
+
+    val uri = runCatching { Uri.parse(plan.streamUrl) }.getOrNull() ?: return null
+    val scaler = uri.getQueryParameter("tater_scaler")?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+    return if (scaler == "ai" || scaler == "auto") {
+        "AI · ${upscalerModelLabel(uri.getQueryParameter("tater_ai_model"))}"
+    } else {
+        "UPSCALE · ${if (scaler == "spline36") "Spline36" else scaler.replaceFirstChar { it.uppercase() }}"
+    }
+}
+
+private fun upscalerModelLabel(value: String?): String = when (value?.lowercase()) {
+    "fsrcnnx-8" -> "FSRCNNX Fast"
+    "fsrcnnx-16" -> "FSRCNNX Quality"
+    "anime4k-cnn-m" -> "Anime4K Balanced"
+    "anime4k-cnn-l" -> "Anime4K Quality"
+    "artcnn-c4f16" -> "ArtCNN Balanced"
+    "artcnn-c4f16-ds" -> "ArtCNN Restore"
+    "artcnn-c4f32" -> "ArtCNN Quality"
+    null, "" -> "AI Upscaling"
+    else -> value.replace('-', ' ').split(' ').joinToString(" ") { word ->
+        word.replaceFirstChar { it.uppercase() }
+    }
+}
+
+private fun audioProcessingLabel(plan: PlaybackPlan, processing: PlaybackProcessingInfo?): String {
+    val mode = (processing?.audioMode ?: plan.audioMode).lowercase()
+    val selected = plan.source.audioTracks.firstOrNull { it.index == plan.selectedAudioTrack }
+    val source = listOfNotNull(
+        codecLabel(selected?.codec ?: plan.source.audioCodec),
+        channelLabel(selected?.channels ?: plan.source.audioChannels),
+    ).joinToString(" ")
+    val output = listOfNotNull(
+        codecLabel(processing?.audioCodec ?: plan.audioCodec),
+        channelLabel(processing?.audioChannels ?: plan.outputAudioChannels),
+    ).joinToString(" ")
+
+    return when (mode) {
+        "transcode" -> if (source.isNotBlank() && output.isNotBlank() && source != output) {
+            "AUDIO · $source → $output"
+        } else "AUDIO · TRANSCODE${if (output.isBlank()) "" else " · $output"}"
+        "bitstream", "passthrough" -> "AUDIO · BITSTREAM${if (source.isBlank()) "" else " · $source"}"
+        "none" -> "AUDIO · NONE"
+        else -> "AUDIO · DIRECT${if (source.isBlank()) "" else " · $source"}"
+    }
+}
+
+private fun codecLabel(value: String?): String? = when (val codec = value?.trim()?.lowercase()) {
+    null, "" -> null
+    "ac3" -> "AC-3"
+    "eac3", "e-ac-3" -> "E-AC-3"
+    "truehd" -> "TRUEHD"
+    "dts_hd_ma", "dts-hd-ma" -> "DTS-HD MA"
+    "dts_hd", "dts-hd" -> "DTS-HD"
+    "pcm_s16le", "pcm_s24le", "pcm" -> "PCM"
+    else -> codec.uppercase()
+}
+
+private fun channelLabel(channels: Int?): String? = when (channels) {
+    1 -> "MONO"
+    2 -> "STEREO"
+    6 -> "5.1"
+    8 -> "7.1"
+    null -> null
+    else -> if (channels > 0) "$channels CH" else null
 }
 
 @Composable

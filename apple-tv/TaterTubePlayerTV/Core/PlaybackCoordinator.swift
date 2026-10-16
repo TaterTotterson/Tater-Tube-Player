@@ -5,6 +5,12 @@ import UIKit
 
 @MainActor
 final class PlaybackCoordinator: ObservableObject {
+    private struct QueuedPlayback {
+        let item: MediaItem
+        let resume: Bool
+        let reportsViewing: Bool
+    }
+
     enum State: Equatable {
         case idle
         case preparing
@@ -25,6 +31,7 @@ final class PlaybackCoordinator: ObservableObject {
     @Published private(set) var subtitleTrackLabel = "CC Off"
     @Published private(set) var playbackControlMessage: String?
     @Published private(set) var isChangingAudioTrack = false
+    @Published private(set) var processingInfo: PlaybackProcessingInfo?
 
     private var client: APIClient?
     private var periodicObserver: Any?
@@ -39,6 +46,7 @@ final class PlaybackCoordinator: ObservableObject {
     private var basePositionMS: Int64 = 0
     private var pendingSeekTargetMS: Int64?
     private var streamSeekTask: Task<Void, Never>?
+    private var processingInfoTask: Task<Void, Never>?
     private var isCompleting = false
     private var progressSaveInFlight = false
     private var reportsViewing = false
@@ -52,6 +60,7 @@ final class PlaybackCoordinator: ObservableObject {
     private var playbackPlanRecoveryAttempts = 0
     private var playbackRecoveryInFlight = false
     private var isDemoPlayback = false
+    private var queuedPlayback: QueuedPlayback?
 
     private var activeDisplayManager: AVDisplayManager? {
         let windows = UIApplication.shared.connectedScenes
@@ -129,6 +138,29 @@ final class PlaybackCoordinator: ObservableObject {
                 ]
             )
         )
+        processingInfo = PlaybackProcessingInfo(
+            id: "overlay-preview",
+            status: "Transcoding",
+            transcoded: true,
+            transcodeName: "4K AI",
+            hardwareAcceleration: "nvenc",
+            videoCodec: "h264",
+            videoMode: "transcode",
+            audioMode: "transcode",
+            audioCodec: "aac",
+            audioChannels: 6,
+            sourceWidth: 1920,
+            sourceHeight: 1080,
+            outputWidth: 3840,
+            outputHeight: 2160,
+            upscalingRequested: "ai",
+            upscalingMethod: "ai",
+            upscalingModel: "artcnn-c4f16-ds",
+            upscalingActive: true,
+            hardwareActive: true,
+            isActive: true,
+            activityAgeSeconds: 0
+        )
         player = AVPlayer()
         state = .playing
         playbackPositionMS = 2_588_000
@@ -143,8 +175,40 @@ final class PlaybackCoordinator: ObservableObject {
         item: MediaItem,
         client: APIClient,
         resume: Bool,
-        reportsViewing: Bool = false
+        reportsViewing: Bool = false,
+        preRoll: MediaItem? = nil
     ) async {
+        if let preRoll, !resume, !item.isLiveChannel, !item.isTaterBumper {
+            queuedPlayback = QueuedPlayback(
+                item: item,
+                resume: resume,
+                reportsViewing: reportsViewing
+            )
+            await startItem(
+                preRoll,
+                client: client,
+                resume: false,
+                reportsViewing: false
+            )
+            if case .failed = state {
+                await startQueuedPlayback()
+            }
+            return
+        }
+
+        queuedPlayback = nil
+        await startItem(item, client: client, resume: resume, reportsViewing: reportsViewing)
+    }
+
+    private func startItem(
+        _ item: MediaItem,
+        client: APIClient,
+        resume: Bool,
+        reportsViewing: Bool
+    ) async {
+        processingInfoTask?.cancel()
+        processingInfoTask = nil
+        processingInfo = nil
         streamSeekTask?.cancel()
         streamSeekTask = nil
         pendingSeekTargetMS = nil
@@ -200,6 +264,10 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     func startDemo(item: MediaItem, url: URL, resume: Bool) async {
+        queuedPlayback = nil
+        processingInfoTask?.cancel()
+        processingInfoTask = nil
+        processingInfo = nil
         streamSeekTask?.cancel()
         streamSeekTask = nil
         pendingSeekTargetMS = nil
@@ -269,6 +337,9 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     func stop() async {
+        processingInfoTask?.cancel()
+        processingInfoTask = nil
+        processingInfo = nil
         streamSeekTask?.cancel()
         streamSeekTask = nil
         pendingSeekTargetMS = nil
@@ -281,7 +352,7 @@ final class PlaybackCoordinator: ObservableObject {
         if reportsViewing {
             await reportViewing(item: item, state: completed ? "completed" : "stopped")
         }
-        if !isCompleting, !item.isLiveChannel {
+        if !isCompleting, !item.isLiveChannel, !item.isTaterBumper {
             await saveProgress(item: item, completed: completed, active: false)
         }
         cleanupPlayer()
@@ -299,6 +370,7 @@ final class PlaybackCoordinator: ObservableObject {
         playbackPlanRecoveryAttempts = 0
         playbackRecoveryInFlight = false
         isDemoPlayback = false
+        queuedPlayback = nil
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
@@ -589,9 +661,37 @@ final class PlaybackCoordinator: ObservableObject {
         state = .playing
         isPaused = false
         updatePlaybackDisplay()
+        refreshProcessingInfo()
         viewingLastSampleAt = Date()
-        if !item.isLiveChannel {
+        if !item.isLiveChannel, !item.isTaterBumper {
             await saveProgress(item: item, completed: false, active: true)
+        }
+    }
+
+    private func refreshProcessingInfo() {
+        processingInfoTask?.cancel()
+        guard !isDemoPlayback, let client else { return }
+
+        processingInfoTask = Task { [weak self] in
+            let delays: [Duration] = [
+                .milliseconds(350),
+                .milliseconds(650),
+                .seconds(1),
+                .seconds(2),
+                .seconds(3),
+            ]
+            for delay in delays {
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, let self, self.player != nil else { return }
+                guard let streams = try? await client.activePlaybackStreams() else { continue }
+                let active = streams.filter(\.isActive)
+                let candidates = active.isEmpty
+                    ? streams.filter { $0.activityAgeSeconds <= 5 }
+                    : active
+                if let current = candidates.min(by: { $0.activityAgeSeconds < $1.activityAgeSeconds }) {
+                    self.processingInfo = current
+                }
+            }
         }
     }
 
@@ -618,15 +718,78 @@ final class PlaybackCoordinator: ObservableObject {
         }
 
         guard plan.selectedAudioTrack >= 0,
-              let audibleGroup,
-              audibleGroup.options.indices.contains(plan.selectedAudioTrack)
+              let audibleGroup
         else {
             audioTrackLabel = audioLabel(for: plan)
             return
         }
-        let option = audibleGroup.options[plan.selectedAudioTrack]
+
+        let sourceTrack = plan.source.audioTracks?.first { $0.index == plan.selectedAudioTrack }
+        let option: AVMediaSelectionOption?
+        if sourceTrack?.isDefault == true, let defaultOption = audibleGroup.defaultOption {
+            option = defaultOption
+        } else {
+            option = bestAudioOption(
+                in: audibleGroup,
+                sourceTrack: sourceTrack,
+                fallbackIndex: plan.selectedAudioTrack
+            )
+        }
+        guard let option else {
+            audioTrackLabel = audioLabel(for: plan)
+            return
+        }
         playerItem.select(option, in: audibleGroup)
         audioTrackLabel = audioLabel(for: option)
+    }
+
+    private func bestAudioOption(
+        in group: AVMediaSelectionGroup,
+        sourceTrack: PlaybackAudioTrack?,
+        fallbackIndex: Int
+    ) -> AVMediaSelectionOption? {
+        group.options.enumerated().max { left, right in
+            audioOptionScore(left.element, index: left.offset, sourceTrack: sourceTrack, fallbackIndex: fallbackIndex)
+                < audioOptionScore(right.element, index: right.offset, sourceTrack: sourceTrack, fallbackIndex: fallbackIndex)
+        }?.element
+    }
+
+    private func audioOptionScore(
+        _ option: AVMediaSelectionOption,
+        index: Int,
+        sourceTrack: PlaybackAudioTrack?,
+        fallbackIndex: Int
+    ) -> Int {
+        let name = option.displayName.lowercased()
+        var score = index == fallbackIndex ? 200 : 0
+        if option.hasMediaCharacteristic(.describesVideoForAccessibility) { score -= 2_000 }
+        if name.contains("commentary") || name.contains("director comment") { score -= 3_000 }
+        if name.contains("descriptive") || name.contains("audio description") { score -= 3_000 }
+
+        if let language = sourceTrack?.language?.lowercased(), !language.isEmpty,
+           option.extendedLanguageTag?.lowercased().contains(language) == true {
+            score += 400
+        }
+        if let codec = sourceTrack?.codec?.lowercased(),
+           optionCodecLabels(option).contains(where: { $0.contains(codec) || codec.contains($0) }) {
+            score += 800
+        }
+        return score
+    }
+
+    private func optionCodecLabels(_ option: AVMediaSelectionOption) -> [String] {
+        option.mediaSubTypes.map { number in
+            let value = number.uint32Value
+            let bytes: [UInt8] = [
+                UInt8((value >> 24) & 0xff),
+                UInt8((value >> 16) & 0xff),
+                UInt8((value >> 8) & 0xff),
+                UInt8(value & 0xff),
+            ]
+            return String(bytes: bytes, encoding: .ascii)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased() ?? ""
+        }
     }
 
     private func applyPreferredDisplayCriteria(
@@ -674,7 +837,7 @@ final class PlaybackCoordinator: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, let item = self.currentItem else { return }
+                guard let self, let item = self.currentItem, !item.isTaterBumper else { return }
                 await self.saveProgress(item: item, completed: false, active: true)
                 await self.reportViewing(
                     item: item,
@@ -770,6 +933,12 @@ final class PlaybackCoordinator: ObservableObject {
             playbackRecoveryInFlight = false
         }
 
+        if currentItem?.isTaterBumper == true, queuedPlayback != nil {
+            debugPlayback("bumper failed; continuing to requested title")
+            await startQueuedPlayback()
+            return
+        }
+
         state = .failed(message)
         UIApplication.shared.isIdleTimerDisabled = false
     }
@@ -784,6 +953,10 @@ final class PlaybackCoordinator: ObservableObject {
             return
         }
         guard let client else { return }
+        if item.isTaterBumper, queuedPlayback != nil {
+            await startQueuedPlayback()
+            return
+        }
         if await recoverPrematureHLSEndIfNeeded(item: item) {
             return
         }
@@ -804,12 +977,17 @@ final class PlaybackCoordinator: ObservableObject {
            let next = try? await client.nextEpisode(after: item),
            next.streamURL != nil {
             let shouldReportViewing = reportsViewing
+            var bumper: MediaItem?
+            if let source = next.taterBumperSource {
+                bumper = try? await client.nextTaterBumper(for: source)
+            }
             isCompleting = false
             await start(
                 item: next,
                 client: client,
                 resume: false,
-                reportsViewing: shouldReportViewing
+                reportsViewing: shouldReportViewing,
+                preRoll: bumper
             )
             return
         }
@@ -817,6 +995,18 @@ final class PlaybackCoordinator: ObservableObject {
         state = .finished
         shouldDismiss = true
         UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    private func startQueuedPlayback() async {
+        guard let queued = queuedPlayback, let client else { return }
+        queuedPlayback = nil
+        isCompleting = false
+        await start(
+            item: queued.item,
+            client: client,
+            resume: queued.resume,
+            reportsViewing: queued.reportsViewing
+        )
     }
 
     /// AVPlayer can occasionally report the end of a growing EVENT playlist
@@ -861,7 +1051,7 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     private func saveProgress(item: MediaItem, completed: Bool, active: Bool) async {
-        guard !item.isLiveChannel, let client else { return }
+        guard !item.isLiveChannel, !item.isTaterBumper, let client else { return }
         if progressSaveInFlight {
             // Routine heartbeats may be coalesced, but a stop/completion update
             // must win so Continue Watching is correct as soon as playback exits.
@@ -1080,6 +1270,26 @@ private enum PlaybackError: LocalizedError {
 }
 
 extension MediaItem {
+    var isTaterBumper: Bool {
+        let kinds = [type, mediaType].compactMap { $0?.lowercased() }
+        return kinds.contains("tater_bumper") || kinds.contains("bumper")
+    }
+
+    var taterBumperSource: TaterBumperSource? {
+        if isLiveChannel || isTaterBumper { return nil }
+
+        let kind = (mediaType ?? type)?.lowercased() ?? ""
+        if type?.lowercased() == "nzbstream"
+            || categoryID?.lowercased() == "discover"
+            || nzbURL?.isEmpty == false {
+            return .nzbMovies
+        }
+        if ["episode", "series", "show", "tv", "tvshow", "season"].contains(kind) {
+            return .localSeries
+        }
+        return .localMovies
+    }
+
     var isLiveChannel: Bool {
         ["channel", "live", "tube_tv", "tubetv"].contains(type?.lowercased() ?? "")
             || ["channel", "live", "tube_tv", "tubetv"].contains(mediaType?.lowercased() ?? "")

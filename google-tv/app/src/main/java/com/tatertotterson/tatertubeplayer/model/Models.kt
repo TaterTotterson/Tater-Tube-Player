@@ -21,6 +21,12 @@ data class HomeHero(
     val personalized: Boolean = false,
 )
 
+enum class TaterBumperSource(val wireValue: String) {
+    LOCAL_MOVIES("local_movies"),
+    LOCAL_SERIES("local_series"),
+    NZB_MOVIES("nzb_movies"),
+}
+
 data class MediaItem(
     val id: String,
     val title: String,
@@ -56,6 +62,15 @@ data class MediaItem(
     val progressPercent: Double = 0.0,
     val viewOffsetMs: Long = 0,
     val durationMs: Long = 0,
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
+    val videoCodec: String? = null,
+    val videoProfile: String? = null,
+    val videoRange: String? = null,
+    val audioCodec: String? = null,
+    val audioProfile: String? = null,
+    val audioChannels: Int = 0,
+    val audioChannelLayout: String? = null,
     val channelNumber: String? = null,
     val channelName: String? = null,
     val channelLogoUrl: String? = null,
@@ -76,6 +91,21 @@ data class MediaItem(
 
     val isLiveChannel: Boolean
         get() = mediaType.equals("channel", true) || mediaType.equals("live", true) || type.equals("channel", true)
+
+    val isTaterBumper: Boolean
+        get() = type.equals("tater_bumper", true) || type.equals("bumper", true) ||
+            mediaType.equals("tater_bumper", true) || mediaType.equals("bumper", true)
+
+    val taterBumperSource: TaterBumperSource?
+        get() {
+            if (isLiveChannel || isTaterBumper) return null
+            if (type.equals("nzbStream", true) || categoryId.equals("discover", true) || !nzbUrl.isNullOrBlank()) {
+                return TaterBumperSource.NZB_MOVIES
+            }
+            return if ((mediaType ?: type).orEmpty().lowercase() in
+                setOf("episode", "series", "show", "tv", "tvshow", "season")
+            ) TaterBumperSource.LOCAL_SERIES else TaterBumperSource.LOCAL_MOVIES
+        }
 
     val canPlay: Boolean
         get() = !streamUrl.isNullOrBlank()
@@ -205,6 +235,8 @@ data class PlaybackAudioTrack(
 
 data class PlaybackSource(
     val durationSeconds: Double? = null,
+    val audioCodec: String? = null,
+    val audioChannels: Int? = null,
     val audioTracks: List<PlaybackAudioTrack> = emptyList(),
 )
 
@@ -224,6 +256,30 @@ data class PlaybackPlan(
     val outputFrameRate: Double? = null,
     val selectedAudioTrack: Int = 0,
     val source: PlaybackSource = PlaybackSource(),
+)
+
+data class PlaybackProcessingInfo(
+    val id: String,
+    val status: String? = null,
+    val transcoded: Boolean = false,
+    val transcodeName: String? = null,
+    val hardwareAccel: String? = null,
+    val videoCodec: String? = null,
+    val videoMode: String? = null,
+    val audioMode: String? = null,
+    val audioCodec: String? = null,
+    val audioChannels: Int? = null,
+    val sourceWidth: Int? = null,
+    val sourceHeight: Int? = null,
+    val outputWidth: Int? = null,
+    val outputHeight: Int? = null,
+    val upscalingRequested: String? = null,
+    val upscalingMethod: String? = null,
+    val upscalingModel: String? = null,
+    val upscalingActive: Boolean = false,
+    val hardwareActive: Boolean = false,
+    val isActive: Boolean = false,
+    val activityAgeSeconds: Long = Long.MAX_VALUE,
 )
 
 data class LiveGuide(
@@ -431,6 +487,12 @@ object ModelParser {
 
     fun nextEpisode(raw: String): MediaItem? = envelope(raw).optJSONObject("item")?.mediaItem()
 
+    fun taterBumper(raw: String): MediaItem? {
+        val data = envelope(raw)
+        if (!data.optBoolean("enabled", false)) return null
+        return data.optJSONObject("item")?.mediaItem("bumper")
+    }
+
     fun discoverCategories(raw: String): List<DiscoverCategory> {
         val categories = envelope(raw).optJSONArray("categories").discoverCategories()
         val stream = categories.firstOrNull { it.id.equals("stream", true) }
@@ -524,6 +586,8 @@ object ModelParser {
             selectedAudioTrack = data.flexibleInt("selectedAudioTrack", "selected_audio_track") ?: 0,
             source = PlaybackSource(
                 durationSeconds = source.flexibleDouble("durationSeconds", "duration_seconds"),
+                audioCodec = source.string("audioCodec", "audio_codec"),
+                audioChannels = source.flexibleInt("audioChannels", "audio_channels"),
                 audioTracks = buildList {
                     repeat(tracks.length()) { index ->
                         val track = tracks.optJSONObject(index) ?: return@repeat
@@ -542,6 +606,43 @@ object ModelParser {
                 },
             ),
         )
+    }
+
+    fun activePlaybackStreams(raw: String): List<PlaybackProcessingInfo> {
+        val root = JSONObject(raw)
+        if (root.has("success") && !root.optBoolean("success", true)) {
+            throw IllegalStateException(root.string("message", "error") ?: "The server rejected the request.")
+        }
+        val streams = root.optJSONArray("data") ?: JSONArray()
+        return buildList {
+            repeat(streams.length()) { index ->
+                val stream = streams.optJSONObject(index) ?: return@repeat
+                add(PlaybackProcessingInfo(
+                    id = stream.string("id") ?: "stream-$index",
+                    status = stream.string("status"),
+                    transcoded = stream.optBoolean("transcoded", false),
+                    transcodeName = stream.string("transcode_name", "transcodeName"),
+                    hardwareAccel = stream.string("hardware_acceleration", "hardwareAcceleration"),
+                    videoCodec = stream.string("video_codec", "videoCodec"),
+                    videoMode = stream.string("video_mode", "videoMode"),
+                    audioMode = stream.string("audio_mode", "audioMode"),
+                    audioCodec = stream.string("audio_codec", "audioCodec"),
+                    audioChannels = stream.flexibleInt("audio_channels", "audioChannels"),
+                    sourceWidth = stream.flexibleInt("source_width", "sourceWidth"),
+                    sourceHeight = stream.flexibleInt("source_height", "sourceHeight"),
+                    outputWidth = stream.flexibleInt("output_width", "outputWidth"),
+                    outputHeight = stream.flexibleInt("output_height", "outputHeight"),
+                    upscalingRequested = stream.string("upscaling_requested", "upscalingRequested"),
+                    upscalingMethod = stream.string("upscaling_method", "upscalingMethod"),
+                    upscalingModel = stream.string("upscaling_model", "upscalingModel"),
+                    upscalingActive = stream.optBoolean("upscaling_active", false),
+                    hardwareActive = stream.optBoolean("hardware_active", false),
+                    isActive = stream.optBoolean("is_active", false),
+                    activityAgeSeconds = stream.flexibleLong("activity_age_seconds", "activityAgeSeconds")
+                        ?: Long.MAX_VALUE,
+                ))
+            }
+        }
     }
 
     fun liveGuide(raw: String): LiveGuide {
@@ -645,6 +746,15 @@ object ModelParser {
             progressPercent = (flexibleDouble("progressPercent") ?: 0.0).coerceIn(0.0, 100.0),
             viewOffsetMs = viewOffsetMs.coerceAtLeast(0),
             durationMs = durationMs.coerceAtLeast(0),
+            videoWidth = optInt("videoWidth", 0),
+            videoHeight = optInt("videoHeight", 0),
+            videoCodec = string("videoCodec"),
+            videoProfile = string("videoProfile"),
+            videoRange = string("videoRange"),
+            audioCodec = string("audioCodec"),
+            audioProfile = string("audioProfile"),
+            audioChannels = optInt("audioChannels", 0),
+            audioChannelLayout = string("audioChannelLayout"),
             channelNumber = string("channelNumber"),
             channelName = string("channelName"),
             channelLogoUrl = string("channelLogoUrl", "logoUrl"),

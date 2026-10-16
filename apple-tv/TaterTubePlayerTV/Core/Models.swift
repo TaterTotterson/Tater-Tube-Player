@@ -700,6 +700,15 @@ struct MediaItem: Decodable, Equatable, Identifiable {
     let duration: Int64?
     let durationSeconds: Double?
     let durationDisplay: String?
+    let videoWidth: Int
+    let videoHeight: Int
+    let videoCodec: String?
+    let videoProfile: String?
+    let videoRange: String?
+    let audioCodec: String?
+    let audioProfile: String?
+    let audioChannels: Int
+    let audioChannelLayout: String?
     let leafCount: Int
     let seasonCount: Int
     let episodeCount: Int
@@ -751,6 +760,15 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         duration: Int64? = nil,
         durationSeconds: Double? = nil,
         durationDisplay: String? = nil,
+        videoWidth: Int = 0,
+        videoHeight: Int = 0,
+        videoCodec: String? = nil,
+        videoProfile: String? = nil,
+        videoRange: String? = nil,
+        audioCodec: String? = nil,
+        audioProfile: String? = nil,
+        audioChannels: Int = 0,
+        audioChannelLayout: String? = nil,
         leafCount: Int = 0,
         seasonCount: Int = 0,
         episodeCount: Int = 0,
@@ -801,6 +819,15 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         self.duration = duration
         self.durationSeconds = durationSeconds
         self.durationDisplay = durationDisplay
+        self.videoWidth = videoWidth
+        self.videoHeight = videoHeight
+        self.videoCodec = videoCodec
+        self.videoProfile = videoProfile
+        self.videoRange = videoRange
+        self.audioCodec = audioCodec
+        self.audioProfile = audioProfile
+        self.audioChannels = audioChannels
+        self.audioChannelLayout = audioChannelLayout
         self.leafCount = leafCount
         self.seasonCount = seasonCount
         self.episodeCount = episodeCount
@@ -858,6 +885,15 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         case duration
         case durationSeconds
         case durationDisplay
+        case videoWidth
+        case videoHeight
+        case videoCodec
+        case videoProfile
+        case videoRange
+        case audioCodec
+        case audioProfile
+        case audioChannels
+        case audioChannelLayout
         case leafCount
         case seasonCount
         case episodeCount
@@ -911,6 +947,15 @@ struct MediaItem: Decodable, Equatable, Identifiable {
         duration = try values.decodeFlexibleInt64IfPresent(forKey: .duration)
         durationSeconds = try values.decodeIfPresent(Double.self, forKey: .durationSeconds)
         durationDisplay = try values.decodeIfPresent(String.self, forKey: .durationDisplay)
+        videoWidth = try values.decodeIfPresent(Int.self, forKey: .videoWidth) ?? 0
+        videoHeight = try values.decodeIfPresent(Int.self, forKey: .videoHeight) ?? 0
+        videoCodec = try values.decodeIfPresent(String.self, forKey: .videoCodec)
+        videoProfile = try values.decodeIfPresent(String.self, forKey: .videoProfile)
+        videoRange = try values.decodeIfPresent(String.self, forKey: .videoRange)
+        audioCodec = try values.decodeIfPresent(String.self, forKey: .audioCodec)
+        audioProfile = try values.decodeIfPresent(String.self, forKey: .audioProfile)
+        audioChannels = try values.decodeIfPresent(Int.self, forKey: .audioChannels) ?? 0
+        audioChannelLayout = try values.decodeIfPresent(String.self, forKey: .audioChannelLayout)
         leafCount = try values.decodeIfPresent(Int.self, forKey: .leafCount) ?? 0
         seasonCount = try values.decodeIfPresent(Int.self, forKey: .seasonCount) ?? 0
         episodeCount = try values.decodeIfPresent(Int.self, forKey: .episodeCount) ?? 0
@@ -928,6 +973,113 @@ struct MediaItem: Decodable, Equatable, Identifiable {
             ?? streamURL
             ?? nzbURL
             ?? [mediaType, title, date].compactMap { $0 }.joined(separator: ":")
+    }
+}
+
+enum TaterBumperSource: String {
+    case localMovies = "local_movies"
+    case localSeries = "local_series"
+    case nzbMovies = "nzb_movies"
+}
+
+struct TaterBumperResponse: Decodable {
+    let enabled: Bool
+    let source: String?
+    let item: MediaItem?
+}
+
+extension MediaItem {
+    /// The compact, ordered media summary shared by the home spotlight and
+    /// detail popup. Keep editorial genres out of this row so it remains a
+    /// quick read of the item type, rating, source quality, and runtime.
+    var cinematicMetadataChips: [String] {
+        let kind: String? = {
+            guard let raw = (mediaType ?? type)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else { return nil }
+            switch raw.lowercased() {
+            case "movie", "film": return "MOVIE"
+            case "show", "tvshow", "tv_show", "series": return "SERIES"
+            case "episode": return "EPISODE"
+            case "season": return "SEASON"
+            default: return raw.uppercased()
+            }
+        }()
+
+        let resolution: String? = {
+            if videoWidth >= 3_800 || videoHeight >= 2_000 { return "4K" }
+            if videoWidth >= 2_500 || videoHeight >= 1_400 { return "1440P" }
+            if videoWidth >= 1_900 || videoHeight >= 1_000 { return "1080P" }
+            if videoWidth >= 1_250 || videoHeight >= 700 { return "720P" }
+            if videoHeight > 0 { return "\(videoHeight)P" }
+            return nil
+        }()
+
+        let range: String? = {
+            switch videoRange?.lowercased().replacingOccurrences(of: "-", with: "_") {
+            case "dolby_vision", "dolbyvision", "dv": return "DOLBY VISION"
+            case "hdr10plus", "hdr10_plus", "hdr10+": return "HDR10+"
+            case "hdr10", "hdr": return "HDR10"
+            case "hlg": return "HLG"
+            default: return nil
+            }
+        }()
+
+        let video: String? = {
+            switch videoCodec?.lowercased() {
+            case "hevc", "h265", "h.265": return "HEVC"
+            case "h264", "avc", "h.264": return "H.264"
+            case "av1": return "AV1"
+            case "vp9": return "VP9"
+            case let codec?: return codec.uppercased()
+            case nil: return nil
+            }
+        }()
+
+        let audio: String? = {
+            let profile = audioProfile?.lowercased() ?? ""
+            if profile.contains("atmos") || profile.contains("joc") { return "ATMOS" }
+            switch audioCodec?.lowercased() {
+            case "truehd": return "TRUEHD"
+            case "eac3", "e-ac-3": return "DOLBY DIGITAL+"
+            case "ac3", "ac-3": return "DOLBY DIGITAL"
+            case "dts_hd", "dts-hd": return "DTS-HD"
+            case "dts": return "DTS"
+            case "aac": return "AAC"
+            case "flac": return "FLAC"
+            case let codec?: return codec.uppercased()
+            case nil: return nil
+            }
+        }()
+
+        let channels: String? = {
+            switch audioChannels {
+            case 8...: return "7.1"
+            case 6...: return "5.1"
+            case 2...: return "STEREO"
+            case 1: return "MONO"
+            default:
+                let layout = audioChannelLayout?.lowercased() ?? ""
+                if layout.contains("7.1") { return "7.1" }
+                if layout.contains("5.1") { return "5.1" }
+                if layout.contains("stereo") { return "STEREO" }
+                if layout.contains("mono") { return "MONO" }
+                return nil
+            }
+        }()
+
+        let runtime: String? = {
+            guard let value = durationDisplay?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { return nil }
+            return value
+        }()
+        var seen = Set<String>()
+        return [kind, contentRating, resolution, range, video, audio, channels, runtime]
+            .compactMap { value in
+                guard let cleaned = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !cleaned.isEmpty else { return nil }
+                return cleaned
+            }
+            .filter { seen.insert($0.lowercased()).inserted }
     }
 }
 
@@ -1077,6 +1229,30 @@ struct PlaybackMediaInfo: Decodable, Equatable {
     let audioCodec: String?
     let audioChannels: Int?
     let audioTracks: [PlaybackAudioTrack]?
+}
+
+struct PlaybackProcessingInfo: Decodable, Equatable {
+    let id: String
+    let status: String?
+    let transcoded: Bool
+    let transcodeName: String?
+    let hardwareAcceleration: String?
+    let videoCodec: String?
+    let videoMode: String?
+    let audioMode: String?
+    let audioCodec: String?
+    let audioChannels: Int?
+    let sourceWidth: Int?
+    let sourceHeight: Int?
+    let outputWidth: Int?
+    let outputHeight: Int?
+    let upscalingRequested: String?
+    let upscalingMethod: String?
+    let upscalingModel: String?
+    let upscalingActive: Bool
+    let hardwareActive: Bool
+    let isActive: Bool
+    let activityAgeSeconds: Int64
 }
 
 struct PlaybackAudioTrack: Decodable, Equatable, Identifiable {
