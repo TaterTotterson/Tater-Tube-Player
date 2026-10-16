@@ -401,6 +401,14 @@ final class APIClient: @unchecked Sendable {
         guard var streamURL = item.streamURL, !streamURL.isEmpty else {
             throw TaterAPIError.invalidResponse
         }
+        // Server-owned streams such as Tater Bumpers may be returned as
+        // same-origin relative paths. Android normalizes these as soon as it
+        // decodes the response; normalize at the Apple playback boundary so
+        // every call into the playback-session API receives an absolute URL.
+        guard let resolvedStreamURL = resolvedURL(for: streamURL) else {
+            throw TaterAPIError.invalidResponse
+        }
+        streamURL = resolvedStreamURL.absoluteString
         if item.isLiveChannel,
            item.channelLogoOverlayEnabled == true,
            item.channelLogoURL?.isEmpty == false,

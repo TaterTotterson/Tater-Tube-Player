@@ -195,9 +195,6 @@ jobs:
         run: xcodebuild -version
 
       - name: Build Apple TV Simulator app
-        env:
-          VERSION_NAME: ${{ needs.metadata.outputs.version_name }}
-          VERSION_CODE: ${{ needs.metadata.outputs.version_code }}
         run: |
           xcodebuild \
             -project apple-tv/TaterTubePlayerTV.xcodeproj \
@@ -207,8 +204,6 @@ jobs:
             -destination 'generic/platform=tvOS Simulator' \
             -derivedDataPath build/ci-tvos \
             CODE_SIGNING_ALLOWED=NO \
-            MARKETING_VERSION="$VERSION_NAME" \
-            CURRENT_PROJECT_VERSION="$VERSION_CODE" \
             build
 
       - name: Package Apple TV Simulator app

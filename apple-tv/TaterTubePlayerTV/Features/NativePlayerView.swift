@@ -21,7 +21,8 @@ private struct NativePlayerContent: View {
     @EnvironmentObject private var store: PlayerStore
     @ObservedObject var playback: PlaybackCoordinator
 
-    @FocusState private var focusedControl: PlayerFocus?
+    @FocusState private var surfaceFocused: Bool
+    @State private var selectedControl: PlayerFocus = .surface
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
     @State private var channelLogoImage: UIImage?
@@ -44,8 +45,8 @@ private struct NativePlayerContent: View {
                 .contentShape(Rectangle())
                 .focusable()
                 .focusEffectDisabled()
-                .focused($focusedControl, equals: .surface)
-                .onTapGesture { toggleControls() }
+                .focused($surfaceFocused)
+                .onTapGesture { handleSelect() }
 
             if playback.state == .preparing {
                 loadingPanel
@@ -59,26 +60,17 @@ private struct NativePlayerContent: View {
                (playback.state == .playing || playback.state == .preparing) {
                 TaterPlaybackOverlay(
                     playback: playback,
-                    focusedControl: $focusedControl,
-                    audioFocus: .audio,
-                    subtitleFocus: .subtitles,
-                    seekFocus: .seek,
-                    onAudio: {
-                        revealControls()
-                        Task { await playback.cycleAudioTrack() }
-                    },
-                    onSubtitles: {
-                        revealControls()
-                        playback.cycleSubtitleTrack()
-                    },
-                    seekFocused: focusedControl == .seek
+                    audioSelected: selectedControl == .audio,
+                    subtitlesSelected: selectedControl == .subtitles,
+                    seekFocused: selectedControl == .seek
                 )
+                .allowsHitTesting(false)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
         .animation(.easeOut(duration: 0.22), value: controlsVisible)
         .onAppear {
-            focusedControl = .surface
+            surfaceFocused = true
             revealControls(preferTrackControl: true)
         }
         .onDisappear { hideControlsTask?.cancel() }
@@ -111,11 +103,10 @@ private struct NativePlayerContent: View {
                 Task { await store.stopPlayback() }
             }
         }
-        .onChange(of: focusedControl) { _, _ in
-            if controlsVisible { scheduleControlsHide() }
-        }
-        .onChange(of: playback.plan) { _, _ in
-            guard controlsVisible, focusedControl == .surface else { return }
+        .onChange(of: playback.plan) { _, plan in
+            guard controlsVisible, plan != nil else { return }
+            // Playback plans arrive after the overlay first appears. Keep the
+            // overlay's initial selection deterministic when that happens.
             selectInitialControl()
         }
         .onChange(of: playback.isPaused) { _, paused in
@@ -193,48 +184,65 @@ private struct NativePlayerContent: View {
     }
 
     private func handleMove(_ direction: MoveCommandDirection) {
+        let overlayWasHidden = !controlsVisible
         controlsVisible = true
-        if focusedControl == .surface || focusedControl == .seek {
+
+        if overlayWasHidden {
             switch direction {
             case .left:
                 playback.seek(by: -10)
+                selectControl(.seek)
             case .right:
                 playback.seek(by: 10)
-            case .down where focusedControl == .surface:
-                if playback.hasMultipleAudioTracks {
-                    focusedControl = .audio
-                } else if playback.hasSubtitles {
-                    focusedControl = .subtitles
-                } else {
-                    requestFocus(.seek)
-                }
-            case .up where focusedControl == .seek:
+                selectControl(.seek)
+            default:
                 selectInitialControl()
-            default:
-                break
             }
-        } else {
-            switch (focusedControl, direction) {
-            case (.audio, .right) where playback.hasSubtitles:
-                focusedControl = .subtitles
-            case (.subtitles, .left) where playback.hasMultipleAudioTracks:
-                focusedControl = .audio
-            case (.audio, .down), (.subtitles, .down):
-                requestFocus(.seek)
-            default:
-                break
-            }
+            scheduleControlsHide()
+            return
         }
-        revealControls()
+
+        switch (selectedControl, direction) {
+        case (.seek, .left):
+            playback.seek(by: -10)
+        case (.seek, .right):
+            playback.seek(by: 10)
+        case (.seek, .up):
+            selectInitialControl()
+        case (.audio, .right) where playback.hasSubtitles:
+            selectControl(.subtitles)
+        case (.subtitles, .left):
+            selectControl(.audio)
+        case (.audio, .down), (.subtitles, .down):
+            selectControl(.seek)
+        case (.surface, _):
+            // A visible overlay owns directional navigation. Surface focus is
+            // only used while the overlay is hidden, so recover to a visible
+            // control without accidentally seeking.
+            selectInitialControl()
+        default:
+            break
+        }
+        scheduleControlsHide()
     }
 
-    private func toggleControls() {
-        controlsVisible.toggle()
-        if !controlsVisible {
-            hideControls()
-        } else {
-            selectInitialControl()
+    private func handleSelect() {
+        guard controlsVisible else {
+            revealControls(preferTrackControl: true)
+            return
+        }
+
+        switch selectedControl {
+        case .audio:
+            revealControls()
+            Task { await playback.cycleAudioTrack() }
+        case .subtitles:
+            revealControls()
+            playback.cycleSubtitleTrack()
+        case .seek:
             scheduleControlsHide()
+        case .surface:
+            revealControls(preferTrackControl: true)
         }
     }
 
@@ -247,27 +255,18 @@ private struct NativePlayerContent: View {
     }
 
     private func selectInitialControl() {
-        if playback.hasMultipleAudioTracks {
-            focusedControl = .audio
-        } else if playback.hasSubtitles {
-            focusedControl = .subtitles
-        } else {
-            focusedControl = .surface
-        }
+        selectControl(.audio)
     }
 
-    private func requestFocus(_ control: PlayerFocus) {
-        // Directional commands arrive while tvOS is still resolving its native
-        // focus update. Apply our explicit destination on the next main-loop turn
-        // so the system cannot restore the previously focused control afterward.
-        DispatchQueue.main.async {
-            focusedControl = control
-        }
+    private func selectControl(_ control: PlayerFocus) {
+        selectedControl = control
+        surfaceFocused = true
     }
 
     private func hideControls() {
         controlsVisible = false
-        focusedControl = .surface
+        selectedControl = .surface
+        surfaceFocused = true
         hideControlsTask?.cancel()
     }
 
@@ -282,14 +281,10 @@ private struct NativePlayerContent: View {
     }
 }
 
-private struct TaterPlaybackOverlay<Focus: Hashable>: View {
+private struct TaterPlaybackOverlay: View {
     @ObservedObject var playback: PlaybackCoordinator
-    var focusedControl: FocusState<Focus?>.Binding
-    let audioFocus: Focus
-    let subtitleFocus: Focus
-    let seekFocus: Focus
-    let onAudio: () -> Void
-    let onSubtitles: () -> Void
+    let audioSelected: Bool
+    let subtitlesSelected: Bool
     let seekFocused: Bool
 
     private var item: MediaItem? { playback.currentItem }
@@ -313,18 +308,18 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
                         title: playback.audioTrackLabel,
                         icon: "waveform",
                         maxWidth: 360,
-                        focus: audioFocus,
+                        selected: audioSelected,
                         enabled: playback.hasMultipleAudioTracks && !playback.isChangingAudioTrack,
-                        action: onAudio
+                        actionLabel: "Change audio track"
                     )
 
                     trackControl(
                         title: playback.subtitleTrackLabel,
                         icon: "captions.bubble.fill",
                         maxWidth: 220,
-                        focus: subtitleFocus,
+                        selected: subtitlesSelected,
                         enabled: playback.hasSubtitles,
-                        action: onSubtitles
+                        actionLabel: "Change subtitles"
                     )
                 }
 
@@ -350,12 +345,10 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
         title: String,
         icon: String,
         maxWidth: CGFloat,
-        focus: Focus,
+        selected: Bool,
         enabled: Bool,
-        action: @escaping () -> Void
+        actionLabel: String
     ) -> some View {
-        let selected = focusedControl.wrappedValue == focus
-
         return Label(title, systemImage: icon)
         .font(.system(size: 18, weight: .bold, design: .rounded))
         .lineLimit(1)
@@ -380,15 +373,9 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
             radius: selected ? 14 : 0
         )
         .contentShape(Capsule())
-        .focusable(enabled)
-        .focusEffectDisabled()
         .opacity(enabled ? 1 : 0.48)
-        .focused(focusedControl, equals: focus)
         .animation(.easeOut(duration: 0.16), value: selected)
-        .onTapGesture {
-            guard enabled else { return }
-            action()
-        }
+        .accessibilityLabel(actionLabel)
         .accessibilityAddTraits(.isButton)
     }
 
@@ -406,44 +393,38 @@ private struct TaterPlaybackOverlay<Focus: Hashable>: View {
     }
 
     private var timeline: some View {
-        Button(action: {}) {
-            HStack(spacing: 15) {
-                Text(item?.isLiveChannel == true ? "LIVE" : format(playback.playbackPositionMS))
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(item?.isLiveChannel == true ? TaterTheme.orangeBright : .white)
-                    .frame(width: 88, alignment: .leading)
+        HStack(spacing: 15) {
+            Text(item?.isLiveChannel == true ? "LIVE" : format(playback.playbackPositionMS))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(item?.isLiveChannel == true ? TaterTheme.orangeBright : .white)
+                .frame(width: 88, alignment: .leading)
 
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.20))
-                        Capsule()
-                            .fill(TaterTheme.orange)
-                            .frame(width: proxy.size.width * progress)
-                    }
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.20))
+                    Capsule()
+                        .fill(TaterTheme.orange)
+                        .frame(width: proxy.size.width * progress)
                 }
-                .frame(height: 7)
-
-                Text(item?.isLiveChannel == true ? "ON AIR" : format(playback.playbackDurationMS))
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundStyle(TaterTheme.secondaryText)
-                    .frame(width: 88, alignment: .trailing)
             }
+            .frame(height: seekFocused ? 9 : 6)
+
+            Text(item?.isLiveChannel == true ? "ON AIR" : format(playback.playbackDurationMS))
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .foregroundStyle(TaterTheme.secondaryText)
+                .frame(width: 88, alignment: .trailing)
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, seekFocused ? 16 : 0)
-        .padding(.vertical, seekFocused ? 12 : 0)
+        .padding(.horizontal, seekFocused ? 14 : 0)
+        .padding(.vertical, seekFocused ? 10 : 0)
         .background(
             seekFocused ? Color.black.opacity(0.72) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(seekFocused ? TaterTheme.orangeBright : Color.clear, lineWidth: 2.5)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(seekFocused ? TaterTheme.orangeBright : Color.clear, lineWidth: 2)
         }
-        .shadow(color: seekFocused ? TaterTheme.orange.opacity(0.42) : .clear, radius: 14)
-        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .focusEffectDisabled()
-        .focused(focusedControl, equals: seekFocus)
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .animation(.easeOut(duration: 0.15), value: seekFocused)
         .accessibilityLabel("Seek")
         .accessibilityHint("Press left or right to move through the video")
