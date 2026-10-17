@@ -378,8 +378,7 @@ private struct CinematicHomeBackdrop: View {
 struct MediaShelf: View {
     @EnvironmentObject private var store: PlayerStore
     @State private var selectedIndex = 0
-    @State private var selectionHasFocus = false
-    @FocusState private var selectionFocus: Bool
+    @FocusState private var focusedSelectionID: String?
 
     let title: String
     let items: [MediaItem]
@@ -421,9 +420,23 @@ struct MediaShelf: View {
                     ZStack(alignment: .topLeading) {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(alignment: .top, spacing: 25) {
-                                ForEach(items) { item in
+                                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                     WideMediaCardView(item: item, width: 345)
                                         .id(scrollID(for: item))
+                                        .contentShape(
+                                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        )
+                                        .focusable()
+                                        .focused(
+                                            $focusedSelectionID,
+                                            equals: scrollID(for: item)
+                                        )
+                                        .focusEffectDisabled()
+                                        .onTapGesture {
+                                            selectedIndex = index
+                                            open(item)
+                                        }
+                                        .accessibilityLabel(item.title)
                                 }
 
                                 if destination != nil {
@@ -433,6 +446,20 @@ struct MediaShelf: View {
                                         width: 345
                                     )
                                     .id(destinationScrollID)
+                                    .contentShape(
+                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    )
+                                    .focusable()
+                                    .focused(
+                                        $focusedSelectionID,
+                                        equals: destinationScrollID
+                                    )
+                                    .focusEffectDisabled()
+                                    .onTapGesture {
+                                        selectedIndex = items.count
+                                        activateSelection()
+                                    }
+                                    .accessibilityLabel("See all \(title)")
                                 }
 
                                 // Leave enough content after the final card for
@@ -448,60 +475,59 @@ struct MediaShelf: View {
                             .padding(.vertical, 22)
                         }
                         .scrollClipDisabled()
-                        .allowsHitTesting(false)
 
-                        TaterCardButton(
-                            cornerRadius: 18,
-                            action: activateSelection,
-                            onFocusChange: { focused in
-                                selectionHasFocus = focused
-                                if focused { announceSelection() }
-                            },
-                            requestedFocus: $selectionFocus
-                        ) {
-                            Color.clear
-                                .frame(width: 345, height: 202)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(
+                                focusedSelectionID == nil
+                                    ? Color.clear
+                                    : TaterTheme.orangeBright,
+                                lineWidth: focusedSelectionID == nil ? 0 : 4
+                            )
+                            .frame(width: 345, height: 202)
+                            .shadow(
+                                color: focusedSelectionID == nil
+                                    ? .clear
+                                    : TaterTheme.orange.opacity(0.34),
+                                radius: focusedSelectionID == nil ? 0 : 18
+                            )
+                            .scaleEffect(focusedSelectionID == nil ? 1 : 1.025)
+                            .padding(.vertical, 22)
+                            .allowsHitTesting(false)
+                            .animation(.easeOut(duration: 0.16), value: focusedSelectionID != nil)
+                    }
+                    .onChange(of: focusedSelectionID) { _, focusID in
+                        guard let focusID else { return }
+
+                        if focusID == destinationScrollID, destination != nil {
+                            selectedIndex = items.count
+                        } else if let index = items.firstIndex(where: {
+                            scrollID(for: $0) == focusID
+                        }) {
+                            selectedIndex = index
+                        } else {
+                            return
                         }
-                        .padding(.vertical, 22)
-                        .onMoveCommand { direction in
-                            switch direction {
-                            case .left:
-                                moveSelection(by: -1, using: scrollProxy)
-                            case .right:
-                                moveSelection(by: 1, using: scrollProxy)
-                            default:
-                                break
-                            }
+
+                        announceSelection()
+                        withAnimation(.easeOut(duration: 0.24)) {
+                            scrollProxy.scrollTo(focusID, anchor: .leading)
                         }
-                        .onKeyPress(
-                            keys: [.leftArrow, .rightArrow],
-                            phases: .repeat
-                        ) { press in
-                            switch press.key {
-                            case .leftArrow:
-                                moveSelection(by: -1, using: scrollProxy, duration: 0.12)
-                            case .rightArrow:
-                                moveSelection(by: 1, using: scrollProxy, duration: 0.12)
-                            default:
-                                return .ignored
-                            }
-                            return .handled
-                        }
-                        .accessibilityLabel(selectionAccessibilityLabel)
-                        .accessibilityHint("Press left or right to browse this row")
                     }
                 }
             }
             .frame(height: 246)
             .onChange(of: items.map(\.id)) { _, _ in
                 selectedIndex = min(selectedIndex, max(0, selectionCount - 1))
-                if selectionHasFocus { announceSelection() }
+                if focusedSelectionID != nil {
+                    focusedSelectionID = selectedFocusID
+                    announceSelection()
+                }
             }
             .onChange(of: focusRequest) { _, request in
                 guard request != nil else { return }
                 Task { @MainActor in
                     await Task.yield()
-                    selectionFocus = true
+                    focusedSelectionID = selectedFocusID
                 }
             }
         }
@@ -526,31 +552,14 @@ struct MediaShelf: View {
         "home-shelf-destination-\(title)"
     }
 
-    private var selectionAccessibilityLabel: String {
-        if destinationIsSelected { return "See all \(title)" }
-        return selectedItem?.title ?? title
+    private var selectedFocusID: String? {
+        if destinationIsSelected { return destinationScrollID }
+        guard let selectedItem else { return nil }
+        return scrollID(for: selectedItem)
     }
 
     private func scrollID(for item: MediaItem) -> String {
         "home-shelf-item-\(item.id)"
-    }
-
-    private func moveSelection(
-        by offset: Int,
-        using scrollProxy: ScrollViewProxy,
-        duration: Double = 0.24
-    ) {
-        let nextIndex = min(max(selectedIndex + offset, 0), max(0, selectionCount - 1))
-        guard nextIndex != selectedIndex else { return }
-        selectedIndex = nextIndex
-        announceSelection()
-        withAnimation(.easeOut(duration: duration)) {
-            if destinationIsSelected {
-                scrollProxy.scrollTo(destinationScrollID, anchor: .leading)
-            } else if let selectedItem {
-                scrollProxy.scrollTo(scrollID(for: selectedItem), anchor: .leading)
-            }
-        }
     }
 
     private func announceSelection() {
