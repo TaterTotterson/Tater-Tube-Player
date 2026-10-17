@@ -14,30 +14,30 @@ struct MediaDetailView: View {
             Color.black.opacity(0.72)
                 .ignoresSafeArea()
 
-            ZStack(alignment: .topLeading) {
-                ArtworkView(
-                    remoteValue: detailBackdrop,
-                    demoName: item.wideDemoArtworkName,
-                    showsPlaceholder: false
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                LinearGradient(
-                    colors: [Color.black.opacity(0.97), Color.black.opacity(0.82), Color.black.opacity(0.16)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-
-                LinearGradient(
-                    colors: [Color.black.opacity(0.04), Color.black.opacity(0.10), Color.black.opacity(0.92)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
-                detailContent
-
-            }
+            detailContent
             .frame(width: 1420, height: 720)
+            .background {
+                ZStack {
+                    ArtworkView(
+                        remoteValue: detailBackdrop,
+                        demoName: item.wideDemoArtworkName,
+                        showsPlaceholder: false
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    LinearGradient(
+                        colors: [Color.black.opacity(0.97), Color.black.opacity(0.82), Color.black.opacity(0.16)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+
+                    LinearGradient(
+                        colors: [Color.black.opacity(0.04), Color.black.opacity(0.10), Color.black.opacity(0.92)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
             .background(Color.black.opacity(0.82))
             .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
             .overlay {
