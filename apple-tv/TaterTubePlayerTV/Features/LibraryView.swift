@@ -212,6 +212,9 @@ private struct LibraryShelf: View {
 struct LibraryCollectionView: View {
     @EnvironmentObject private var store: PlayerStore
     @State private var heroFocusRequest = 0
+    @State private var lastOpenedItemID: String?
+    @State private var requestedItemFocusID: String?
+    @State private var itemFocusRequest = 0
     @FocusState private var focusedItemID: String?
 
     let location: LibraryLocation
@@ -249,6 +252,9 @@ struct LibraryCollectionView: View {
                 await Task.yield()
                 focusedItemID = initialFocusItemID
             }
+        }
+        .onChange(of: contentFocusRequest) { _, _ in
+            restoreLastOpenedItemFocus()
         }
     }
 
@@ -370,6 +376,8 @@ struct LibraryCollectionView: View {
                 LibraryItemLink(
                     item: item,
                     parent: location,
+                    focusRequest: requestedItemFocusID == item.id ? itemFocusRequest : nil,
+                    onOpenDetails: openDetails,
                     onNavigate: onNavigate
                 )
             }
@@ -397,6 +405,20 @@ struct LibraryCollectionView: View {
         if focused { heroFocusRequest += 1 }
     }
 
+    private func openDetails(_ item: MediaItem) {
+        lastOpenedItemID = item.id
+        store.openDetails(for: item)
+    }
+
+    private func restoreLastOpenedItemFocus() {
+        guard store.selectedMedia == nil,
+              let itemID = lastOpenedItemID,
+              items.contains(where: { $0.id == itemID }) else { return }
+
+        requestedItemFocusID = itemID
+        itemFocusRequest &+= 1
+    }
+
     private func seriesEpisodeAnchor(_ episodeID: String) -> String {
         "series-episode-\(episodeID)"
     }
@@ -404,40 +426,64 @@ struct LibraryCollectionView: View {
 
 private struct LibraryItemLink: View {
     @EnvironmentObject private var store: PlayerStore
+    @FocusState private var hasFocus: Bool
 
     let item: MediaItem
     let parent: LibraryLocation
     var wide = false
     var handlesRecentlyAddedShows = false
+    var focusRequest: Int? = nil
+    var onOpenDetails: ((MediaItem) -> Void)? = nil
     let onNavigate: (LibraryLocation) -> Void
 
     var body: some View {
-        if item.isBrowsableLibraryItem {
-            TaterCardButton(
-                cornerRadius: wide ? 22 : 20,
-                usesDarkFocusSurface: !wide,
-                action: {
-                    openBrowsableItem()
+        Group {
+            if item.isBrowsableLibraryItem {
+                TaterCardButton(
+                    cornerRadius: wide ? 22 : 20,
+                    usesDarkFocusSurface: !wide,
+                    action: {
+                        openBrowsableItem()
+                    },
+                    requestedFocus: $hasFocus
+                ) {
+                    if wide {
+                        WideMediaCardView(item: item)
+                    } else if item.mediaType?.lowercased() == "season" {
+                        SeasonCardView(item: item)
+                    } else {
+                        MediaCardView(item: item)
+                    }
                 }
-            ) {
-                if wide {
-                    WideMediaCardView(item: item)
-                } else if item.mediaType?.lowercased() == "season" {
-                    SeasonCardView(item: item)
-                } else {
-                    MediaCardView(item: item)
+            } else {
+                TaterCardButton(
+                    cornerRadius: 20,
+                    usesDarkFocusSurface: !wide,
+                    action: openDetails,
+                    requestedFocus: $hasFocus
+                ) {
+                    if wide {
+                        WideMediaCardView(item: item)
+                    } else {
+                        MediaCardView(item: item)
+                    }
                 }
             }
+        }
+        .onChange(of: focusRequest) { _, request in
+            guard request != nil else { return }
+            Task { @MainActor in
+                await Task.yield()
+                hasFocus = true
+            }
+        }
+    }
+
+    private func openDetails() {
+        if let onOpenDetails {
+            onOpenDetails(item)
         } else {
-            TaterCardButton(cornerRadius: 20, usesDarkFocusSurface: !wide) {
-                store.openDetails(for: item)
-            } label: {
-                if wide {
-                    WideMediaCardView(item: item)
-                } else {
-                    MediaCardView(item: item)
-                }
-            }
+            store.openDetails(for: item)
         }
     }
 
@@ -445,7 +491,11 @@ private struct LibraryItemLink: View {
         if handlesRecentlyAddedShows,
            item.recentItems.count == 1,
            let episode = item.recentItems.first {
-            store.openDetails(for: episode)
+            if let onOpenDetails {
+                onOpenDetails(episode)
+            } else {
+                store.openDetails(for: episode)
+            }
             return
         }
         if handlesRecentlyAddedShows,

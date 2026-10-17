@@ -378,6 +378,10 @@ private struct CinematicHomeBackdrop: View {
 struct MediaShelf: View {
     @EnvironmentObject private var store: PlayerStore
     @State private var selectedIndex = 0
+    @State private var shelfScrollPosition = ScrollPosition(
+        idType: String.self,
+        x: 0
+    )
     @FocusState private var focusedSelectionID: String?
 
     let title: String
@@ -416,10 +420,9 @@ struct MediaShelf: View {
                 .tracking(3)
 
             GeometryReader { shelfGeometry in
-                ScrollViewReader { scrollProxy in
-                    ZStack(alignment: .topLeading) {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(alignment: .top, spacing: 25) {
+                ZStack(alignment: .topLeading) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(alignment: .top, spacing: 25) {
                                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                     WideMediaCardView(item: item, width: 345)
                                         .id(scrollID(for: item))
@@ -471,47 +474,50 @@ struct MediaShelf: View {
                                         height: 202
                                     )
                                     .accessibilityHidden(true)
-                            }
-                            .padding(.vertical, 22)
                         }
-                        .scrollClipDisabled()
-
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(
-                                focusedSelectionID == nil
-                                    ? Color.clear
-                                    : TaterTheme.orangeBright,
-                                lineWidth: focusedSelectionID == nil ? 0 : 4
-                            )
-                            .frame(width: 345, height: 202)
-                            .shadow(
-                                color: focusedSelectionID == nil
-                                    ? .clear
-                                    : TaterTheme.orange.opacity(0.34),
-                                radius: focusedSelectionID == nil ? 0 : 18
-                            )
-                            .scaleEffect(focusedSelectionID == nil ? 1 : 1.025)
-                            .padding(.vertical, 22)
-                            .allowsHitTesting(false)
-                            .animation(.easeOut(duration: 0.16), value: focusedSelectionID != nil)
+                        .scrollTargetLayout()
+                        .padding(.vertical, 22)
                     }
-                    .onChange(of: focusedSelectionID) { _, focusID in
-                        guard let focusID else { return }
+                    .scrollClipDisabled()
+                    .scrollPosition($shelfScrollPosition)
 
-                        if focusID == destinationScrollID, destination != nil {
-                            selectedIndex = items.count
-                        } else if let index = items.firstIndex(where: {
-                            scrollID(for: $0) == focusID
-                        }) {
-                            selectedIndex = index
-                        } else {
-                            return
-                        }
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(
+                            focusedSelectionID == nil
+                                ? Color.clear
+                                : TaterTheme.orangeBright,
+                            lineWidth: focusedSelectionID == nil ? 0 : 4
+                        )
+                        .frame(width: 345, height: 202)
+                        .shadow(
+                            color: focusedSelectionID == nil
+                                ? .clear
+                                : TaterTheme.orange.opacity(0.34),
+                            radius: focusedSelectionID == nil ? 0 : 18
+                        )
+                        .scaleEffect(focusedSelectionID == nil ? 1 : 1.025)
+                        .padding(.vertical, 22)
+                        .allowsHitTesting(false)
+                        .animation(.easeOut(duration: 0.16), value: focusedSelectionID != nil)
+                }
+                .onChange(of: focusedSelectionID) { _, focusID in
+                    guard let focusID else { return }
 
-                        announceSelection()
-                        withAnimation(.easeOut(duration: 0.24)) {
-                            scrollProxy.scrollTo(focusID, anchor: .leading)
-                        }
+                    if focusID == destinationScrollID, destination != nil {
+                        selectedIndex = items.count
+                    } else if let index = items.firstIndex(where: {
+                        scrollID(for: $0) == focusID
+                    }) {
+                        selectedIndex = index
+                    } else {
+                        return
+                    }
+
+                    announceSelection()
+                    withAnimation(.easeOut(duration: 0.24)) {
+                        shelfScrollPosition.scrollTo(
+                            x: CGFloat(selectedIndex) * 370
+                        )
                     }
                 }
             }
