@@ -179,6 +179,14 @@ class TaterApiClient(
     suspend fun activePlaybackStreams(): List<PlaybackProcessingInfo> =
         ModelParser.activePlaybackStreams(request("/api/tater/streams/active", timeoutMs = 8_000))
 
+    suspend fun stopActivePlayback() {
+        request(
+            path = "/api/tater/streams/active/stop",
+            method = "POST",
+            timeoutMs = 8_000,
+        )
+    }
+
     suspend fun clearPlayState(item: MediaItem) {
         val body = playStateBody(item, 0, 0, completed = true, playbackActive = false)
         request("/api/tater/playstate", "DELETE", body)

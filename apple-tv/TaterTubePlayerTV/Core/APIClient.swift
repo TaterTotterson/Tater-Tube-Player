@@ -503,6 +503,14 @@ final class APIClient: @unchecked Sendable {
         return try decodeEnvelope([PlaybackProcessingInfo].self, from: data)
     }
 
+    func stopActivePlayback() async throws {
+        _ = try await request(
+            path: "/api/tater/streams/active/stop",
+            method: "POST",
+            timeout: 8
+        )
+    }
+
     func invalidatePlaybackPlan(cacheKey: String?) {
         guard let cacheKey, !cacheKey.isEmpty else { return }
         playbackCacheLock.withLock {

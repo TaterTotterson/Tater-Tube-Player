@@ -43,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -84,6 +87,7 @@ fun PlaybackScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val lifecycleOwner = LocalLifecycleOwner.current
     var positionMs by remember(session.item.id) { mutableLongStateOf(session.startPositionMs) }
     var durationMs by remember(session.item.id) { mutableLongStateOf(session.item.durationMs) }
     var overlayVisible by remember(session.item.id) { mutableStateOf(true) }
@@ -211,7 +215,7 @@ fun PlaybackScreen(
         )
     }
 
-    DisposableEffect(player) {
+    DisposableEffect(player, lifecycleOwner) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -233,9 +237,20 @@ fun PlaybackScreen(
                 updateTrackOptions(tracks)
             }
         }
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && !hasExited) {
+                // The composition can remain alive after the user presses
+                // Home. End the session and halt ExoPlayer immediately so it
+                // cannot continue pulling HLS segments in the background.
+                finish(completed = false)
+                player.stop()
+            }
+        }
         player.addListener(listener)
+        lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
         updateTrackOptions()
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
             player.removeListener(listener)
             mediaSession.release()
             player.release()
@@ -667,7 +682,7 @@ private fun PlaybackOverlay(
     }
 }
 
-private enum class ProcessingBadgeStyle { RESOLUTION, HARDWARE, SOFTWARE, UPSCALING, AUDIO }
+private enum class ProcessingBadgeStyle { RESOLUTION, HARDWARE, SOFTWARE, UPSCALING, HDR, AUDIO }
 
 private data class ProcessingBadgeSpec(
     val label: String,
@@ -697,6 +712,7 @@ private fun ProcessingBadge(badge: ProcessingBadgeSpec) {
         ProcessingBadgeStyle.RESOLUTION, ProcessingBadgeStyle.SOFTWARE -> TaterColors.OrangeBright
         ProcessingBadgeStyle.HARDWARE -> Color.Black.copy(alpha = .88f)
         ProcessingBadgeStyle.UPSCALING -> Color.White.copy(alpha = .90f)
+        ProcessingBadgeStyle.HDR -> Color(0xFFFFC247)
         ProcessingBadgeStyle.AUDIO -> Color(0xFF8ADFEB)
     }
     val background = when (badge.style) {
@@ -704,6 +720,7 @@ private fun ProcessingBadge(badge: ProcessingBadgeSpec) {
         ProcessingBadgeStyle.HARDWARE -> Color(0xFF61D985)
         ProcessingBadgeStyle.SOFTWARE -> TaterColors.Orange.copy(alpha = .16f)
         ProcessingBadgeStyle.UPSCALING -> Color.White.copy(alpha = .12f)
+        ProcessingBadgeStyle.HDR -> Color(0xFFF2A91B).copy(alpha = .16f)
         ProcessingBadgeStyle.AUDIO -> Color(0xFF3DABB9).copy(alpha = .16f)
     }
     val border = if (badge.style == ProcessingBadgeStyle.HARDWARE) Color.Transparent else primary.copy(alpha = .92f)
@@ -736,6 +753,12 @@ private fun playbackProcessingBadges(
     } else sourceResolution
     resolution?.let { add(ProcessingBadgeSpec(it, ProcessingBadgeStyle.RESOLUTION)) }
 
+    upscalingLabel(plan, processing)?.let {
+        add(ProcessingBadgeSpec("✦  $it", ProcessingBadgeStyle.UPSCALING))
+    }
+    hdrEnhancementLabel(processing)?.let {
+        add(ProcessingBadgeSpec("☀  $it", ProcessingBadgeStyle.HDR))
+    }
     when (videoMode) {
         "direct", "copy" -> add(ProcessingBadgeSpec("VIDEO · DIRECT", ProcessingBadgeStyle.HARDWARE))
         "transcode" -> {
@@ -748,11 +771,17 @@ private fun playbackProcessingBadges(
         }
         else -> add(ProcessingBadgeSpec("VIDEO · ${videoMode.uppercase()}", ProcessingBadgeStyle.SOFTWARE))
     }
-
-    upscalingLabel(plan, processing)?.let {
-        add(ProcessingBadgeSpec("✦  $it", ProcessingBadgeStyle.UPSCALING))
-    }
     add(ProcessingBadgeSpec(audioProcessingLabel(plan, processing), ProcessingBadgeStyle.AUDIO))
+}
+
+private fun hdrEnhancementLabel(processing: PlaybackProcessingInfo?): String? {
+    if (processing?.hdrEnhancementActive != true) return null
+    val preset = when (processing.hdrEnhancement?.lowercase()) {
+        "conservative" -> "Conservative"
+        "vivid" -> "Vivid"
+        else -> "Balanced"
+    }
+    return "HDR ENHANCED · $preset"
 }
 
 private fun resolutionLabel(width: Int?, height: Int?): String? {

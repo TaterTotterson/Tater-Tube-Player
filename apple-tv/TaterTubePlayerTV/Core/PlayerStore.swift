@@ -527,6 +527,12 @@ final class PlayerStore: ObservableObject {
         }
     }
 
+    func stopPlaybackForAppBackground() async {
+        guard isPlaybackPresented || playback.currentItem != nil else { return }
+        await playback.stop()
+        isPlaybackPresented = false
+    }
+
     func clearProgress(for item: MediaItem) async {
         guard let client else { return }
         do {

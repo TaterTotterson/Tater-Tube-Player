@@ -384,10 +384,13 @@ private struct TaterPlaybackOverlay: View {
             if let label = resolutionLabel {
                 PlaybackProcessingBadge(label: label, style: .resolution)
             }
-            PlaybackProcessingBadge(label: videoProcessingLabel, style: videoBadgeStyle)
             if let label = upscalingLabel {
                 PlaybackProcessingBadge(label: label, systemImage: "sparkles", style: .upscaling)
             }
+            if let label = hdrEnhancementLabel {
+                PlaybackProcessingBadge(label: label, systemImage: "sun.max.fill", style: .hdr)
+            }
+            PlaybackProcessingBadge(label: videoProcessingLabel, style: videoBadgeStyle)
             PlaybackProcessingBadge(label: audioProcessingLabel, systemImage: "waveform", style: .audio)
         }
     }
@@ -522,6 +525,17 @@ private struct TaterPlaybackOverlay: View {
         }
     }
 
+    private var hdrEnhancementLabel: String? {
+        guard let processing, processing.hdrEnhancementActive else { return nil }
+        let preset: String
+        switch processing.hdrEnhancement?.lowercased() {
+        case "conservative": preset = "Conservative"
+        case "vivid": preset = "Vivid"
+        default: preset = "Balanced"
+        }
+        return "HDR ENHANCED · \(preset)"
+    }
+
     private func formatResolution(width: Int?, height: Int?) -> String? {
         guard let height, height > 0 else { return nil }
         if height >= 2160 || (width ?? 0) >= 3840 { return "4K" }
@@ -599,6 +613,7 @@ private struct PlaybackProcessingBadge: View {
         case hardware
         case software
         case upscaling
+        case hdr
         case audio
     }
 
@@ -632,6 +647,7 @@ private struct PlaybackProcessingBadge: View {
         case .hardware: return Color(red: 0.38, green: 0.85, blue: 0.52)
         case .software: return TaterTheme.orange.opacity(0.16)
         case .upscaling: return Color.white.opacity(0.12)
+        case .hdr: return Color(red: 0.95, green: 0.66, blue: 0.16).opacity(0.16)
         case .audio: return Color(red: 0.24, green: 0.67, blue: 0.76).opacity(0.15)
         case .resolution: return Color.black.opacity(0.36)
         }
@@ -646,6 +662,7 @@ private struct PlaybackProcessingBadge: View {
         case .resolution, .software: return TaterTheme.orangeBright
         case .hardware: return Color.black
         case .upscaling: return Color.white.opacity(0.88)
+        case .hdr: return Color(red: 1.0, green: 0.76, blue: 0.28)
         case .audio: return Color(red: 0.54, green: 0.88, blue: 0.96)
         }
     }

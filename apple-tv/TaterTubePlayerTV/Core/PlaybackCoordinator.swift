@@ -157,6 +157,8 @@ final class PlaybackCoordinator: ObservableObject {
             upscalingMethod: "ai",
             upscalingModel: "artcnn-c4f16-ds",
             upscalingActive: true,
+            hdrEnhancement: "balanced",
+            hdrEnhancementActive: true,
             hardwareActive: true,
             isActive: true,
             activityAgeSeconds: 0
@@ -349,12 +351,19 @@ final class PlaybackCoordinator: ObservableObject {
         }
 
         let completed = state == .finished || isNearEnd
-        if reportsViewing {
-            await reportViewing(item: item, state: completed ? "completed" : "stopped")
-        }
-        if !isCompleting, !item.isLiveChannel, !item.isTaterBumper {
-            await saveProgress(item: item, completed: completed, active: false)
-        }
+        let positionMS = currentPositionMS
+        let durationMS = currentDurationMS
+        let activeClient = client
+        let shouldReportViewing = reportsViewing
+        let shouldSaveProgress = !isCompleting && !item.isLiveChannel && !item.isTaterBumper
+        let sessionID = viewingSessionID
+        updateViewingWatchTime()
+        let watchedMS = viewingWatchedMS
+
+        // Tear AVPlayer down before awaiting any server request. tvOS may
+        // suspend the app immediately after it enters the background; leaving
+        // cleanup below a network await lets AppleCoreMedia keep requesting a
+        // live HLS channel after the app is no longer visible.
         cleanupPlayer()
         currentItem = nil
         plan = nil
@@ -372,6 +381,30 @@ final class PlaybackCoordinator: ObservableObject {
         isDemoPlayback = false
         queuedPlayback = nil
         UIApplication.shared.isIdleTimerDisabled = false
+
+        // The explicit ownership release is independent of viewing-history
+        // collection, so even very short sessions and disabled Tater Link
+        // reporting stop their server-side transcode immediately.
+        try? await activeClient?.stopActivePlayback()
+        if shouldReportViewing, watchedMS > 0, !sessionID.isEmpty {
+            try? await activeClient?.saveViewingEvent(
+                for: item,
+                state: completed ? "completed" : "stopped",
+                positionMS: positionMS,
+                durationMS: durationMS,
+                sessionID: sessionID,
+                watchedMS: watchedMS
+            )
+        }
+        if shouldSaveProgress {
+            try? await activeClient?.savePlayState(
+                for: item,
+                positionMS: completed ? durationMS : positionMS,
+                durationMS: durationMS,
+                completed: completed,
+                playbackActive: false
+            )
+        }
     }
 
     func clearProgress(for item: MediaItem) async throws {

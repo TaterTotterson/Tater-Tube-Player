@@ -1250,6 +1250,8 @@ struct PlaybackProcessingInfo: Decodable, Equatable {
     let upscalingMethod: String?
     let upscalingModel: String?
     let upscalingActive: Bool
+    let hdrEnhancement: String?
+    let hdrEnhancementActive: Bool
     let hardwareActive: Bool
     let isActive: Bool
     let activityAgeSeconds: Int64

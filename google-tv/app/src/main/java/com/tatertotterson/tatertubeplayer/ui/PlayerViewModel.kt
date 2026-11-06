@@ -712,6 +712,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (completed && queuedPlayback != null) {
                 startQueuedPlayback()
             } else {
+                client?.let { api ->
+                    viewModelScope.launch { runCatching { api.stopActivePlayback() } }
+                }
                 queuedPlayback = null
                 state = state.copy(
                     playback = null,
@@ -729,6 +732,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         client?.let { api ->
             viewModelScope.launch {
+                runCatching { api.stopActivePlayback() }
                 runCatching { api.savePlayState(session.item, positionMs, durationMs, completed, false) }
                 val nextEpisode = if (
                     completed &&

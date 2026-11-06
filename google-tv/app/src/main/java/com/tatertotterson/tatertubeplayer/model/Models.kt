@@ -277,6 +277,8 @@ data class PlaybackProcessingInfo(
     val upscalingMethod: String? = null,
     val upscalingModel: String? = null,
     val upscalingActive: Boolean = false,
+    val hdrEnhancement: String? = null,
+    val hdrEnhancementActive: Boolean = false,
     val hardwareActive: Boolean = false,
     val isActive: Boolean = false,
     val activityAgeSeconds: Long = Long.MAX_VALUE,
@@ -636,6 +638,8 @@ object ModelParser {
                     upscalingMethod = stream.string("upscaling_method", "upscalingMethod"),
                     upscalingModel = stream.string("upscaling_model", "upscalingModel"),
                     upscalingActive = stream.optBoolean("upscaling_active", false),
+                    hdrEnhancement = stream.string("hdr_enhancement", "hdrEnhancement"),
+                    hdrEnhancementActive = stream.optBoolean("hdr_enhancement_active", false),
                     hardwareActive = stream.optBoolean("hardware_active", false),
                     isActive = stream.optBoolean("is_active", false),
                     activityAgeSeconds = stream.flexibleLong("activity_age_seconds", "activityAgeSeconds")
