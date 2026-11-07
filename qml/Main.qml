@@ -29,6 +29,9 @@ ApplicationWindow {
     readonly property color textSecondary: "#aaafb4"
     readonly property int shelfPreviewLimit: 8
     property string currentPage: "home"
+    property string currentDestination: "home"
+    property string pendingLibraryDestination: ""
+    property var homeHeroItem: ({})
     property var selectedItem: ({})
     property string selectedKind: "MEDIA"
     property bool detailsOpen: false
@@ -93,6 +96,8 @@ ApplicationWindow {
     property string pendingLibraryFocusPath: ""
     property int pendingLibraryFocusAttempts: 0
     property int discoverVisibleLimit: 60
+    // Kept as the shared modal guard for the compact Settings sheet. The old
+    // slide-out navigation rail has been removed from the interface.
     property bool sideMenuOpen: false
     property var sideMenuReturnFocus: null
     property double guideClockMs: Date.now()
@@ -141,6 +146,83 @@ ApplicationWindow {
     function taterRecommendationsAvailable() {
         return !demoMode && serverClient.paired
                 && !!serverClient.capabilities.taterLink
+    }
+
+    function defaultHomeHeroItem() {
+        if (serverClient.continueWatching.length > 0)
+            return serverClient.continueWatching[0]
+        if (serverClient.recentlyAdded.length > 0)
+            return serverClient.recentlyAdded[0]
+        var rows = root.librarySourceRows()
+        for (var i = 0; i < rows.length; ++i) {
+            var items = root.libraryRowItems(rows[i])
+            if (items.length > 0)
+                return items[0]
+        }
+        var demoItems = root.libraryMediaItems()
+        return demoItems.length > 0 ? demoItems[0] : ({})
+    }
+
+    function displayedHomeHeroItem() {
+        return homeHeroItem && homeHeroItem.title
+                ? homeHeroItem : defaultHomeHeroItem()
+    }
+
+    function selectHomeHero(item) {
+        if (item && item.title)
+            homeHeroItem = item
+    }
+
+    function mediaTechnicalBadges(item) {
+        if (!item)
+            return []
+        var playable = detailsPlaybackItem(item)
+        var badges = []
+        var width = Number(playable.videoWidth || playable.width || 0)
+        var height = Number(playable.videoHeight || playable.height || 0)
+        var resolution = playable.resolution || playable.videoResolution
+        if (!resolution && (height > 0 || width > 0)) {
+            if (height >= 2160 || width >= 3840)
+                resolution = "4K"
+            else if (height >= 1080)
+                resolution = "1080P"
+            else if (height >= 720)
+                resolution = "720P"
+        }
+        var range = playable.videoRange || playable.hdrFormat || playable.dynamicRange
+        var videoCodec = playable.videoCodec || playable.codec
+        var audioCodec = playable.audioCodec
+        var audioLayout = playable.audioLayout || playable.channelLayout
+                || playable.audioChannels
+        if (resolution) badges.push(String(resolution).toUpperCase())
+        if (range && String(range).toLowerCase() !== "sdr")
+            badges.push(String(range).toUpperCase())
+        if (videoCodec) badges.push(String(videoCodec).toUpperCase())
+        if (audioCodec) badges.push(String(audioCodec).toUpperCase())
+        if (audioLayout) badges.push(String(audioLayout).toUpperCase())
+        return badges
+    }
+
+    function discoverCategoriesFor(kind) {
+        var categories = displayedDiscoverCategories()
+        return categories.filter(function(category) {
+            var value = String(category && (category.category || category.mediaType)
+                               ? (category.category || category.mediaType) : "").toLowerCase()
+            var id = String(category && category.id ? category.id : "").toLowerCase()
+            return kind === "movies" ? (value === "movie" || id.indexOf("movie:") === 0)
+                                     : (value === "series" || value === "tv"
+                                        || id.indexOf("series:") === 0)
+        })
+    }
+
+    function recommendationsFor(kind) {
+        return displayedRecommendations().filter(function(item) {
+            var value = String(item && (item.mediaType || item.type)
+                               ? (item.mediaType || item.type) : "").toLowerCase()
+            return kind === "movies" ? value === "movie"
+                                     : (value === "show" || value === "series"
+                                        || value === "tv" || value === "episode")
+        })
     }
 
     function builtInHeroHeadline() {
@@ -279,6 +361,15 @@ ApplicationWindow {
         return String(item.poster || item.seasonPoster || item.seriesPoster
                       || playable.poster || item.episodeStill
                       || playable.episodeStill || "")
+    }
+
+    function detailsBackdropSource(item) {
+        if (!item)
+            return ""
+        var playable = detailsPlaybackItem(item)
+        return String(item.backdrop || playable.backdrop
+                      || item.episodeStill || playable.episodeStill
+                      || homeWideArtwork(item) || detailsArtworkSource(item))
     }
 
     function detailsSynopsis(item) {
@@ -515,6 +606,13 @@ ApplicationWindow {
             return type !== "local"
                     && id !== "local-discover:movies"
                     && id !== "local-discover:series"
+        })
+    }
+
+    function homeLibraryRows() {
+        return libraryPageRows().filter(function(row) {
+            var title = String(row && row.title ? row.title : "").toLowerCase()
+            return title !== "recently added" && title !== "continue watching"
         })
     }
 
@@ -1238,6 +1336,15 @@ ApplicationWindow {
     }
 
     function showPage(name) {
+        if (name === "home") currentDestination = "home"
+        else if (name === "live") currentDestination = "live"
+        else if (name === "discover") currentDestination = "discover"
+        else if (name === "recommendations") currentDestination = "recommendations"
+        else if (name === "search") currentDestination = "search"
+        else if (name === "library"
+                 && currentDestination !== "movies"
+                 && currentDestination !== "series")
+            currentDestination = "movies"
         sideMenuOpen = false
         sideMenuReturnFocus = null
         detailsOpen = false
@@ -1264,35 +1371,73 @@ ApplicationWindow {
             guideClockMs = Date.now()
         Qt.callLater(function() {
             if (name === "home")
-                heroWatchLive.forceActiveFocus()
+                root.focusFirstHomeControl()
             else
                 root.focusFirstSectionControl()
         })
     }
 
+    function focusDestination(destination) {
+        var target = topHomeNav
+        if (destination === "live") target = topLiveNav
+        else if (destination === "movies") target = topMoviesNav
+        else if (destination === "series") target = topSeriesNav
+        else if (destination === "discover") target = topDiscoverNav
+        else if (destination === "recommendations") target = topRecommendationsNav
+        else if (destination === "search") target = topSearchNav
+        if (target && target.visible && target.enabled)
+            target.forceActiveFocus()
+    }
+
+    function tryOpenPendingLibraryDestination() {
+        if (pendingLibraryDestination.length === 0)
+            return false
+        var row = libraryCollectionRow(pendingLibraryDestination)
+        if (!row)
+            return false
+        var destination = pendingLibraryDestination
+        pendingLibraryDestination = ""
+        openLibraryRow(row)
+        currentDestination = destination
+        return true
+    }
+
+    function showDestination(destination, keepNavigationFocus) {
+        if (!destination)
+            return
+        var previousDestination = currentDestination
+        currentDestination = destination
+        if (destination === "movies" || destination === "series") {
+            var alreadyThere = currentPage === "library"
+                    && previousDestination === destination
+                    && serverClient.libraryDepth > 0
+            if (!alreadyThere) {
+                pendingLibraryDestination = destination
+                showPage("library")
+                if (!tryOpenPendingLibraryDestination()) {
+                    serverClient.refreshLibraries()
+                    serverClient.refreshLibraryRows()
+                }
+            }
+        } else {
+            pendingLibraryDestination = ""
+            if (destination === "home") showPage("home")
+            else if (destination === "live") showPage("live")
+            else if (destination === "discover") showPage("discover")
+            else if (destination === "recommendations") showPage("recommendations")
+            else if (destination === "search") showPage("search")
+        }
+        if (keepNavigationFocus) {
+            Qt.callLater(function() { root.focusDestination(destination) })
+        }
+    }
+
     function openSideMenu() {
         if (sideMenuOpen || playbackOpen || detailsOpen || pairingOverlay.visible)
             return false
-        if (currentPage === "recommendations") {
-            recommendationSpeechVisitActive = false
-            stopRecommendationSpeech()
-        }
         sideMenuReturnFocus = root.activeFocusItem
         sideMenuOpen = true
-        Qt.callLater(function() {
-            if (currentPage === "library")
-                sideLibraryNav.forceActiveFocus()
-            else if (currentPage === "discover")
-                sideDiscoverNav.forceActiveFocus()
-            else if (currentPage === "recommendations")
-                sideRecommendationsNav.forceActiveFocus()
-            else if (currentPage === "live")
-                sideLiveNav.forceActiveFocus()
-            else if (currentPage === "search")
-                sideSearchNav.forceActiveFocus()
-            else
-                sideHomeNav.forceActiveFocus()
-        })
+        Qt.callLater(function() { settingsClose.forceActiveFocus() })
         return true
     }
 
@@ -1306,10 +1451,8 @@ ApplicationWindow {
             Qt.callLater(function() {
                 if (target && target.visible && target.enabled)
                     target.forceActiveFocus()
-                else if (currentPage === "home")
-                    heroWatchLive.forceActiveFocus()
                 else
-                    root.focusFirstSectionControl()
+                    root.focusDestination(currentDestination)
             })
         }
         return true
@@ -1930,7 +2073,7 @@ ApplicationWindow {
         if (target && target.visible)
             Qt.callLater(function() { target.forceActiveFocus() })
         else
-            Qt.callLater(function() { heroWatchLive.forceActiveFocus() })
+            Qt.callLater(function() { root.focusDestination(root.currentDestination) })
     }
 
     function retryWithCompatibleStream(reason) {
@@ -1944,7 +2087,7 @@ ApplicationWindow {
         playbackBaseOffsetMs = resumeAt
         playbackPendingResumeMs = 0
         playbackError = ""
-        playbackStatusMessage = "Optimizing video and audio for your Steam Deck…"
+        playbackStatusMessage = "Optimizing video and audio for this device…"
         playbackQuality = "Video H.264 • Audio AAC"
         playbackResolution = ""
         playbackHasVideoFrame = false
@@ -2247,10 +2390,15 @@ ApplicationWindow {
             discoverVisibleLimit = 60
             serverClient.browseDiscoverBack()
             sectionScroller.contentY = 0
+        } else if (root.isDescendant(root.activeFocusItem, topNavigation)) {
+            if (currentDestination !== "home")
+                showDestination("home", true)
+            else
+                Qt.quit()
         } else if (currentPage !== "home") {
-            showPage("home")
+            focusDestination(currentDestination)
         } else {
-            openSideMenu()
+            focusDestination("home")
         }
     }
 
@@ -2271,10 +2419,12 @@ ApplicationWindow {
         } else if (detailsOpen) {
             appendFocusable(detailsPanel, result)
         } else if (sideMenuOpen) {
-            appendFocusable(sideMenu, result)
+            appendFocusable(settingsPanel, result)
         } else if (libraryVirtualBrowser.visible) {
+            appendFocusable(topNavigation, result)
             appendFocusable(libraryGridView.contentItem, result)
         } else {
+            appendFocusable(topNavigation, result)
             appendFocusable(currentPage === "home" ? page.contentItem
                                                     : sectionScroller.contentItem, result)
         }
@@ -2419,6 +2569,18 @@ ApplicationWindow {
                 return
             }
         }
+    }
+
+    function focusFirstHomeControl() {
+        var candidates = focusableItems()
+        for (var i = 0; i < candidates.length; ++i) {
+            if (isDescendant(candidates[i], page.contentItem)) {
+                candidates[i].forceActiveFocus()
+                revealFocusedItem(candidates[i])
+                return
+            }
+        }
+        focusDestination("home")
     }
 
     function moveFocus(horizontal, vertical) {
@@ -2650,13 +2812,13 @@ ApplicationWindow {
     Component.onCompleted: {
         componentReady = true
         if (String(playbackPreviewUrl || "").length > 0) {
-            returnFocusItem = heroWatchLive
+            returnFocusItem = topHomeNav
             startPlayback({title: "Playback preview", mediaType: "video",
                               streamUrl: playbackPreviewUrl}, "VIDEO")
         } else if (pairingOverlay.visible)
             serverField.forceActiveFocus()
         else
-            heroWatchLive.forceActiveFocus()
+            topHomeNav.forceActiveFocus()
     }
 
     Timer {
@@ -2863,6 +3025,92 @@ ApplicationWindow {
             visible: !root.nativePlaybackActive
         }
 
+        Rectangle {
+            id: topNavigation
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 54
+            visible: !root.nativePlaybackActive && !pairingOverlay.visible
+            z: 160
+            color: "#76000000"
+
+            Rectangle {
+                anchors.fill: parent
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: "#b8000000" }
+                    GradientStop { position: 0.72; color: "#70000000" }
+                    GradientStop { position: 1.0; color: "#12000000" }
+                }
+            }
+
+            Row {
+                anchors.centerIn: parent
+                height: parent.height
+                spacing: Math.max(12, Math.min(34, (topNavigation.width - 900) / 12))
+
+                TopNavItem {
+                    id: topHomeNav
+                    text: "HOME"
+                    destination: "home"
+                    selected: root.currentDestination === destination
+                    onRequested: destination => root.showDestination(destination, true)
+                }
+                TopNavItem {
+                    id: topLiveNav
+                    text: "TUBE TV"
+                    destination: "live"
+                    selected: root.currentDestination === destination
+                    onRequested: destination => root.showDestination(destination, true)
+                }
+                TopNavItem {
+                    id: topMoviesNav
+                    text: "MOVIES"
+                    destination: "movies"
+                    selected: root.currentDestination === destination
+                    onRequested: destination => root.showDestination(destination, true)
+                }
+                TopNavItem {
+                    id: topSeriesNav
+                    text: "SERIES"
+                    destination: "series"
+                    selected: root.currentDestination === destination
+                    onRequested: destination => root.showDestination(destination, true)
+                }
+                TopNavItem {
+                    id: topDiscoverNav
+                    visible: demoMode || !!serverClient.capabilities.newznab
+                    text: "DISCOVER"
+                    destination: "discover"
+                    selected: root.currentDestination === destination
+                    onRequested: destination => root.showDestination(destination, true)
+                }
+                TopNavItem {
+                    id: topRecommendationsNav
+                    visible: root.taterRecommendationsAvailable()
+                    text: "TATER PICKS"
+                    destination: "recommendations"
+                    selected: root.currentDestination === destination
+                    onRequested: destination => root.showDestination(destination, true)
+                }
+                TopNavItem {
+                    id: topSearchNav
+                    text: "SEARCH"
+                    destination: "search"
+                    selected: root.currentDestination === destination
+                    onRequested: destination => root.showDestination(destination, true)
+                }
+                TopNavItem {
+                    id: topSettingsNav
+                    text: "⚙"
+                    destination: "settings"
+                    compact: true
+                    selected: root.sideMenuOpen
+                    onRequested: root.openSideMenu()
+                }
+            }
+        }
+
         AmbientBackdrop {
         id: homeAmbientBackdrop
         anchors.fill: parent
@@ -2894,121 +3142,130 @@ ApplicationWindow {
             anchors.leftMargin: 46
             anchors.rightMargin: 46
             anchors.top: parent.top
-            anchors.topMargin: 30
-            spacing: 28
+            anchors.topMargin: 0
+            spacing: 22
 
             Rectangle {
                 id: hero
+                property var media: root.displayedHomeHeroItem()
                 width: contentColumn.width
-                height: 304
-                radius: 28
+                height: 382
+                radius: 0
                 clip: true
-                color: "#3d16191d"
+                color: "#000000"
                 border.width: 0
 
-                FrostedGlass {
+                Image {
+                    id: homeHeroArtwork
                     anchors.fill: parent
-                    sourceItem: homeAmbientBackdrop
-                    coordinateItem: hero
-                    updateToken: page.contentY
-                    cornerRadius: hero.radius
-                    blurAmount: 0.82
-                    brightness: -0.16
-                    tint: "#70101418"
+                    source: root.homeWideArtwork(hero.media)
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: true
+                    visible: status === Image.Ready
                 }
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: hero.radius
-                    antialiasing: true
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: "#660b0d10" }
-                        GradientStop { position: 0.62; color: "#46101418" }
-                        GradientStop { position: 1.0; color: "#32191512" }
+                        GradientStop { position: 0.0; color: "#f0000000" }
+                        GradientStop { position: 0.48; color: "#9e000000" }
+                        GradientStop { position: 0.78; color: "#2d000000" }
+                        GradientStop { position: 1.0; color: "#12000000" }
                     }
                 }
 
                 Rectangle {
-                    width: 520
-                    height: 520
-                    radius: 260
+                    anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.rightMargin: -95
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: "#0dff781f"
-                    border.width: 82
-                    border.color: "#0fff8a3d"
+                    anchors.bottom: parent.bottom
+                    height: 110
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "#00000000" }
+                        GradientStop { position: 1.0; color: "#ff000000" }
+                    }
                 }
 
                 Column {
                     anchors.left: parent.left
-                    anchors.leftMargin: 42
+                    anchors.leftMargin: 26
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(920, parent.width - 84)
-                    spacing: 13
-
-                    Row {
-                        spacing: 10
-
-                        Rectangle {
-                            width: 9
-                            height: 9
-                            radius: 5
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: root.orange
-                        }
-
-                        Text {
-                            text: "WELCOME TO TATER TUBE"
-                            color: root.orangeBright
-                            font.pixelSize: 12
-                            font.weight: Font.Bold
-                            font.letterSpacing: 1.5
-                        }
-                    }
+                    width: Math.min(760, parent.width * 0.56)
+                    spacing: 12
 
                     Text {
-                        text: root.builtInHeroHeadline()
+                        width: parent.width
+                        text: root.itemTitle(hero.media, "Your Tater Tube")
                         color: root.textPrimary
-                        font.pixelSize: 38
+                        font.pixelSize: 46
                         font.weight: Font.Black
-                        lineHeight: 0.94
+                        maximumLineCount: 2
+                        wrapMode: Text.WordWrap
+                        elide: Text.ElideRight
                     }
 
                     Text {
                         width: parent.width
-                        text: root.builtInHeroMessage()
-                        color: "#c4c6c8"
+                        visible: text.length > 0
+                        text: root.detailsMeta(hero.media)
+                        color: "#e1e1df"
+                        font.pixelSize: 15
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: root.detailsSynopsis(hero.media)
+                        color: "#d0d0ce"
                         font.pixelSize: 16
                         wrapMode: Text.WordWrap
                         maximumLineCount: 3
                         elide: Text.ElideRight
+                        lineHeight: 1.18
                     }
 
                     Row {
-                        topPadding: 7
-                        spacing: 12
+                        spacing: 9
 
-                        FocusButton {
-                            id: heroWatchLive
-                            text: "▶  Watch live"
-                            primary: true
-                            onClicked: root.showPage("live")
+                        Repeater {
+                            model: root.mediaTechnicalBadges(hero.media)
+
+                            Rectangle {
+                                required property string modelData
+                                width: badgeLabel.implicitWidth + 20
+                                height: 29
+                                radius: 7
+                                color: "#60000000"
+                                border.width: 1
+                                border.color: "#9ac5c5c2"
+
+                                Text {
+                                    id: badgeLabel
+                                    anchors.centerIn: parent
+                                    text: modelData
+                                    color: "#f1f1ee"
+                                    font.pixelSize: 11
+                                    font.weight: Font.Bold
+                                }
+                            }
                         }
-                        FocusButton {
-                            text: "Browse library"
-                            onClicked: root.showPage("library")
-                        }
-                        FocusButton {
-                            visible: demoMode || !!serverClient.capabilities.newznab
-                            text: "Discover"
-                            onClicked: root.showPage("discover")
-                        }
-                        FocusButton {
-                            visible: root.taterRecommendationsAvailable()
-                            text: "Tater picks"
-                            onClicked: root.showPage("recommendations")
+                    }
+
+                    Rectangle {
+                        visible: Number(hero.media && hero.media.progressPercent || 0) > 0
+                        width: Math.min(470, parent.width)
+                        height: 5
+                        radius: 3
+                        color: "#655f6264"
+
+                        Rectangle {
+                            width: parent.width * root.progressValue(
+                                       hero.media ? hero.media.progressPercent : 0)
+                            height: parent.height
+                            radius: parent.radius
+                            color: root.orange
                         }
                     }
                 }
@@ -3136,6 +3393,9 @@ ApplicationWindow {
                             artworkOpacity: 0.74
                             accent: root.cardAccent(index)
                             progress: root.progressValue(media ? media.progressPercent : 0)
+                            onActiveFocusChanged: {
+                                if (activeFocus) root.selectHomeHero(media)
+                            }
                             onActivated: root.openDetails(media, root.mediaLabel(media))
                         }
                     }
@@ -3150,7 +3410,7 @@ ApplicationWindow {
             Column {
                 width: contentColumn.width
                 spacing: 12
-                visible: demoMode
+                visible: false
 
                 SectionTitle {
                     width: parent.width
@@ -3208,7 +3468,7 @@ ApplicationWindow {
             Column {
                 width: contentColumn.width
                 spacing: 12
-                visible: !demoMode && root.displayedLiveChannels().length > 0
+                visible: false
 
                 SectionTitle {
                     width: parent.width
@@ -3333,6 +3593,9 @@ ApplicationWindow {
                             fallbackArtSource: root.homeArtworkFallback(media)
                             artworkOpacity: 0.74
                             accent: root.cardAccent(index)
+                            onActiveFocusChanged: {
+                                if (activeFocus) root.selectHomeHero(media)
+                            }
                             onActivated: root.openLibraryEntry(media)
                         }
                     }
@@ -3340,6 +3603,59 @@ ApplicationWindow {
                     RowActionCard {
                         text: "See all"
                         onActivated: root.openHomeShelf("recent")
+                    }
+                }
+            }
+
+            Repeater {
+                model: demoMode ? 0 : root.homeLibraryRows().length
+
+                Column {
+                    id: homeShelfColumn
+                    required property int index
+                    property var shelf: root.homeLibraryRows()[index]
+                    property var shelfItems: root.libraryRowItems(shelf)
+                    width: contentColumn.width
+                    visible: shelfItems.length > 0
+                    spacing: 12
+
+                    SectionTitle {
+                        width: parent.width
+                        title: root.itemTitle(shelf, "Browse")
+                    }
+
+                    HorizontalMediaRow {
+                        id: homeLibraryRow
+                        width: parent.width
+
+                        Repeater {
+                            model: Math.min(root.shelfPreviewLimit,
+                                            homeShelfColumn.shelfItems.length)
+
+                            MediaCard {
+                                required property int index
+                                property var media: homeShelfColumn.shelfItems[index]
+                                width: homeLibraryRow.cardWidth
+                                eyebrow: root.mediaLabel(media)
+                                title: root.itemTitle(media, "Untitled")
+                                subtitle: String(media && media.mediaType || "").toLowerCase() === "show"
+                                          ? root.showCardMeta(media) : root.libraryItemMeta(media)
+                                artSource: root.homeWideArtwork(media)
+                                fallbackArtSource: root.homeArtworkFallback(media)
+                                artworkOpacity: 0.78
+                                progress: root.progressValue(media ? media.progressPercent : 0)
+                                accent: root.orange
+                                onActiveFocusChanged: {
+                                    if (activeFocus) root.selectHomeHero(media)
+                                }
+                                onActivated: root.openLibraryEntry(media)
+                            }
+                        }
+
+                        RowActionCard {
+                            text: "See all"
+                            onActivated: root.openLibraryRow(homeShelfColumn.shelf)
+                        }
                     }
                 }
             }
@@ -3424,11 +3740,7 @@ ApplicationWindow {
         Rectangle {
         id: sectionPage
         property string heldLibraryArtwork: ""
-        readonly property bool showAmbientBackdrop:
-            (root.currentPage === "library"
-             && (demoMode || serverClient.libraryDepth === 0))
-            || root.currentPage === "discover"
-            || root.currentPage === "recommendations"
+        readonly property bool showAmbientBackdrop: false
         readonly property bool showLibraryArtwork:
             root.currentPage === "library" && !demoMode
             && serverClient.libraryDepth > 0
@@ -3470,6 +3782,29 @@ ApplicationWindow {
             anchors.fill: parent
             visible: sectionPage.showAmbientBackdrop
             intensity: 0.88
+        }
+
+        Image {
+            id: recommendationScreenArtwork
+            anchors.fill: parent
+            visible: root.currentPage === "recommendations"
+                     && source.toString().length > 0
+            source: root.focusedRecommendation()
+                    ? root.homeWideArtwork(root.focusedRecommendation()) : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: true
+            opacity: 0.42
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            visible: recommendationScreenArtwork.visible
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#36000000" }
+                GradientStop { position: 0.55; color: "#a8000000" }
+                GradientStop { position: 1.0; color: "#ff000000" }
+            }
         }
 
         Item {
@@ -3514,7 +3849,7 @@ ApplicationWindow {
                 anchors.leftMargin: 46
                 anchors.rightMargin: 46
                 anchors.top: parent.top
-                anchors.topMargin: 34
+                anchors.topMargin: 72
                 spacing: 28
 
                 Column {
@@ -4047,7 +4382,7 @@ ApplicationWindow {
 
                     Rectangle {
                         id: discoverHero
-                        visible: demoMode || serverClient.discoverStage === "catalog"
+                        visible: false
                         width: parent.width
                         height: 94
                         radius: 22
@@ -4106,12 +4441,76 @@ ApplicationWindow {
                         }
                     }
 
-                    Grid {
-                        id: discoverCategoryGrid
+                    Column {
                         width: parent.width
                         visible: (demoMode || serverClient.discoverStage === "catalog")
                                  && !serverClient.discoverLoading
                                  && (demoMode || serverClient.discoverErrorMessage.length === 0)
+                        spacing: 24
+
+                        Column {
+                            width: parent.width
+                            spacing: 11
+
+                            SectionTitle { width: parent.width; title: "Movies" }
+
+                            HorizontalMediaRow {
+                                id: discoverMovieRow
+                                width: parent.width
+                                height: 210
+                                visibleCardCount: 3
+
+                                Repeater {
+                                    model: root.discoverCategoriesFor("movies")
+
+                                    DiscoveryCategoryCard {
+                                        required property int index
+                                        required property var modelData
+                                        property var category: modelData
+                                        width: discoverMovieRow.cardWidth
+                                        height: 190
+                                        title: root.itemTitle(category, "Discover Movies")
+                                        artSource: root.discoverCategoryArtwork(category)
+                                        onActivated: root.openDiscoverCategory(category)
+                                    }
+                                }
+                            }
+                        }
+
+                        Column {
+                            width: parent.width
+                            spacing: 11
+
+                            SectionTitle { width: parent.width; title: "Series" }
+
+                            HorizontalMediaRow {
+                                id: discoverSeriesRow
+                                width: parent.width
+                                height: 210
+                                visibleCardCount: 3
+
+                                Repeater {
+                                    model: root.discoverCategoriesFor("series")
+
+                                    DiscoveryCategoryCard {
+                                        required property int index
+                                        required property var modelData
+                                        property var category: modelData
+                                        width: discoverSeriesRow.cardWidth
+                                        height: 190
+                                        title: root.itemTitle(category, "Discover Series")
+                                        artSource: root.discoverCategoryArtwork(category)
+                                        onActivated: root.openDiscoverCategory(category)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Grid {
+                        id: discoverCategoryGrid
+                        width: parent.width
+                        visible: false
                         columns: 3
                         columnSpacing: 16
                         rowSpacing: 18
@@ -4317,6 +4716,7 @@ ApplicationWindow {
                     spacing: 22
 
                     RecommendationHero {
+                        visible: false
                         width: parent.width
                         height: implicitHeight
                         assistantName: root.recommendationAssistantName()
@@ -4335,10 +4735,92 @@ ApplicationWindow {
                                      || serverClient.recommendationSpeechErrorMessage
                     }
 
+                    Column {
+                        width: parent.width
+                        visible: root.displayedRecommendations().length > 0
+                        spacing: 24
+
+                        Column {
+                            width: parent.width
+                            visible: root.recommendationsFor("movies").length > 0
+                            spacing: 11
+
+                            SectionTitle { width: parent.width; title: "Movies picked for you" }
+
+                            HorizontalMediaRow {
+                                id: recommendationMovieRow
+                                width: parent.width
+
+                                Repeater {
+                                    model: root.recommendationsFor("movies")
+
+                                    MediaCard {
+                                        required property int index
+                                        required property var modelData
+                                        property var media: modelData
+                                        width: recommendationMovieRow.cardWidth
+                                        eyebrow: "TATER PICK  •  MOVIE"
+                                        title: root.itemTitle(media, "Something good")
+                                        subtitle: root.recommendationMeta(media)
+                                        artSource: root.homeWideArtwork(media)
+                                        fallbackArtSource: root.homeArtworkFallback(media)
+                                        artworkOpacity: 0.78
+                                        badge: index < 9 ? "0" + (index + 1) : String(index + 1)
+                                        accent: root.orange
+                                        onActiveFocusChanged: {
+                                            if (activeFocus)
+                                                root.focusedRecommendationIndex =
+                                                        root.displayedRecommendations().indexOf(media)
+                                        }
+                                        onActivated: root.activateRecommendation(media)
+                                    }
+                                }
+                            }
+                        }
+
+                        Column {
+                            width: parent.width
+                            visible: root.recommendationsFor("series").length > 0
+                            spacing: 11
+
+                            SectionTitle { width: parent.width; title: "Series picked for you" }
+
+                            HorizontalMediaRow {
+                                id: recommendationSeriesRow
+                                width: parent.width
+
+                                Repeater {
+                                    model: root.recommendationsFor("series")
+
+                                    MediaCard {
+                                        required property int index
+                                        required property var modelData
+                                        property var media: modelData
+                                        width: recommendationSeriesRow.cardWidth
+                                        eyebrow: "TATER PICK  •  SERIES"
+                                        title: root.itemTitle(media, "Something good")
+                                        subtitle: root.recommendationMeta(media)
+                                        artSource: root.homeWideArtwork(media)
+                                        fallbackArtSource: root.homeArtworkFallback(media)
+                                        artworkOpacity: 0.78
+                                        badge: index < 9 ? "0" + (index + 1) : String(index + 1)
+                                        accent: root.orange
+                                        onActiveFocusChanged: {
+                                            if (activeFocus)
+                                                root.focusedRecommendationIndex =
+                                                        root.displayedRecommendations().indexOf(media)
+                                        }
+                                        onActivated: root.activateRecommendation(media)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Grid {
                         id: recommendationGrid
                         width: parent.width
-                        visible: root.displayedRecommendations().length > 0
+                        visible: false
                         columns: 4
                         columnSpacing: 15
                         rowSpacing: 18
@@ -4736,7 +5218,7 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.leftMargin: 46
             anchors.rightMargin: 46
-            anchors.topMargin: 34
+            anchors.topMargin: 72
             anchors.bottomMargin: 30
             visible: root.currentPage === "library" && !demoMode
                      && serverClient.libraryDepth > 0
@@ -4882,7 +5364,7 @@ ApplicationWindow {
         Rectangle {
         id: sideMenuScrim
         anchors.fill: parent
-        visible: root.sideMenuOpen
+        visible: false
         color: "#8206080a"
         z: 170
 
@@ -4902,6 +5384,7 @@ ApplicationWindow {
         width: 304
         height: root.height
         enabled: root.sideMenuOpen
+        visible: false
         z: 180
         color: "#3d111418"
         border.width: 0
@@ -5099,8 +5582,121 @@ ApplicationWindow {
             anchors.leftMargin: 26
             anchors.rightMargin: 26
             anchors.bottomMargin: 26
-            text: "Exit to Steam"
+            text: "Exit player"
             onClicked: Qt.quit()
+        }
+    }
+
+    Rectangle {
+        id: settingsOverlay
+        anchors.fill: parent
+        visible: root.sideMenuOpen
+        color: "#b0000000"
+        z: 190
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.closeSideMenu(true)
+        }
+
+        Rectangle {
+            id: settingsPanel
+            anchors.centerIn: parent
+            width: Math.min(720, root.width - 100)
+            height: 390
+            radius: 28
+            color: "#ee111315"
+            border.width: 1
+            border.color: "#5a5f63"
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: mouse => mouse.accepted = true
+            }
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 38
+                spacing: 20
+
+                Text {
+                    text: "SETTINGS"
+                    color: root.orangeBright
+                    font.pixelSize: 12
+                    font.weight: Font.Bold
+                    font.letterSpacing: 1.6
+                }
+
+                Text {
+                    text: "Tater Tube Player"
+                    color: root.textPrimary
+                    font.pixelSize: 34
+                    font.weight: Font.Black
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 82
+                    radius: 16
+                    color: "#78222629"
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 20
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 5
+
+                        Text {
+                            text: demoMode ? "Demo library" : (serverClient.serverName || "Paired server")
+                            color: root.textPrimary
+                            font.pixelSize: 17
+                            font.weight: Font.Bold
+                        }
+                        Text {
+                            text: demoMode ? "No server connection is used in demo mode"
+                                           : serverClient.serverUrl
+                            color: root.textSecondary
+                            font.pixelSize: 13
+                            elide: Text.ElideMiddle
+                            width: settingsPanel.width - 80
+                        }
+                    }
+                }
+
+                Row {
+                    spacing: 12
+
+                    FocusButton {
+                        id: settingsClose
+                        width: 170
+                        text: "Done"
+                        primary: true
+                        onClicked: root.closeSideMenu(true)
+                    }
+
+                    FocusButton {
+                        width: 190
+                        visible: !demoMode && serverClient.paired
+                        text: "Forget server"
+                        onClicked: {
+                            root.closeSideMenu(false)
+                            serverClient.forgetServer()
+                        }
+                    }
+
+                    FocusButton {
+                        width: 170
+                        text: "Exit player"
+                        onClicked: Qt.quit()
+                    }
+                }
+
+                Text {
+                    text: "Version " + Qt.application.version
+                    color: "#858b91"
+                    font.pixelSize: 12
+                }
+            }
         }
     }
 
@@ -5121,11 +5717,12 @@ ApplicationWindow {
         Rectangle {
             id: detailsPanel
             anchors.centerIn: parent
-            width: Math.min(1120, root.width - 80)
-            height: Math.min(620, root.height - 80)
-            radius: 30
-            color: "#2806080a"
-            border.width: 0
+            width: Math.min(1220, root.width - 80)
+            height: Math.min(650, root.height - 86)
+            radius: 26
+            color: "#ed06080a"
+            border.width: 1
+            border.color: root.orange
             clip: true
 
             Rectangle {
@@ -5139,17 +5736,14 @@ ApplicationWindow {
                     }
                     return 2 / 3
                 }
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: Math.round(parent.height * artworkAspect)
+                anchors.fill: parent
                 color: "#0d0f12"
 
                 Image {
                     id: detailsArtwork
                     anchors.fill: parent
-                    source: root.detailsArtworkSource(root.selectedItem)
-                    fillMode: Image.PreserveAspectFit
+                    source: root.detailsBackdropSource(root.selectedItem)
+                    fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     visible: status === Image.Ready
                 }
@@ -5160,16 +5754,13 @@ ApplicationWindow {
                     height: 210
                     source: "../assets/mascot/tater-front.png"
                     fillMode: Image.PreserveAspectFit
-                    visible: !detailsArtwork.visible
+                    visible: false
                 }
             }
 
             Rectangle {
                 id: detailsGlassPane
-                anchors.left: detailsArtworkFrame.right
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
+                anchors.fill: parent
                 color: "#2806080a"
 
                 FrostedGlass {
@@ -5187,20 +5778,19 @@ ApplicationWindow {
                     color: "transparent"
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: "#8f050608" }
-                        GradientStop { position: 0.68; color: "#7807090b" }
-                        GradientStop { position: 1.0; color: "#650a0806" }
+                        GradientStop { position: 0.0; color: "#f4050608" }
+                        GradientStop { position: 0.58; color: "#b807090b" }
+                        GradientStop { position: 1.0; color: "#3d0a0806" }
                     }
                 }
             }
 
             Column {
-                anchors.left: detailsArtworkFrame.right
-                anchors.leftMargin: 38
-                anchors.right: parent.right
-                anchors.rightMargin: 38
+                anchors.left: parent.left
+                anchors.leftMargin: 58
+                width: Math.min(720, parent.width * 0.64)
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 15
+                spacing: 13
 
                 Text {
                     text: root.plainDetailsText(root.selectedKind)
@@ -5222,7 +5812,7 @@ ApplicationWindow {
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
                     elide: Text.ElideRight
-                    font.pixelSize: 36
+                    font.pixelSize: 42
                     font.weight: Font.Black
                 }
 
@@ -5249,6 +5839,64 @@ ApplicationWindow {
                     elide: Text.ElideRight
                     font.pixelSize: 16
                     lineHeight: 1.25
+                }
+
+                Row {
+                    spacing: 9
+                    visible: root.mediaTechnicalBadges(root.selectedItem).length > 0
+
+                    Repeater {
+                        model: root.mediaTechnicalBadges(root.selectedItem)
+
+                        Rectangle {
+                            required property string modelData
+                            width: detailBadgeLabel.implicitWidth + 20
+                            height: 30
+                            radius: 7
+                            color: "#68000000"
+                            border.width: 1
+                            border.color: "#b8d0cfca"
+
+                            Text {
+                                id: detailBadgeLabel
+                                anchors.centerIn: parent
+                                text: modelData
+                                color: root.textPrimary
+                                font.pixelSize: 11
+                                font.weight: Font.Bold
+                            }
+                        }
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 7
+
+                    Text {
+                        text: root.hasPlaybackProgress(root.selectedItem)
+                              ? "WATCH PROGRESS" : "READY TO PLAY"
+                        color: "#e7e5e1"
+                        font.pixelSize: 11
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.7
+                    }
+
+                    Rectangle {
+                        visible: root.hasPlaybackProgress(root.selectedItem)
+                        width: parent.width
+                        height: 6
+                        radius: 3
+                        color: "#5e5c5e60"
+
+                        Rectangle {
+                            width: parent.width * root.progressValue(
+                                       root.detailsPlaybackItem(root.selectedItem).progressPercent)
+                            height: parent.height
+                            radius: parent.radius
+                            color: root.orange
+                        }
+                    }
                 }
 
                 Row {
@@ -5355,6 +6003,13 @@ ApplicationWindow {
                 root.recommendationSpeechVisitActive = false
                 root.stopRecommendationSpeech()
             }
+            if (!root.homeHeroItem || !root.homeHeroItem.title)
+                root.homeHeroItem = root.defaultHomeHeroItem()
+        }
+
+        function onLibraryChanged() {
+            if (root.pendingLibraryDestination.length > 0)
+                root.tryOpenPendingLibraryDestination()
         }
 
         function onNextEpisodeReady(item) {

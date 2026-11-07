@@ -33,12 +33,11 @@ and artwork are requested from the user's Tater Tube Server. The server owner
 controls that server, its media, its logs, and any external metadata or Tater
 Link services configured there.
 
-## Steam
+## Distribution platforms
 
-When the Player is installed through Steam, Valve may process account,
-installation, device, and usage information under Valve's own privacy policy.
-Tater Tube Player does not use the Steamworks API for analytics or account
-identification in its first release.
+Tater Tube Player is distributed directly for Linux and Steam Deck through
+GitHub Releases. The Player does not use a third-party storefront account for
+analytics or identification.
 
 ## Removing local data
 

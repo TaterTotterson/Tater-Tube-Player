@@ -19,9 +19,9 @@ includes the matching Qt Base, Declarative, Multimedia, SVG, and Wayland SPDX
 records for the exact bundled Qt version.
 
 The full LGPLv3 and incorporated GPLv3 texts are included in
-`packaging/licenses/` and in the `licenses/` directory of the Steam depot.
+`packaging/licenses/` and in the `licenses/` directory of the Linux bundle.
 Including the GPLv3 text does not mean the Player ships a GPL-only Qt module;
-the Steam release excludes Qt's GPL-only runtime modules. Instructions for
+the Linux release excludes Qt's GPL-only runtime modules. Instructions for
 replacing the shared Qt libraries are in `docs/RELINKING_QT.md`.
 
 - Project: https://www.qt.io/
@@ -34,7 +34,7 @@ Qt Multimedia uses FFmpeg for media playback in the Linux release. FFmpeg is a
 separate work and is distributed as shared libraries under its applicable LGPL
 terms and other permissive component licenses.
 
-The Steam release builds FFmpeg 7.1.5 from its pinned upstream source archive
+The Linux release builds FFmpeg 7.1.5 from its pinned upstream source archive
 with `--disable-gpl`, `--disable-version3`, and `--disable-nonfree`. It is built
 as shared libraries and is used by both Qt Multimedia and mpv. No x264, x265,
 or other GPL/nonfree external codec library is included.
@@ -42,15 +42,15 @@ or other GPL/nonfree external codec library is included.
 - Project: https://ffmpeg.org/
 - License information: https://ffmpeg.org/legal.html
 
-The full LGPLv2.1 text is included in `packaging/licenses/` and in the Steam
-depot. The exact configure invocation, release SBOM, binary evidence, and
+The full LGPLv2.1 text is included in `packaging/licenses/` and in the Linux
+bundle. The exact configure invocation, release SBOM, binary evidence, and
 source manifest identify the build and all libraries actually shipped.
 
 ## SDL / sdl2-compat
 
 Controller discovery and input use the SDL2 API. The Linux executable is built
-against SDL 2.32.70 from the pinned Steam Runtime 4 SDK and dynamically uses
-the SDL library supplied by the selected Steam Runtime; the depot does not
+against SDL 2.32.70 from the pinned Linux runtime SDK and dynamically uses
+the SDL library supplied by that runtime; the bundle does not
 bundle a second SDL copy. SDL and sdl2-compat use the permissive Zlib license.
 
 - Project: https://www.libsdl.org/
@@ -60,7 +60,7 @@ The applicable Zlib license text is included in `packaging/licenses/Zlib-SDL.txt
 
 ## ICU
 
-The Linux depot includes ICU 73.2 shared libraries from the official Qt 6.11.2
+The Linux bundle includes ICU 73.2 shared libraries from the official Qt 6.11.2
 Linux distribution. Qt Core uses these libraries for Unicode, locale, and text
 handling. ICU is permissively licensed under the Unicode License and includes
 third-party data notices.
@@ -75,15 +75,15 @@ matching `icu4c-73_2-src.tgz` upstream source archive.
 
 ## mpv
 
-The Steam/Linux release launches mpv as a separate program for native video
+The Linux release launches mpv as a separate program for native video
 output, hardware decoding, subtitle rendering, and HDMI audio passthrough. It
 is not linked into the Apache-licensed Tater Tube Player executable.
 
 The release builds mpv 0.40.0 from its pinned upstream source archive with
 Meson's `-Dgpl=false` option. GPL-only paths, including mpv's own X11 video
-output, are disabled. In Steam Gaming Mode, mpv uses its LGPL-compatible SDL
-video output on Gamescope's XWayland surface with VAAPI copy-back hardware
-decoding. This build is distributed under LGPLv2.1-or-later. Its complete
+output, are disabled. On Steam Deck, mpv uses its LGPL-compatible SDL video
+output on Gamescope's XWayland surface with VAAPI copy-back hardware decoding.
+This build is distributed under LGPLv2.1-or-later. Its complete
 copyright file, LGPL text, exact Meson option record, and corresponding source
 are included with the release records.
 
@@ -95,16 +95,16 @@ are included with the release records.
 
 The native mpv playback process dynamically uses Debian libass
 0.17.3-1+deb13u1 for subtitle rendering and Debian libplacebo 7.349.0-3 for its
-GPU video-rendering pipeline. The Steam depot carries the exact shared-library
+GPU video-rendering pipeline. The Linux bundle carries the exact shared-library
 SONAMEs used to build mpv so the
 native player does not depend on whichever versions happen to be installed by
 SteamOS. The same release carries Debian libjpeg-turbo 2.1.5-4, which mpv uses
 for JPEG image support. libass and libjpeg-turbo use permissive terms;
 libplacebo is
 distributed under LGPLv2.1-or-later. Their complete Debian
-copyright and license notices are included in the depot as
+copyright and license notices are included in the bundle as
 `licenses/libass-Copyright.txt`, `licenses/libplacebo-Copyright.txt`, and
-`licenses/libjpeg-turbo-Copyright.txt`. The depot also carries Little CMS 2
+`licenses/libjpeg-turbo-Copyright.txt`. The bundle also carries Little CMS 2
 and libunibreak, permissively licensed transitive dependencies of this native
 playback stack, with their complete notices in
 `licenses/liblcms2-Copyright.txt` and `licenses/libunibreak-Copyright.txt`.
@@ -128,8 +128,8 @@ runtime binaries; no Tater Tube patch is applied to those libraries.
 ## Transitive components
 
 Qt, FFmpeg, and the Linux runtime use additional third-party components. Their
-notices are generated from the exact Qt SPDX documents and the final depot's
-runtime dependency scan. The release depot includes those records under
+notices are generated from the exact Qt SPDX documents and the final bundle's
+runtime dependency scan. The release bundle includes those records under
 `compliance/`, together with the exact build options and source information.
 
 ## Google TV native client

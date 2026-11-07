@@ -231,9 +231,8 @@ jobs:
           compression-level: 0
           retention-days: 30
 
-  steam-linux:
-    name: Audited Steam Linux depot
-    if: github.event_name == 'release'
+  linux:
+    name: Standalone Linux and Steam Deck bundle
     needs: metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 240
@@ -248,17 +247,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build pinned Steam Runtime SDK
+      - name: Build pinned Linux runtime SDK
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: packaging/steam/Containerfile
+          file: packaging/linux/Containerfile
           load: true
-          tags: tater-tube-player-steam-builder:${{ github.sha }}
-          cache-from: type=gha,scope=tater-tube-player-steam
-          cache-to: type=gha,mode=max,scope=tater-tube-player-steam
+          tags: tater-tube-player-linux-builder:${{ github.sha }}
+          cache-from: type=gha,scope=tater-tube-player-linux
+          cache-to: type=gha,mode=max,scope=tater-tube-player-linux
 
-      - name: Build and audit tagged Steam depot
+      - name: Build and audit tagged Linux bundle
         shell: bash
         env:
           RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
@@ -271,27 +270,27 @@ jobs:
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
-            -e TATER_STEAM_BUILD_DIR=/tmp/tater-build \
-            -e TATER_STEAM_DEPOT_DIR=/workspace/dist/steam/linux-x86_64 \
-            -e TATER_STEAM_SOURCE_BOOTSTRAP=1 \
-            "tater-tube-player-steam-builder:${GITHUB_SHA}" \
-            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/build-steam-depot.sh'
+            -e TATER_LINUX_BUILD_DIR=/tmp/tater-build \
+            -e TATER_LINUX_BUNDLE_DIR=/workspace/dist/linux/x86_64 \
+            -e TATER_LINUX_SOURCE_BOOTSTRAP=1 \
+            "tater-tube-player-linux-builder:${GITHUB_SHA}" \
+            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/build-linux-bundle.sh'
 
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "$RUNNER_TEMP:/release-output" \
             -w /workspace \
-            -e TATER_STEAM_DEPOT_DIR=/workspace/dist/steam/linux-x86_64 \
-            "tater-tube-player-steam-builder:${GITHUB_SHA}" \
-            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/prepare-steam-source-offer.sh /release-output/steam-source'
+            -e TATER_LINUX_BUNDLE_DIR=/workspace/dist/linux/x86_64 \
+            "tater-tube-player-linux-builder:${GITHUB_SHA}" \
+            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/prepare-linux-source-offer.sh /release-output/linux-source'
 
-          app_sha="$(sha256sum "$RUNNER_TEMP/steam-source/$app_source_name" | awk '{print $1}')"
-          third_party_sha="$(sha256sum "$RUNNER_TEMP/steam-source/$third_party_name" | awk '{print $1}')"
+          app_sha="$(sha256sum "$RUNNER_TEMP/linux-source/$app_source_name" | awk '{print $1}')"
+          third_party_sha="$(sha256sum "$RUNNER_TEMP/linux-source/$third_party_name" | awk '{print $1}')"
 
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
-            -e TATER_STEAM_DEPOT_DIR=/workspace/dist/steam/linux-x86_64 \
+            -e TATER_LINUX_BUNDLE_DIR=/workspace/dist/linux/x86_64 \
             -e TATER_APP_SOURCE_URL="$asset_base/$app_source_name" \
             -e TATER_APP_SOURCE_SHA256="$app_sha" \
             -e TATER_QT_SOURCE_URL="$asset_base/$third_party_name" \
@@ -302,31 +301,41 @@ jobs:
             -e TATER_ICU_SOURCE_SHA256="$third_party_sha" \
             -e TATER_MPV_SOURCE_URL="$asset_base/$third_party_name" \
             -e TATER_MPV_SOURCE_SHA256="$third_party_sha" \
-            "tater-tube-player-steam-builder:${GITHUB_SHA}" \
-            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/prepare-steam-compliance.sh "$TATER_STEAM_DEPOT_DIR"; ./scripts/audit-steam-depot.sh "$TATER_STEAM_DEPOT_DIR"'
+            "tater-tube-player-linux-builder:${GITHUB_SHA}" \
+            sh -eu -c 'git config --global --add safe.directory /workspace; ./scripts/prepare-linux-compliance.sh "$TATER_LINUX_BUNDLE_DIR"; ./scripts/audit-linux-bundle.sh "$TATER_LINUX_BUNDLE_DIR"'
 
-      - name: Package Steam release assets
+      - name: Package Linux release assets
         shell: bash
         env:
           VERSION_LABEL: ${{ needs.metadata.outputs.version_label }}
           VERSION_NAME: ${{ needs.metadata.outputs.version_name }}
         run: |
           mkdir -p release-assets
-          depot_name="Tater-Tube-Player-Steam-Linux-x86_64-${VERSION_LABEL}.tar.gz"
-          tar -C dist/steam -czf "release-assets/$depot_name" linux-x86_64
-          cp "$RUNNER_TEMP/steam-source/tater-tube-player-${VERSION_NAME}-source.tar.gz" release-assets/
-          cp "$RUNNER_TEMP/steam-source/tater-tube-player-${VERSION_NAME}-third-party-sources.tar" release-assets/
+          bundle_root="Tater-Tube-Player-${VERSION_LABEL}-linux-x86_64"
+          archive_name="${bundle_root}.tar.gz"
+          mkdir -p "release-staging/$bundle_root"
+          cp -a dist/linux/x86_64/. "release-staging/$bundle_root/"
+          tar -C release-staging -czf "release-assets/$archive_name" "$bundle_root"
+          cp "$RUNNER_TEMP/linux-source/tater-tube-player-${VERSION_NAME}-source.tar.gz" release-assets/
+          cp "$RUNNER_TEMP/linux-source/tater-tube-player-${VERSION_NAME}-third-party-sources.tar" release-assets/
+          install -m 0755 scripts/install-linux.sh release-assets/install-linux.sh
+          install -m 0755 packaging/linux/Install-Tater-Tube-Player.desktop \
+            release-assets/Install-Tater-Tube-Player.desktop
           cd release-assets
-          for asset in "$depot_name" \
+          for asset in "$archive_name" \
               "tater-tube-player-${VERSION_NAME}-source.tar.gz" \
               "tater-tube-player-${VERSION_NAME}-third-party-sources.tar"; do
             sha256sum "$asset" > "$asset.sha256"
           done
+          sha256sum "$archive_name" \
+            "tater-tube-player-${VERSION_NAME}-source.tar.gz" \
+            "tater-tube-player-${VERSION_NAME}-third-party-sources.tar" \
+            > SHA256SUMS.txt
 
-      - name: Upload Steam artifacts
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: tater-tube-player-steam-linux
+          name: tater-tube-player-linux
           path: release-assets/
           if-no-files-found: error
           compression-level: 0
@@ -334,8 +343,7 @@ jobs:
 
   publish:
     name: Attach assets to GitHub Release
-    if: github.event_name == 'release'
-    needs: [metadata, google-tv, apple-tv, steam-linux]
+    needs: [metadata, google-tv, apple-tv, linux]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

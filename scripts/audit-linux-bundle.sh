@@ -3,7 +3,7 @@
 set -eu
 
 if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 DEPOT_DIRECTORY" >&2
+    echo "Usage: $0 BUNDLE_DIRECTORY" >&2
     exit 2
 fi
 
@@ -14,7 +14,7 @@ tater_failed=0
 
 tater_require_file() {
     if [ ! -f "${tater_depot_dir}/$1" ]; then
-        echo "Missing required depot file: $1" >&2
+        echo "Missing required Linux bundle file: $1" >&2
         tater_failed=1
     fi
 }
@@ -60,7 +60,7 @@ for tater_required in \
     compliance/mpv-build-options.txt \
     compliance/mpv-runtime-dependencies.txt \
     compliance/mpv-version.txt \
-    compliance/steam-runtime.txt \
+    compliance/linux-runtime.txt \
     compliance/SHA256SUMS; do
     tater_require_file "${tater_required}"
 done
@@ -77,21 +77,21 @@ for tater_native_runtime in \
 done
 
 if [ ! -x "${tater_depot_dir}/tater-tube-player" ]; then
-    echo "The top-level Steam launcher is not executable." >&2
+    echo "The top-level Linux launcher is not executable." >&2
     tater_failed=1
 fi
 
 if [ ! -x "${tater_mpv_binary}" ]; then
-    echo "The native Steam playback engine is not executable." >&2
+    echo "The native Linux playback engine is not executable." >&2
     tater_failed=1
 elif ! LD_LIBRARY_PATH="${tater_depot_dir}/lib" \
     "${tater_mpv_binary}" --no-config --version >/dev/null 2>&1; then
-    echo "The native Steam playback engine could not start." >&2
+    echo "The native Linux playback engine could not start." >&2
     tater_failed=1
 fi
 
 if find "${tater_depot_dir}" -type l | grep -q .; then
-    echo "The depot contains symbolic links that SteamPipe may omit." >&2
+    echo "The portable bundle contains symbolic links." >&2
     find "${tater_depot_dir}" -type l >&2
     tater_failed=1
 fi
@@ -129,7 +129,7 @@ if command -v readelf >/dev/null 2>&1 && [ -f "${tater_mpv_binary}" ]; then
             libc.so.6)
                 ;;
             *)
-                echo "The native playback engine has an unapproved Steam runtime dependency: ${tater_mpv_needed}" >&2
+                echo "The native playback engine has an unapproved runtime dependency: ${tater_mpv_needed}" >&2
                 tater_failed=1
                 ;;
         esac
@@ -162,7 +162,7 @@ if [ -f "${tater_binary}" ]; then
 
     tater_ldd=$(LD_LIBRARY_PATH="${tater_depot_dir}/lib" ldd "${tater_binary}" 2>&1 || true)
     if printf '%s\n' "${tater_ldd}" | grep -q 'not found'; then
-        echo "The depot has unresolved runtime dependencies:" >&2
+        echo "The bundle has unresolved runtime dependencies:" >&2
         printf '%s\n' "${tater_ldd}" | grep 'not found' >&2
         tater_failed=1
     fi
@@ -184,7 +184,7 @@ if find "${tater_depot_dir}" -type f \
        -o -name 'libQt6VirtualKeyboard.so*' \
        -o -name 'libQt6WaylandCompositor.so*' -o -name 'libsteam_api.so*' \) \
     | grep -q .; then
-    echo "The depot contains a forbidden GPL-only or Steamworks runtime library." >&2
+    echo "The bundle contains a forbidden GPL-only or proprietary storefront runtime library." >&2
     find "${tater_depot_dir}" -type f \
         \( -name 'libx264.so*' -o -name 'libx265.so*' -o -name 'libpostproc.so*' \
            -o -name 'libQt6CanvasPainter.so*' -o -name 'libQt6Coap.so*' \
@@ -204,7 +204,7 @@ if find "${tater_depot_dir}" -type f \
        -o -iname '*dolphin*' -o -iname '*pcsx*' -o -iname '*moonlight*' \
        -o -iname '*yt-dlp*' -o -iname '*steam_api*' \) \
     | grep -q .; then
-    echo "The depot contains a forbidden emulator, streaming, downloader, or Steamworks component." >&2
+    echo "The bundle contains a forbidden emulator, streaming, downloader, or storefront component." >&2
     tater_failed=1
 fi
 
@@ -217,26 +217,26 @@ if find "${tater_depot_dir}" -type f \
        -o -iname '*.mov' -o -iname '*.mp3' -o -iname '*.wav' \
        -o -iname '*.flac' -o -iname '*.ogg' \) \
     | grep -q .; then
-    echo "The depot contains a forbidden ROM, game-data, downloader, or media payload." >&2
+    echo "The bundle contains a forbidden ROM, game-data, downloader, or media payload." >&2
     tater_failed=1
 fi
 
 if grep -a -E -i -l \
     '(libretro|retroarch|moonlight-embedded|libsteam_api|SteamAPI_Init)' \
     "${tater_binary}" "${tater_mpv_binary}" >/dev/null 2>&1; then
-    echo "A shipped executable contains a forbidden old-runtime or Steamworks marker." >&2
+    echo "A shipped executable contains a forbidden old-runtime or storefront marker." >&2
     tater_failed=1
 fi
 
 if ! find "${tater_depot_dir}/lib" -maxdepth 1 -type f -name 'libicu*.so.*' \
     | grep -q .; then
-    echo "The audited ICU libraries were not found in the depot." >&2
+    echo "The audited ICU libraries were not found in the bundle." >&2
     tater_failed=1
 fi
 
 if command -v sha256sum >/dev/null 2>&1; then
     if ! (cd "${tater_depot_dir}" && sha256sum -c compliance/SHA256SUMS >/dev/null); then
-        echo "The depot does not match its SHA-256 inventory." >&2
+        echo "The bundle does not match its SHA-256 inventory." >&2
         tater_failed=1
     fi
 fi
@@ -244,17 +244,17 @@ fi
 if grep -R -I -E -n \
     '(Bearer[[:space:]]+[A-Za-z0-9._-]{20,}|password[[:space:]]*[:=][[:space:]]*[^[:space:]]+|10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+)' \
     "${tater_depot_dir}" \
-    --exclude='audit-steam-depot.sh' >/dev/null 2>&1; then
-    echo "The depot contains a possible credential or private address." >&2
+    --exclude='audit-linux-bundle.sh' >/dev/null 2>&1; then
+    echo "The bundle contains a possible credential or private address." >&2
     tater_failed=1
 fi
 
-if grep -q 'attach before Steam submission' \
+if grep -q 'attach before release publication' \
     "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null; then
-    if [ "${TATER_STEAM_SOURCE_BOOTSTRAP:-0}" = "1" ]; then
+    if [ "${TATER_LINUX_SOURCE_BOOTSTRAP:-0}" = "1" ]; then
         echo "Source bootstrap: corresponding-source archives will be generated before the required final audit." >&2
-    elif [ "${TATER_STEAM_DRAFT:-0}" = "1" ]; then
-        echo "Draft depot: corresponding-source archive locations are still placeholders." >&2
+    elif [ "${TATER_LINUX_DRAFT:-0}" = "1" ]; then
+        echo "Draft bundle: corresponding-source archive locations are still placeholders." >&2
     else
         echo "The corresponding-source manifest still contains release placeholders." >&2
         tater_failed=1
@@ -263,15 +263,15 @@ fi
 
 if grep -q 'Tree state: dirty-draft' \
     "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null; then
-    if [ "${TATER_STEAM_DRAFT:-0}" = "1" ]; then
-        echo "Draft depot: player source tree contains uncommitted work." >&2
+    if [ "${TATER_LINUX_DRAFT:-0}" = "1" ]; then
+        echo "Draft bundle: player source tree contains uncommitted work." >&2
     else
-        echo "The depot was built from a dirty source tree." >&2
+        echo "The bundle was built from a dirty source tree." >&2
         tater_failed=1
     fi
 fi
 
-if [ "${TATER_STEAM_DRAFT:-0}" != "1" ]; then
+if [ "${TATER_LINUX_DRAFT:-0}" != "1" ]; then
     if ! grep -q '^  Tree state: clean$' \
         "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null; then
         echo "The corresponding-source manifest does not record a clean source tree." >&2
@@ -282,7 +282,7 @@ if [ "${TATER_STEAM_DRAFT:-0}" != "1" ]; then
         echo "The corresponding-source manifest does not identify an exact Git revision." >&2
         tater_failed=1
     fi
-    if [ "${TATER_STEAM_SOURCE_BOOTSTRAP:-0}" != "1" ]; then
+    if [ "${TATER_LINUX_SOURCE_BOOTSTRAP:-0}" != "1" ]; then
         tater_source_url_count=$(grep -E -c \
             '^  (Archive: )?https://[^[:space:]]+$' \
             "${tater_depot_dir}/licenses/source-manifest.txt" 2>/dev/null || true)
@@ -301,8 +301,8 @@ if [ "${TATER_STEAM_DRAFT:-0}" != "1" ]; then
 fi
 
 if [ "${tater_failed}" -ne 0 ]; then
-    echo "Steam depot audit failed." >&2
+    echo "Linux bundle audit failed." >&2
     exit 1
 fi
 
-echo "Steam depot audit passed."
+echo "Linux bundle audit passed."

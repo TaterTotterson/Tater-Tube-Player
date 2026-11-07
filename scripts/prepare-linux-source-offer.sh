@@ -17,7 +17,7 @@ tater_mpv_version=0.40.0
 tater_libass_version=0.17.3-1+deb13u1
 tater_libplacebo_version=7.349.0-3
 tater_libjpeg_turbo_version=2.1.5-4
-tater_release_depot=${TATER_STEAM_DEPOT_DIR:-"${tater_repo_dir}/dist/steam/linux-x86_64"}
+tater_release_depot=${TATER_LINUX_BUNDLE_DIR:-"${tater_repo_dir}/dist/linux/x86_64"}
 tater_player_version=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9][0-9.]*\).*/\1/p' \
     "${tater_repo_dir}/CMakeLists.txt" | head -n 1)
 tater_source_cache_dir=${TATER_SOURCE_CACHE_DIR:-}
@@ -135,7 +135,7 @@ tater_fetch libjpeg-turbo_2.1.5-4.dsc \
 
 cp "${tater_repo_dir}/THIRD_PARTY_NOTICES.md" "${tater_bundle_dir}/"
 cp "${tater_repo_dir}/docs/RELINKING_QT.md" "${tater_bundle_dir}/"
-cp "${tater_repo_dir}/packaging/steam/Containerfile" "${tater_bundle_dir}/"
+cp "${tater_repo_dir}/packaging/linux/Containerfile" "${tater_bundle_dir}/"
 cp "${tater_release_depot}/compliance/bundled-ffmpeg.txt" "${tater_bundle_dir}/"
 cp "${tater_release_depot}/compliance/ffmpeg-build-config.txt" "${tater_bundle_dir}/"
 cp "${tater_release_depot}/compliance/mpv-build-options.txt" "${tater_bundle_dir}/"
@@ -145,7 +145,7 @@ cat > "${tater_bundle_dir}/README.txt" <<EOF
 Tater Tube Player ${tater_player_version} corresponding third-party source
 
 This archive contains the exact upstream source releases retained for the
-shared Qt and FFmpeg libraries in the Steam/Linux depot:
+shared Qt and FFmpeg libraries in the portable Linux bundle:
 
   Qt ${tater_qt_version}: qtbase, qtdeclarative, qtmultimedia, qtsvg, qtwayland
   FFmpeg ${tater_ffmpeg_version}
@@ -160,7 +160,7 @@ SHA256SUMS. The build Containerfile, notices, exact FFmpeg configure record,
 exact mpv Meson option record, and Qt relinking instructions are included
 alongside them. The libass, libplacebo, and libjpeg-turbo entries include the
 signed Debian source descriptor and complete Debian source delta for the exact
-package revision used by the depot. No Tater Tube patches were applied.
+package revision used by the bundle. No Tater Tube patches were applied.
 
 The Containerfile builds FFmpeg with GPL, nonfree, and version-3 components
 disabled, then builds the separately launched mpv executable with
@@ -184,4 +184,4 @@ tater_third_party_sha256=$(tater_sha256 "${tater_third_party_archive}")
         "$(basename "${tater_third_party_archive}")"
 } > "${tater_output_dir}/SHA256SUMS"
 
-echo "Steam corresponding-source offer ready: ${tater_output_dir}"
+echo "Linux corresponding-source offer ready: ${tater_output_dir}"

@@ -5,7 +5,7 @@ Flickable {
     id: shelf
 
     default property alias shelfData: shelfRow.data
-    property int visibleCardCount: 4
+    property int visibleCardCount: 5
     property real cardSpacing: 15
     property real edgePadding: 10
     readonly property real cardWidth:

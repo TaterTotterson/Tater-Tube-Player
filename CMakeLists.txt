@@ -8,8 +8,8 @@ project(TaterTubePlayer
 
 include(GNUInstallDirs)
 
-option(TATER_STEAM_RELEASE
-    "Apply the Steam/Linux release checks and packaging layout"
+option(TATER_LINUX_BUNDLE
+    "Apply the portable Linux release checks and packaging layout"
     OFF
 )
 option(TATER_DEPLOY_QT_RUNTIME
@@ -36,13 +36,13 @@ if(UNIX AND NOT APPLE)
 endif()
 find_package(SDL2 CONFIG QUIET)
 
-if(TATER_STEAM_RELEASE)
+if(TATER_LINUX_BUNDLE)
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        message(FATAL_ERROR "TATER_STEAM_RELEASE may only be used for a Linux build")
+        message(FATAL_ERROR "TATER_LINUX_BUNDLE may only be used for a Linux build")
     endif()
     if(NOT QT6_IS_SHARED_LIBS_BUILD)
         message(FATAL_ERROR
-            "The Steam release must use dynamically linked Qt libraries for LGPLv3 compliance")
+            "The portable Linux release must use dynamically linked Qt libraries for LGPLv3 compliance")
     endif()
     set(TATER_MPV_RELEASE_ROOT "/opt/tater-mpv" CACHE PATH
         "Root of the audited LGPL-only mpv release")
@@ -148,6 +148,7 @@ qt_add_qml_module(tater-tube-player
         qml/components/RowActionCard.qml
         qml/components/SeasonCard.qml
         qml/components/SectionTitle.qml
+        qml/components/TopNavItem.qml
     RESOURCES
         assets/demo/after-midnight.png
         assets/demo/cartoon-channel.png
@@ -206,7 +207,7 @@ install(TARGETS tater-tube-player
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-if(TATER_STEAM_RELEASE)
+if(TATER_LINUX_BUNDLE)
     # Keep the audited LGPL-only mpv build as a separate, replaceable program.
     install(PROGRAMS "${TATER_MPV_EXECUTABLE}"
         DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -279,7 +280,7 @@ if(UNIX AND NOT APPLE)
     install(FILES packaging/linux/com.taterassistant.TaterTubePlayer.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
-    install(FILES store/steam/graphics/client/shortcut-icon-256.png
+    install(FILES assets/tater-tube-player-icon.png
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
         RENAME com.taterassistant.TaterTubePlayer.png
     )
@@ -297,7 +298,7 @@ if(TATER_DEPLOY_QT_RUNTIME)
     install(SCRIPT ${tater_deploy_qt_script})
 endif()
 
-if(TATER_STEAM_RELEASE)
+if(TATER_LINUX_BUNDLE)
     # Replace Qt's smaller FFmpeg runtime with the single audited LGPL-only
     # FFmpeg build used by both Qt Multimedia and mpv, and add libavfilter.
     install(DIRECTORY "${TATER_MEDIA_RELEASE_ROOT}/lib/"

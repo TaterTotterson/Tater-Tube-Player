@@ -25,9 +25,9 @@ else
 fi
 export QML2_IMPORT_PATH
 
-# Steam Linux Runtime containers do not always include xrandr. Ask Qt for the
-# active Gamescope display size instead so a docked 4K screen still uses the
-# same television-sized logical canvas as a 1600x900/1080p display.
+# Portable runtime environments do not always include xrandr. Ask Qt for the
+# active display size instead so a docked Steam Deck or desktop 4K screen still
+# uses the same television-sized logical canvas as a 1600x900/1080p display.
 if [ -z "${QT_SCALE_FACTOR:-}" ]; then
     tater_display_mode=$("${tater_launcher_dir}/bin/tater-tube-player" \
         --print-screen-size 2>/dev/null || true)

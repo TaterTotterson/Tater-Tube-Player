@@ -25,7 +25,7 @@ Tater Tube Server is required and is not included. Tater Tube Player does not
 include movies, television programs, live channels, or other media.
 
 This repository contains the official Tater Tube Player family. The Qt client
-at the repository root targets Steam and Steam Deck, and the native SwiftUI
+at the repository root targets Linux desktops and Steam Deck, and the native SwiftUI
 Apple TV client lives in `apple-tv/`. The native Kotlin/Compose TV client for
 Google TV and Android TV lives in `google-tv/`. Shared API contracts, design
 assets, demo content, and release policy stay together.
@@ -54,7 +54,8 @@ Existing Tater Tube applications keep their current names and behavior.
   selection, and alternate audio-track selection. Subtitles start off by
   default.
 - Controller-first navigation with held D-pad scrolling, page jumps, Back, and
-  a slide-out navigation rail. Touch and keyboard input remain available.
+  the same compact top navigation used by the television editions. Touch and
+  keyboard input remain available.
 - Resolution-aware rendering for the Steam Deck display and connected 1080p,
   1440p, or 4K televisions.
 - Persistent content and artwork caches so shelves appear immediately while
@@ -79,7 +80,7 @@ then chooses the least destructive compatible path:
 - convert only the video and preserve compatible audio; or
 - convert both tracks when required.
 
-The Steam build uses a separately replaceable, LGPL-compatible mpv executable
+The Linux build uses a separately replaceable, LGPL-compatible mpv executable
 for playback. It selects the best non-commentary English audio track by default,
 allows audio and subtitle tracks to be changed during playback, and requests
 encoded HDMI audio passthrough only for formats reported by the connected
@@ -124,10 +125,20 @@ QT_QPA_PLATFORM=offscreen \
   --demo --screenshot=build/home.png
 ```
 
+## Install on Steam Deck or Linux
+
+Download
+[`Install-Tater-Tube-Player.desktop`](https://github.com/TaterTotterson/Tater-Tube-Player/releases/latest/download/Install-Tater-Tube-Player.desktop)
+from the latest GitHub release and open it in Steam Deck Desktop Mode or on a
+64-bit x86 Linux desktop. The one-click installer requires no `sudo`, creates a
+normal desktop application, and asks SteamOS to add a non-Steam shortcut on a
+Deck. See [the installation guide](docs/INSTALL_LINUX.md) for terminal and
+update instructions.
+
 ### Steam Deck development
 
-The release on Steam is packaged as a self-contained Linux build and does not
-require a development container. For source development on a Steam Deck, the
+The standalone release is packaged as a self-contained Linux build and does
+not require a development container. For source development on a Steam Deck, the
 project can also be built in an isolated Arch Distrobox containing CMake,
 Ninja, Qt 6, FFmpeg, PulseAudio client libraries, SDL2, and a C++ compiler.
 
@@ -137,9 +148,8 @@ The development launcher is:
 ./scripts/run-steam-deck-dev.sh
 ```
 
-`packaging/linux/com.taterassistant.TaterTubePlayer.desktop` can be added to
-Steam as a non-Steam application while testing a local development build in
-Gaming Mode.
+`packaging/linux/com.taterassistant.TaterTubePlayer.desktop` can be added as a
+non-Steam application while testing a local development build in Gaming Mode.
 
 ### Apple TV development
 
@@ -167,8 +177,9 @@ feature-parity roadmap.
 ### Unified release builds
 
 Publishing a GitHub Release whose tag matches the CMake version (for example,
-`v0.3.32`) runs the `Release builds` workflow. It produces an audited
-Steam/Linux depot with its corresponding-source archives, an unsigned Apple TV
+`v0.3.32`) runs the `Release builds` workflow. It produces an audited portable
+Linux desktop/Steam Deck bundle with its corresponding-source archives and
+one-click installer, an unsigned Apple TV
 Simulator package for testing, and a signed Google TV AAB. Each artifact is
 published with a SHA-256 checksum on the same GitHub Release.
 
@@ -178,8 +189,8 @@ Google TV job uses the repository's protected Android upload-key secrets.
 
 ## Security and privacy
 
-On Steam, the paired-player token is stored in the current operating-system
-user's Qt settings file; Linux restricts that file to the user (`0600`). Apple
+On Linux, the paired-player token is stored in the current operating-system
+user’s Qt settings file; Linux restricts that file to the user (`0600`). Apple
 TV stores it in the device Keychain. Google TV encrypts it with a key held by
 Android Keystore. The token is sent only to the paired Tater Tube Server and is
 never forwarded across HTTP redirects.
@@ -190,8 +201,8 @@ provider. See [PRIVACY.md](PRIVACY.md) for the complete data-flow description.
 
 ## Platform direction
 
-The current clients target Steam, Steam Deck, Apple TV, Google TV, and Android
-TV. Platform-native interfaces share the same server contracts, design assets,
+The current clients target Linux desktop, Steam Deck, Apple TV, Google TV, and
+Android TV. Platform-native interfaces share the same server contracts, design assets,
 and product behavior while using each platform's native media framework.
 
 ## License
@@ -200,10 +211,10 @@ Tater Tube Player is open-source software licensed under the
 [Apache License 2.0](LICENSE). The Tater Tube name, logo, and mascot remain
 protected brand identifiers; see [TRADEMARKS.md](TRADEMARKS.md).
 
-Steam release builds dynamically link Qt under LGPLv3. Qt, FFmpeg, SDL, mpv,
+Linux release builds dynamically link Qt under LGPLv3. Qt, FFmpeg, SDL, mpv,
 and other third-party components retain their respective licenses. The native
 Apple TV and Google TV targets do not use Qt or mpv. Notices, source
-availability, and Qt relinking instructions for the Steam edition are provided
+availability, and Qt relinking instructions for the Linux edition are provided
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
 [docs/SOURCE_CODE.md](docs/SOURCE_CODE.md), and
 [docs/RELINKING_QT.md](docs/RELINKING_QT.md).

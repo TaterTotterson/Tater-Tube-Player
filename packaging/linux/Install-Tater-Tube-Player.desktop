@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install Tater Tube Player
+Comment=Install or update Tater Tube Player for Steam Deck and Linux
+Exec=bash -c "set -o pipefail; curl -fL --retry 3 --progress-bar https://github.com/TaterTotterson/Tater-Tube-Player/releases/latest/download/install-linux.sh | bash"
+Icon=system-software-install
+Terminal=true
+Categories=AudioVideo;Utility;
+StartupNotify=true

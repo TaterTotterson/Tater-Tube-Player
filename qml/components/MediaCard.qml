@@ -37,6 +37,17 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
+        anchors.margins: -9
+        radius: 25
+        visible: card.activeFocus
+        color: "transparent"
+        border.width: 8
+        border.color: "#66ff7a1a"
+        z: -1
+    }
+
+    Rectangle {
+        anchors.fill: parent
         radius: 18
         clip: true
         color: "#22262b"

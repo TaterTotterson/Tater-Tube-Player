@@ -13,7 +13,7 @@ Local media / The Tube
  Tater Tube Server
  catalog | artwork | playback plans | HLS | Tube TV | Tater
       /             |                \
- Steam desktop   Apple TV         Google TV
+ Linux desktop   Apple TV         Google TV
 ```
 
 The old Tater Tube desktop client is a behavioral reference only. Features are
@@ -120,7 +120,8 @@ container-specific decisions without changing the track-level modes.
 
 ## Platform plan
 
-- Steam/Steam Deck: this Qt Quick desktop client, initially released for Linux.
+- Linux/Steam Deck: this Qt Quick desktop client, distributed directly through
+  GitHub Releases.
 - Apple TV: a thin SwiftUI/AVKit client using the same server contract.
 - Google TV: a thin Kotlin/Compose TV/Media3 client using the same contract.
   Its TV-only launcher, secure pairing, cached Home shelf, capability report,

@@ -35,14 +35,14 @@ fi
 tater_qt_prefix=$("${tater_qtpaths}" --query QT_INSTALL_PREFIX)
 
 {
-    echo "Builder: ${TATER_STEAM_RUNTIME_IMAGE:-unrecorded}"
+    echo "Builder: ${TATER_LINUX_RUNTIME_IMAGE:-unrecorded}"
     uname -a
     if command -v dpkg-query >/dev/null 2>&1; then
         dpkg-query -W -f='${Package} ${Version}\n' \
             libsdl2-2.0-0 libsdl2-dev libass9 libplacebo349 \
             liblcms2-2 libunibreak6 libdisplay-info2 2>/dev/null || true
     fi
-} > "${tater_compliance_dir}/steam-runtime.txt"
+} > "${tater_compliance_dir}/linux-runtime.txt"
 
 for tater_sbom_root in \
     "${tater_qt_prefix}/share/qt/sbom" \
@@ -98,7 +98,7 @@ find "${tater_depot_dir}" -type f \
 tater_ffmpeg_sbom="${tater_compliance_dir}/qt-sbom/qtmultimedia-$(cat "${tater_compliance_dir}/qt-version.txt").spdx"
 {
     echo "Bundled FFmpeg 7.1.5 evidence"
-    echo "Built from the pinned upstream archive in packaging/steam/Containerfile."
+    echo "Built from the pinned upstream archive in packaging/linux/Containerfile."
     echo
     echo "Exact configure invocation"
     cat "${tater_compliance_dir}/ffmpeg-build-config.txt"
@@ -122,15 +122,15 @@ if [ -n "$(git -C "${tater_repo_dir}" status --porcelain 2>/dev/null || true)" ]
 fi
 
 tater_app_source_url=${TATER_APP_SOURCE_URL:-"https://github.com/TaterTotterson/Tater-Tube-Player"}
-tater_app_source_sha256=${TATER_APP_SOURCE_SHA256:-"attach before Steam submission"}
-tater_qt_source_url=${TATER_QT_SOURCE_URL:-"attach before Steam submission"}
-tater_qt_source_sha256=${TATER_QT_SOURCE_SHA256:-"attach before Steam submission"}
-tater_ffmpeg_source_url=${TATER_FFMPEG_SOURCE_URL:-"attach before Steam submission"}
-tater_ffmpeg_source_sha256=${TATER_FFMPEG_SOURCE_SHA256:-"attach before Steam submission"}
-tater_icu_source_url=${TATER_ICU_SOURCE_URL:-"attach before Steam submission"}
-tater_icu_source_sha256=${TATER_ICU_SOURCE_SHA256:-"attach before Steam submission"}
-tater_mpv_source_url=${TATER_MPV_SOURCE_URL:-"attach before Steam submission"}
-tater_mpv_source_sha256=${TATER_MPV_SOURCE_SHA256:-"attach before Steam submission"}
+tater_app_source_sha256=${TATER_APP_SOURCE_SHA256:-"attach before release publication"}
+tater_qt_source_url=${TATER_QT_SOURCE_URL:-"attach before release publication"}
+tater_qt_source_sha256=${TATER_QT_SOURCE_SHA256:-"attach before release publication"}
+tater_ffmpeg_source_url=${TATER_FFMPEG_SOURCE_URL:-"attach before release publication"}
+tater_ffmpeg_source_sha256=${TATER_FFMPEG_SOURCE_SHA256:-"attach before release publication"}
+tater_icu_source_url=${TATER_ICU_SOURCE_URL:-"attach before release publication"}
+tater_icu_source_sha256=${TATER_ICU_SOURCE_SHA256:-"attach before release publication"}
+tater_mpv_source_url=${TATER_MPV_SOURCE_URL:-"attach before release publication"}
+tater_mpv_source_sha256=${TATER_MPV_SOURCE_SHA256:-"attach before release publication"}
 
 cat > "${tater_license_dir}/source-manifest.txt" <<EOF
 Tater Tube Player source
@@ -161,10 +161,10 @@ Native playback corresponding source
   SHA-256: ${tater_mpv_source_sha256}
 EOF
 
-if grep -q 'attach before Steam submission' "${tater_license_dir}/source-manifest.txt"; then
+if grep -q 'attach before release publication' "${tater_license_dir}/source-manifest.txt"; then
     cat >> "${tater_license_dir}/source-manifest.txt" <<EOF
 
-This placeholder is intentionally rejected by audit-steam-depot.sh until the
+This placeholder is intentionally rejected by audit-linux-bundle.sh until the
 release-controlled archive locations and SHA-256 hashes are filled in.
 EOF
 fi

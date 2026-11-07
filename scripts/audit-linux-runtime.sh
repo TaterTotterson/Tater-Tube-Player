@@ -24,7 +24,7 @@ find "${tater_depot_dir}" -type f | while IFS= read -r tater_candidate; do
 done
 
 if [ -s "${tater_runtime_failures}" ]; then
-    echo "The depot has dependencies missing from Steam Runtime 4:" >&2
+    echo "The bundle has dependencies missing from the pinned Linux runtime:" >&2
     cat "${tater_runtime_failures}" >&2
     exit 1
 fi
@@ -34,4 +34,4 @@ LD_LIBRARY_PATH="${tater_depot_dir}/lib" \
 LD_LIBRARY_PATH="${tater_depot_dir}/lib" \
     "${tater_depot_dir}/bin/tater-mpv" --no-config --version >/dev/null
 
-echo "Steam Runtime 4 platform audit passed."
+echo "Pinned Linux runtime audit passed."
